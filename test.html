@@ -1,0 +1,66 @@
+<!doctype html>
+<html lang="ja">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+    <meta name="robots" content="noindex" />
+    <title>動画テスト（仮の素材）</title>
+    <style>
+      body { margin: 0; font-family: -apple-system, 'Hiragino Sans', sans-serif; background: #f6efe6; color: #333; }
+      main { max-width: 480px; margin: 0 auto; padding: 16px 16px 80px; }
+      h1 { font-size: 20px; margin: 8px 0 4px; }
+      h2 { font-size: 17px; margin: 0 0 8px; }
+      section { background: #fff; border-radius: 14px; padding: 14px; margin: 14px 0; }
+      button, .file { display: block; width: 100%; box-sizing: border-box; margin: 8px 0; padding: 14px; font-size: 16px;
+        border: 0; border-radius: 12px; background: #e8826b; color: #fff; font-weight: bold; text-align: center; }
+      button.sub { background: #fff; color: #e8826b; border: 2px solid #e8826b; }
+      button:disabled { opacity: .4; }
+      .file input { display: none; }
+      .muted { color: #777; font-size: 13px; }
+      video { width: 100%; max-height: 50vh; background: #000; border-radius: 10px; margin-top: 8px; }
+      pre { white-space: pre-wrap; font-size: 12px; background: #222; color: #cfc; padding: 10px; border-radius: 10px; min-height: 60px; }
+      .status { font-size: 14px; margin: 6px 0; min-height: 1.4em; }
+    </style>
+  </head>
+  <body>
+    <main>
+      <h1>動画テスト</h1>
+      <p class="muted">猫の写真は使いません。色をぬった仮のカードと仮の動画だけで試します。</p>
+
+      <section>
+        <h2>A. カード4枚から動画を作る（約13秒）</h2>
+        <button id="a1">① 録画する方法で作る</button>
+        <button id="a2">② 1コマずつ作る方法で作る</button>
+        <div class="status" id="a-status"></div>
+      </section>
+
+      <section>
+        <h2>B. 短い動画に文字を重ねる</h2>
+        <label class="file">動画を選ぶ（猫以外）<input type="file" id="b-file" accept="video/*" /></label>
+        <button class="sub" id="b-fake">仮の動画を作って使う（5秒）</button>
+        <div class="status" id="b-source"></div>
+        <button id="b1" disabled>① 再生しながら録画して重ねる</button>
+        <button id="b2" disabled>② 1コマずつ重ねる</button>
+        <div class="status" id="b-status"></div>
+      </section>
+
+      <section>
+        <h2>できた動画</h2>
+        <div class="status" id="out-label">まだありません</div>
+        <video id="out" controls playsinline muted></video>
+        <h2 style="margin-top:14px">C. 保存・Instagramへ</h2>
+        <button id="c1" disabled>共有の画面を開く（保存・Instagram）</button>
+        <button id="c2" disabled>投稿文コピー＋共有の画面を1タップで</button>
+        <button class="sub" id="c3">Instagramを開く</button>
+        <div class="status" id="c-status"></div>
+      </section>
+
+      <section>
+        <h2>記録</h2>
+        <button class="sub" id="copy-log">記録をコピー（DEVLOG用）</button>
+        <pre id="log"></pre>
+      </section>
+    </main>
+    <script type="module" src="/src/test/main.ts"></script>
+  </body>
+</html>
