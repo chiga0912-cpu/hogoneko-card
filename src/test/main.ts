@@ -211,6 +211,7 @@ async function runTest(statusId: string, label: string, fn: () => Promise<Blob>)
     $<HTMLButtonElement>('b1').disabled = !source
     $<HTMLButtonElement>('b2').disabled = !source
     $<HTMLButtonElement>('e1').disabled = !eFile
+    $<HTMLButtonElement>('e-share').disabled = !eFile
   }
 }
 
@@ -438,6 +439,7 @@ $<HTMLInputElement>('e-file').onchange = async (e) => {
   setStatus('e-source', `使う動画：${mb(f.size)}・${f.type || '形式不明'}`)
   log(`E 元の動画: ${mb(f.size)} / ${f.type} / 位置情報 ${await locationIn(f)}`)
   $<HTMLButtonElement>('e1').disabled = false
+  $<HTMLButtonElement>('e-share').disabled = false
 }
 
 $('e1').onclick = () =>
@@ -506,10 +508,12 @@ $('e1').onclick = () =>
   })
 
 // ---- 位置情報が残っていないかの確認 ----
-// iPhoneの動画は、撮った場所を「©xyz」や「com.apple.quicktime.location」という印で持つ
+// iPhoneの動画は、撮った場所を「©xyz」「loci」「…location.ISO6709」などの印で持つ
 // 場所そのもの（数字）は記録に出さず、「あり／なし」だけを出す
 const LOCATION_MARKS = [
   new Uint8Array([0xa9, 0x78, 0x79, 0x7a]), // ©xyz
+  new TextEncoder().encode('loci'),
+  new TextEncoder().encode('ISO6709'),
   new TextEncoder().encode('com.apple.quicktime.location'),
 ]
 function hasMark(bytes: Uint8Array, mark: Uint8Array) {
@@ -519,15 +523,28 @@ function hasMark(bytes: Uint8Array, mark: Uint8Array) {
   }
   return false
 }
-// 動画の情報は、ファイルの先頭か最後にまとまっているので、そこだけ調べる
-async function locationIn(blob: Blob): Promise<'あり' | 'なし'> {
-  const SPAN = 4 * 1024 * 1024
-  const parts = blob.size <= SPAN * 2 ? [blob] : [blob.slice(0, SPAN), blob.slice(blob.size - SPAN)]
-  for (const p of parts) {
-    const bytes = new Uint8Array(await p.arrayBuffer())
-    if (LOCATION_MARKS.some((m) => hasMark(bytes, m))) return 'あり'
+// 動画ファイルは「箱」が並んだ形。映像そのもの（mdat）以外の箱をすべて調べる
+// （映像の中を調べると、たまたま同じ並びの数字があって「あり」と誤ることがあるため）
+async function locationIn(blob: Blob): Promise<'あり' | 'なし' | '調べられない'> {
+  try {
+    let pos = 0
+    while (pos + 8 <= blob.size) {
+      const head = new DataView(await blob.slice(pos, pos + 16).arrayBuffer())
+      let size = head.getUint32(0)
+      const type = String.fromCharCode(head.getUint8(4), head.getUint8(5), head.getUint8(6), head.getUint8(7))
+      if (size === 1) size = Number(head.getBigUint64(8))
+      else if (size === 0) size = blob.size - pos
+      if (size < 8) return '調べられない'
+      if (type !== 'mdat') {
+        const bytes = new Uint8Array(await blob.slice(pos, pos + size).arrayBuffer())
+        if (LOCATION_MARKS.some((m) => hasMark(bytes, m))) return 'あり'
+      }
+      pos += size
+    }
+    return 'なし'
+  } catch {
+    return '調べられない'
   }
-  return 'なし'
 }
 
 // ---- C. 保存・Instagramへ ----
@@ -559,8 +576,28 @@ $('c3').onclick = () => {
 }
 
 $('copy-log').onclick = async () => {
-  await navigator.clipboard.writeText(logEl.textContent ?? '')
-  setStatus('c-status', '記録をコピーしました')
+  const btn = $<HTMLButtonElement>('copy-log')
+  try {
+    await navigator.clipboard.writeText(logEl.textContent ?? '')
+    btn.textContent = 'コピーしました ✓'
+    btn.classList.remove('sub')
+  } catch {
+    btn.textContent = 'コピーできませんでした。もう一度押してください'
+  }
+  setTimeout(() => {
+    btn.textContent = '記録をコピー（DEVLOG用）'
+    btn.classList.add('sub')
+  }, 3000)
+}
+
+// 確認用：ページが受け取った動画を、そのまま共有する（パソコンへ送って調べるため）
+$('e-share').onclick = async () => {
+  try {
+    await navigator.share({ files: [new File([eFile!], eFile!.name || 'received.mov', { type: eFile!.type })] })
+    log(`E 受け取った動画をそのまま共有: 完了（${eFile!.name}）`)
+  } catch (e) {
+    log(`E 受け取った動画をそのまま共有: ${(e as Error).name}`)
+  }
 }
 
 deviceInfo().then(checkLastE)
