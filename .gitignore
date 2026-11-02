@@ -37,3 +37,9 @@ screenshots/
 *.HEIC
 *.png
 !public/*.png
+
+# 動画も上げない
+*.mp4
+*.mov
+*.MOV
+*.webm
