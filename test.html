@@ -54,6 +54,15 @@
       </section>
 
       <section>
+        <h2>E. 1分の動画をそのまま処理する</h2>
+        <p class="muted">選んだ動画を最後まで（3分まで）1コマずつ読み、文字を重ねます。途中でページが落ちても、次に開いたとき記録に出ます。</p>
+        <label class="file">動画を選ぶ（猫以外・1分ほど）<input type="file" id="e-file" accept="video/*" /></label>
+        <div class="status" id="e-source"></div>
+        <button id="e1" disabled>最後まで処理する</button>
+        <div class="status" id="e-status"></div>
+      </section>
+
+      <section>
         <h2>できた動画</h2>
         <div class="status" id="out-label">まだありません</div>
         <video id="out" controls playsinline muted></video>

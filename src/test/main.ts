@@ -186,6 +186,7 @@ function showResult(blob: Blob, label: string, ms: number) {
   setStatus('out-label', `${label}（${n}回目）：${sec(ms)}・${mb(blob.size)}・${blob.type}`)
   const frames = lastFrames === null ? '' : ` / コマ数 ${lastFrames}`
   log(`${label}（${n}回目）: かかった時間 ${sec(ms)} / 大きさ ${mb(blob.size)} / 形式 ${blob.type}${frames}`)
+  locationIn(blob).then((loc) => log(`  できた動画の位置情報 ${loc}（${label} ${n}回目）`))
   $<HTMLButtonElement>('c1').disabled = false
   $<HTMLButtonElement>('c2').disabled = false
 }
@@ -209,6 +210,7 @@ async function runTest(statusId: string, label: string, fn: () => Promise<Blob>)
     $<HTMLButtonElement>('c2').disabled = !result
     $<HTMLButtonElement>('b1').disabled = !source
     $<HTMLButtonElement>('b2').disabled = !source
+    $<HTMLButtonElement>('e1').disabled = !eFile
   }
 }
 
@@ -253,6 +255,7 @@ function setSource(f: File, how: string) {
   source = f
   setStatus('b-source', `使う動画：${how}（${mb(f.size)}・${f.type || '形式不明'}）`)
   log(`B 元の動画: ${how} / ${mb(f.size)} / ${f.type}`)
+  locationIn(f).then((loc) => log(`  元の動画の位置情報 ${loc}`))
   $<HTMLButtonElement>('b1').disabled = false
   $<HTMLButtonElement>('b2').disabled = false
 }
@@ -345,6 +348,7 @@ let dFiles: File[] = []
 $<HTMLInputElement>('d-files').onchange = (e) => {
   dFiles = [...((e.target as HTMLInputElement).files ?? [])]
   setStatus('d-source', `選んだ動画：${dFiles.length}本（${dFiles.map((f) => mb(f.size)).join('・')}）`)
+  Promise.all(dFiles.map(locationIn)).then((r) => log(`D 選んだ動画の位置情報: ${r.join('・')}`))
 }
 
 $('d1').onclick = () =>
@@ -398,6 +402,134 @@ $('d1').onclick = () =>
     })
   })
 
+// ---- E. 長い動画をそのまま処理する ----
+const E_MAX_SEC = 180
+const E_KEY = 'hogoneko-test-e' // 途中経過をスマホの中に残す（ページが落ちたときのため）
+let eFile: File | null = null
+
+function saveE(state: object) {
+  try {
+    localStorage.setItem(E_KEY, JSON.stringify(state))
+  } catch {
+    // 保存できなくてもテストは続ける
+  }
+}
+
+// 前回のテストEが途中で止まっていたら知らせる
+function checkLastE() {
+  try {
+    const raw = localStorage.getItem(E_KEY)
+    if (!raw) return
+    const s = JSON.parse(raw)
+    if (s.status === 'running') {
+      const why = s.closed ? 'ページを閉じたか、読み込み直した' : 'ページが落ちた可能性'
+      log(`E 前回は途中で止まりました（${why}）: ${s.at} / 元の動画 ${s.total}秒・${s.size} / 処理できたのは ${s.done}秒分 / それまでの時間 ${s.elapsed}秒 / 画面が裏に回った ${s.hidden ? 'あり' : 'なし'}`)
+      saveE({ ...s, status: 'reported' })
+    }
+  } catch {
+    // 読めなくても気にしない
+  }
+}
+
+$<HTMLInputElement>('e-file').onchange = async (e) => {
+  const f = (e.target as HTMLInputElement).files?.[0]
+  if (!f) return
+  eFile = f
+  setStatus('e-source', `使う動画：${mb(f.size)}・${f.type || '形式不明'}`)
+  log(`E 元の動画: ${mb(f.size)} / ${f.type} / 位置情報 ${await locationIn(f)}`)
+  $<HTMLButtonElement>('e1').disabled = false
+}
+
+$('e1').onclick = () =>
+  runTest('e-status', 'E長い動画をそのまま', async () => {
+    const input = new Input({ source: new BlobSource(eFile!), formats: ALL_FORMATS })
+    const track = await input.getPrimaryVideoTrack()
+    if (!track) throw new Error('動画が見つかりません')
+    if (!(await track.canDecode())) throw new Error(`この形式（${track.codec}）を読めません`)
+    const first = await track.getFirstTimestamp()
+    const total = (await track.computeDuration()) - first
+    const len = Math.min(E_MAX_SEC, total)
+    log(`E 元の形式: ${track.codec} / ${track.displayWidth}×${track.displayHeight} / 回転 ${track.rotation}° / 長さ ${total.toFixed(1)}秒（処理するのは ${len.toFixed(1)}秒）`)
+
+    const t0 = performance.now()
+    const state = { status: 'running', at: new Date().toLocaleString('ja-JP'), total: total.toFixed(1), size: mb(eFile!.size), done: '0', elapsed: '0', hidden: false, closed: false }
+    saveE(state)
+    // ページを閉じる・読み込み直すときは pagehide が来る。落ちたときは来ない
+    const onClose = () => {
+      state.closed = true
+      saveE(state)
+    }
+    window.addEventListener('pagehide', onClose)
+    const onHide = () => {
+      if (document.hidden && !state.closed) {
+        state.hidden = true
+        saveE(state)
+      }
+    }
+    document.addEventListener('visibilitychange', onHide)
+
+    const tall = track.displayHeight >= track.displayWidth
+    const sink = new CanvasSink(track, { width: W, height: H, fit: tall ? 'cover' : 'contain', poolSize: 2 })
+    const cv = newCanvas()
+    const ctx = cv.getContext('2d')!
+    const n = Math.floor(len * FPS)
+    const times = Array.from({ length: n }, (_, f) => first + f / FPS)
+    try {
+      const blob = await encodeFrames(cv, async (add) => {
+        let f = 0
+        for await (const frame of sink.canvasesAtTimestamps(times)) {
+          ctx.fillStyle = '#000'
+          ctx.fillRect(0, 0, W, H)
+          if (frame) ctx.drawImage(frame.canvas, 0, 0)
+          drawOverlay(ctx)
+          await add(f / FPS)
+          f++
+          if (f % FPS === 0) {
+            const el = ((performance.now() - t0) / 1000).toFixed(1)
+            Object.assign(state, { done: (f / FPS).toFixed(0), elapsed: el })
+            saveE(state)
+            setStatus('e-status', `${f / FPS}秒 / ${len.toFixed(0)}秒（経過 ${el}秒）`)
+          }
+        }
+      })
+      saveE({ ...state, status: 'done' })
+      if (state.hidden) log('E 途中で画面が裏に回りました（時間が長く出ている可能性）')
+      return blob
+    } catch (e) {
+      saveE({ ...state, status: 'error' })
+      log(`E 止まった位置: ${state.done}秒分まで処理 / それまでの時間 ${state.elapsed}秒`)
+      throw e
+    } finally {
+      document.removeEventListener('visibilitychange', onHide)
+      window.removeEventListener('pagehide', onClose)
+    }
+  })
+
+// ---- 位置情報が残っていないかの確認 ----
+// iPhoneの動画は、撮った場所を「©xyz」や「com.apple.quicktime.location」という印で持つ
+// 場所そのもの（数字）は記録に出さず、「あり／なし」だけを出す
+const LOCATION_MARKS = [
+  new Uint8Array([0xa9, 0x78, 0x79, 0x7a]), // ©xyz
+  new TextEncoder().encode('com.apple.quicktime.location'),
+]
+function hasMark(bytes: Uint8Array, mark: Uint8Array) {
+  outer: for (let i = 0; i <= bytes.length - mark.length; i++) {
+    for (let j = 0; j < mark.length; j++) if (bytes[i + j] !== mark[j]) continue outer
+    return true
+  }
+  return false
+}
+// 動画の情報は、ファイルの先頭か最後にまとまっているので、そこだけ調べる
+async function locationIn(blob: Blob): Promise<'あり' | 'なし'> {
+  const SPAN = 4 * 1024 * 1024
+  const parts = blob.size <= SPAN * 2 ? [blob] : [blob.slice(0, SPAN), blob.slice(blob.size - SPAN)]
+  for (const p of parts) {
+    const bytes = new Uint8Array(await p.arrayBuffer())
+    if (LOCATION_MARKS.some((m) => hasMark(bytes, m))) return 'あり'
+  }
+  return 'なし'
+}
+
 // ---- C. 保存・Instagramへ ----
 function resultFile() {
   return new File([result!.blob], result!.name, { type: result!.blob.type })
@@ -431,4 +563,4 @@ $('copy-log').onclick = async () => {
   setStatus('c-status', '記録をコピーしました')
 }
 
-deviceInfo()
+deviceInfo().then(checkLastE)
