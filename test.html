@@ -45,6 +45,15 @@
       </section>
 
       <section>
+        <h2>D. カードと動画を1本につなぐ</h2>
+        <p class="muted">表紙（2秒）→ 動画（1本5秒まで）→ 最後のカード（4秒）。動画を選ばないときは、仮の動画を2回使います。</p>
+        <label class="file">動画を選ぶ（猫以外・複数可）<input type="file" id="d-files" accept="video/*" multiple /></label>
+        <div class="status" id="d-source">選んだ動画：なし（仮の動画を使います）</div>
+        <button id="d1">1本につなぐ</button>
+        <div class="status" id="d-status"></div>
+      </section>
+
+      <section>
         <h2>できた動画</h2>
         <div class="status" id="out-label">まだありません</div>
         <video id="out" controls playsinline muted></video>

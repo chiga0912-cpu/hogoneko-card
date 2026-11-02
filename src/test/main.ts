@@ -70,9 +70,11 @@ function drawCards(ctx: CanvasRenderingContext2D, t: number) {
   let start = 0
   let i = 0
   while (i < CARDS.length - 1 && t >= start + CARDS[i].sec) start += CARDS[i++].sec
-  const c = CARDS[i]
-  const p = Math.min(1, (t - start) / c.sec)
+  drawCard(ctx, CARDS[i], Math.min(1, (t - start) / CARDS[i].sec))
+}
 
+// カード1枚。p = 0〜1（そのカードの中での進み具合）
+function drawCard(ctx: CanvasRenderingContext2D, c: (typeof CARDS)[number], p: number) {
   // 写真の代わり：ゆっくり大きくなる色の四角（写真の動きのテストも兼ねる）
   ctx.fillStyle = '#222'
   ctx.fillRect(0, 0, W, H)
@@ -152,27 +154,38 @@ async function recordCanvas(cv: HTMLCanvasElement, run: (stop: () => void) => vo
   return blob
 }
 
+let lastFrames: number | null = null
+
 // ---- 作り方② 1コマずつ（WebCodecs＋mediabunny） ----
 async function encodeFrames(cv: HTMLCanvasElement, frames: (add: (t: number) => Promise<void>) => Promise<void>) {
   const output = new Output({ format: new Mp4OutputFormat({ fastStart: 'in-memory' }), target: new BufferTarget() })
   const src = new CanvasSource(cv, { codec: 'avc', quality: QUALITY_HIGH })
   output.addVideoTrack(src, { frameRate: FPS })
   await output.start()
-  await frames((t) => src.add(t, 1 / FPS))
+  let count = 0
+  await frames((t) => {
+    count++
+    return src.add(t, 1 / FPS)
+  })
   await output.finalize()
+  lastFrames = count
   return new Blob([output.target.buffer!], { type: 'video/mp4' })
 }
 
 // ---- できた動画 ----
 let result: { blob: Blob; name: string } | null = null
+const runCount: Record<string, number> = {}
 function showResult(blob: Blob, label: string, ms: number) {
   const ext = blob.type.includes('webm') ? 'webm' : 'mp4'
   result = { blob, name: `test-${Date.now()}.${ext}` }
+  const n = (runCount[label] = (runCount[label] ?? 0) + 1)
   const v = $<HTMLVideoElement>('out')
   if (v.src) URL.revokeObjectURL(v.src)
+  v.onloadedmetadata = () => log(`  できた動画の長さ ${v.duration.toFixed(1)}秒（${label} ${n}回目）`)
   v.src = URL.createObjectURL(blob)
-  setStatus('out-label', `${label}：${sec(ms)}・${mb(blob.size)}・${blob.type}`)
-  log(`${label}: かかった時間 ${sec(ms)} / 大きさ ${mb(blob.size)} / 形式 ${blob.type}`)
+  setStatus('out-label', `${label}（${n}回目）：${sec(ms)}・${mb(blob.size)}・${blob.type}`)
+  const frames = lastFrames === null ? '' : ` / コマ数 ${lastFrames}`
+  log(`${label}（${n}回目）: かかった時間 ${sec(ms)} / 大きさ ${mb(blob.size)} / 形式 ${blob.type}${frames}`)
   $<HTMLButtonElement>('c1').disabled = false
   $<HTMLButtonElement>('c2').disabled = false
 }
@@ -180,6 +193,7 @@ function showResult(blob: Blob, label: string, ms: number) {
 async function runTest(statusId: string, label: string, fn: () => Promise<Blob>) {
   document.querySelectorAll('button').forEach((b) => (b.disabled = true))
   setStatus(statusId, '作っています…（画面を閉じないでください）')
+  lastFrames = null
   const t0 = performance.now()
   try {
     const blob = await fn()
@@ -249,24 +263,28 @@ $<HTMLInputElement>('b-file').onchange = (e) => {
 }
 
 // 仮の動画：色が変わり、丸が動く5秒の縦動画
+async function makeFake(hueStart = 0) {
+  const cv = newCanvas()
+  const ctx = cv.getContext('2d')!
+  const blob = await encodeFrames(cv, async (add) => {
+    for (let f = 0; f < 5 * FPS; f++) {
+      const t = f / FPS
+      ctx.fillStyle = `hsl(${(hueStart + t * 60) % 360} 50% 60%)`
+      ctx.fillRect(0, 0, W, H)
+      ctx.fillStyle = '#fff'
+      ctx.beginPath()
+      ctx.arc(W / 2 + Math.sin(t * 2) * 300, 700, 140, 0, Math.PI * 2)
+      ctx.fill()
+      await add(t)
+    }
+  })
+  return new File([blob], 'fake.mp4', { type: 'video/mp4' })
+}
+
 $('b-fake').onclick = async () => {
   setStatus('b-source', '仮の動画を作っています…')
   try {
-    const cv = newCanvas()
-    const ctx = cv.getContext('2d')!
-    const blob = await encodeFrames(cv, async (add) => {
-      for (let f = 0; f < 5 * FPS; f++) {
-        const t = f / FPS
-        ctx.fillStyle = `hsl(${(t * 60) % 360} 50% 60%)`
-        ctx.fillRect(0, 0, W, H)
-        ctx.fillStyle = '#fff'
-        ctx.beginPath()
-        ctx.arc(W / 2 + Math.sin(t * 2) * 300, 700, 140, 0, Math.PI * 2)
-        ctx.fill()
-        await add(t)
-      }
-    })
-    setSource(new File([blob], 'fake.mp4', { type: 'video/mp4' }), '仮の動画（プログラムで作成）')
+    setSource(await makeFake(), '仮の動画（プログラムで作成）')
   } catch (e) {
     setStatus('b-source', `仮の動画を作れませんでした：${(e as Error).message}`)
     log(`B 仮の動画: 失敗 ${(e as Error).message}`)
@@ -317,6 +335,65 @@ $('b2').onclick = () =>
         ctx.drawImage(frame.canvas, 0, 0)
         drawOverlay(ctx)
         await add(frame.timestamp)
+      }
+    })
+  })
+
+// ---- D. カードと動画を1本につなぐ ----
+const CLIP_SEC = 5
+let dFiles: File[] = []
+$<HTMLInputElement>('d-files').onchange = (e) => {
+  dFiles = [...((e.target as HTMLInputElement).files ?? [])]
+  setStatus('d-source', `選んだ動画：${dFiles.length}本（${dFiles.map((f) => mb(f.size)).join('・')}）`)
+}
+
+$('d1').onclick = () =>
+  runTest('d-status', 'Dカード＋動画をつなぐ', async () => {
+    const clips = dFiles.length ? dFiles : [await makeFake(0), await makeFake(180)]
+    log(`D 動画の本数: ${clips.length}（${dFiles.length ? '選んだ動画' : '仮の動画'}）`)
+    const cv = newCanvas()
+    const ctx = cv.getContext('2d')!
+    return encodeFrames(cv, async (add) => {
+      let offset = 0
+      // 表紙（2秒）
+      for (let f = 0; f < CARDS[0].sec * FPS; f++) {
+        drawCard(ctx, CARDS[0], f / (CARDS[0].sec * FPS))
+        await add(offset + f / FPS)
+      }
+      offset += CARDS[0].sec
+
+      // 動画を順に（1本5秒まで。30コマ/秒にそろえる）
+      for (const [k, file] of clips.entries()) {
+        setStatus('d-status', `動画${k + 1}本目をつないでいます…`)
+        const input = new Input({ source: new BlobSource(file), formats: ALL_FORMATS })
+        const track = await input.getPrimaryVideoTrack()
+        if (!track) throw new Error(`${k + 1}本目に動画が見つかりません`)
+        if (!(await track.canDecode())) throw new Error(`${k + 1}本目の形式（${track.codec}）を読めません`)
+        const first = await track.getFirstTimestamp()
+        const len = Math.min(CLIP_SEC, (await track.computeDuration()) - first)
+        const tall = track.displayHeight >= track.displayWidth
+        log(`D ${k + 1}本目: ${track.codec} / ${track.displayWidth}×${track.displayHeight} / 回転 ${track.rotation}° / 使う長さ ${len.toFixed(1)}秒 / ${tall ? '縦' : '横'}`)
+        // 縦の動画は画面いっぱい、横の動画は上下に帯を付けて全体を見せる
+        const sink = new CanvasSink(track, { width: W, height: H, fit: tall ? 'cover' : 'contain', poolSize: 2 })
+        const n = Math.floor(len * FPS)
+        const times = Array.from({ length: n }, (_, f) => first + f / FPS)
+        let f = 0
+        for await (const frame of sink.canvasesAtTimestamps(times)) {
+          ctx.fillStyle = THEME
+          ctx.fillRect(0, 0, W, H)
+          if (frame) ctx.drawImage(frame.canvas, 0, 0)
+          drawOverlay(ctx)
+          await add(offset + f / FPS)
+          f++
+        }
+        offset += n / FPS
+      }
+
+      // 最後のカード（4秒）
+      const last = CARDS[CARDS.length - 1]
+      for (let f = 0; f < last.sec * FPS; f++) {
+        drawCard(ctx, last, f / (last.sec * FPS))
+        await add(offset + f / FPS)
       }
     })
   })
