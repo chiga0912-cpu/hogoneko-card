@@ -23,16 +23,16 @@ npm run dev
 
 ## ライセンス
 - このリポジトリのプログラム（ソースコード）は MITライセンスです（LICENSE）。
-- 次のものは MITライセンスの対象外です。このツールを使ってカードや動画を作る場合を除き、複製、再配布、そのほかの利用はできません。
-  - このツールの画像（イラスト、飾り、アイコン、スクリーンショットなど）
-  - 「nekoto」の名前とキャラクター
+- 次のものは MITライセンスの対象外です。
+  - このツールの画像（イラスト、飾り（Midjourneyで作ったものを含む）、アイコン、スクリーンショットなど）：このツールを使ってカードや動画を作る場合を除き、複製、再配布、そのほかの利用はできません。
+  - 「nekoto」の名前、キャラクター、ロゴ、このツールのロゴ：どのような場合も、複製、再配布、そのほかの利用はできません。シェルターが作るカードや動画にも入りません。
 - シェルターがこのツールに登録したロゴや写真は、そのシェルターのものです。リポジトリには含まれず、そのスマホの中だけに保存されます。
 - 猫の写真はこのリポジトリに含まれていません。
 
 ## License
 - The source code in this repository is licensed under the MIT License (see LICENSE).
-- The following are NOT covered by the MIT License. Except for creating cards and videos with this tool, they may not be copied, redistributed, or otherwise used:
-  - Images of this tool (illustrations, decorations, icons, screenshots, etc.)
-  - The "nekoto" name and character
+- The following are NOT covered by the MIT License.
+  - Images of this tool (illustrations, decorations including those made with Midjourney, icons, screenshots, etc.): except for creating cards and videos with this tool, they may not be copied, redistributed, or otherwise used.
+  - The "nekoto" name, character and logo, and the logo of this tool: they may not be copied, redistributed, or otherwise used in any case. They are not included in the cards or videos that shelters make.
 - Logos and photos that a shelter registers in this tool belong to that shelter. They are not included in this repository and are stored only on that device.
 - No cat photos are included in this repository.
