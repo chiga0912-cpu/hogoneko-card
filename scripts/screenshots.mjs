@@ -21,6 +21,7 @@ const dummy = (color, label) => ({
 })
 
 let failures = 0
+let dialogAnswer = 'yes' // 確認の窓が出たときの答え
 const check = (ok, what) => {
   console.log(ok ? `確認OK: ${what}` : `確認NG: ${what}`)
   if (!ok) failures++
@@ -80,11 +81,93 @@ const iphone = devices['iPhone 15']
   await ctx.close()
 }
 
+// 古い形・壊れた形の仮のデータを入れて開いても、真っ白にならず、名簿が消えないか（見直し A1）
+// 写真は使わない。11/4に公開した最初の形（版の番号なし・項目が足りない）をまねる
+{
+  const ctx = await browser.newContext({ ...iphone })
+  const errors = []
+  let p = await ctx.newPage()
+  p.on('dialog', (d) => d.accept())
+  p.on('pageerror', (e) => errors.push(String(e)))
+  await p.goto(url)
+  await p.getByText('はじめに').waitFor() // ここで保存場所ができている
+  const put = (stores) =>
+    p.evaluate(
+      (stores) =>
+        new Promise((resolve, reject) => {
+          const req = indexedDB.open('hogoneko-card')
+          req.onsuccess = () => {
+            const db = req.result
+            const tx = db.transaction(Object.keys(stores), 'readwrite')
+            for (const [name, items] of Object.entries(stores))
+              for (const [key, value] of items) key === null ? tx.objectStore(name).put(value) : tx.objectStore(name).put(value, key)
+            tx.oncomplete = () => resolve(true)
+            tx.onerror = () => reject(tx.error)
+          }
+          req.onerror = () => reject(req.error)
+        }),
+      stores,
+    )
+  const countCats = () =>
+    p.evaluate(
+      () =>
+        new Promise((resolve) => {
+          const req = indexedDB.open('hogoneko-card')
+          req.onsuccess = () => {
+            const r = req.result.transaction('cats').objectStore('cats').getAll()
+            r.onsuccess = () => resolve(r.result.length)
+          }
+        }),
+    )
+  await put({
+    shelter: [['main', { name: '古い形の会' }]], // ハッシュタグなどの項目がない
+    cats: [
+      [null, { id: 'old-1', name: '古い形の子', updatedAt: 2 }], // 写真も健康の項目もない
+      [null, { id: 'old-2', name: '健康がこわれた子', photos: 'x', vaccine: 'x', age: 3, updatedAt: 1 }],
+      [null, { id: 12345, name: '読めない子' }], // id の形が違う（読めない子）
+    ],
+    drafts: [['main', { cat: { id: 'd-1', name: '途中の子' }, screen: 'cat' }]], // 健康の項目がない途中
+  })
+  await p.reload()
+  await p.getByLabel('名前').waitFor({ timeout: 5000 }).catch(() => {})
+  check((await p.getByLabel('名前').inputValue().catch(() => '')) === '途中の子', '古い形の「入力の途中」でも、真っ白にならずに入力画面が開く')
+  await p.screenshot({ path: join(outDir, '0h_古い形_途中.png') })
+  await p.getByRole('button', { name: '戻る' }).click()
+  await p.getByText('新しい子を紹介').waitFor()
+  check(await p.getByText('読めなかった子が1匹います').isVisible(), '読めなかった子がいると、ホームで「読めなかった子が1匹います」と知らせる')
+  check(await p.getByText('2匹').isVisible(), '読めた子（2匹）は名簿に出る')
+  await p.screenshot({ path: join(outDir, '0i_古い形_ホーム.png') })
+  await p.getByRole('button', { name: /名簿から選ぶ/ }).click()
+  await p.getByRole('button', { name: /健康がこわれた子/ }).first().click()
+  await p.getByLabel('名前').waitFor()
+  check((await p.getByLabel('名前').inputValue()) === '健康がこわれた子', '健康の項目がこわれた子を名簿から選んでも、真っ白にならずに開く')
+  // 写真を4枚選ぶと、3枚までと知らせる（見直し A11）
+  await p.locator('input[type=file]').setInputFiles(['写真1', '写真2', '写真3', '写真4'].map((l) => dummy('#c9a27e', l)))
+  await p.getByText('最初の3枚を入れました').waitFor({ timeout: 3000 }).catch(() => {})
+  check(await p.getByText('写真は3枚までです。選んだうちの最初の3枚を入れました').isVisible(), '写真を4枚選ぶと、3枚までと知らせる')
+  // 入力の途中を、こわれた形にして開き直す
+  // （開いたまま書き換えると、閉じるときの自動保存で上書きされるので、一度閉じてから、アプリではないページで書き換える）
+  await p.waitForTimeout(600)
+  await p.close()
+  p = await ctx.newPage()
+  p.on('pageerror', (e) => errors.push(String(e)))
+  await p.goto(url + '/favicon.svg')
+  await put({ drafts: [['main', 'こわれた途中']] })
+  await p.goto(url)
+  await p.getByText('新しい子を紹介').waitFor({ timeout: 5000 }).catch(() => {})
+  check(await p.getByText('入力の途中の内容が読めなかったので、ホームから始めます').isVisible(), '入力の途中が読めないときは、ホームへ出して知らせる')
+  await p.screenshot({ path: join(outDir, '0j_古い形_途中が読めない.png') })
+  check((await countCats()) === 3, `読めなかった子も消さずに残っている（保存場所に${await countCats()}匹）`)
+  check(!(await p.getByText('プライベートブラウズでは使えません').isVisible()), '理由と違う「プライベートブラウズでは使えません」が出ない')
+  check(errors.length === 0, `画面の途中で止まるエラーが出ない${errors.length ? '：' + errors[0] : ''}`)
+  await ctx.close()
+}
+
 const context = await browser.newContext({ ...iphone })
 // 健康情報を「前に確認した」状態にするため、最初は11/1として動かす（時計だけ変える）
 let page = await context.newPage()
 await page.clock.setFixedTime(new Date('2026-11-01T10:00:00'))
-page.on('dialog', (d) => d.accept())
+page.on('dialog', (d) => (dialogAnswer === 'yes' ? d.accept() : d.dismiss()))
 const shot = async (name, fullPage = false) => {
   await page.waitForTimeout(250)
   await page.screenshot({ path: join(outDir, `${name}.png`), fullPage })
@@ -122,6 +205,14 @@ await shot('1b_登録_入力後', true)
 await page.getByRole('button', { name: '登録して始める' }).click()
 await page.getByText('新しい子を紹介').waitFor()
 await shot('2_ホーム')
+check(await page.getByText('ホーム画面に追加しないと、しばらく開かないときに名簿が消えることがあります').isVisible(), '案内を飛ばした人には、ホームで名簿が消えることがあると知らせる')
+// 開いてすぐ戻っただけなら、「入力の続き」にしない（見直し A9）
+await page.getByRole('button', { name: '新しい子を紹介' }).click()
+await page.getByLabel('名前').waitFor()
+await page.waitForTimeout(500)
+await page.getByRole('button', { name: '戻る' }).click()
+await page.getByText('新しい子を紹介').waitFor()
+check(!(await page.getByText('入力の続き').isVisible()), '開いてすぐ戻っただけなら、「入力の続き」は出ない')
 
 // 3. 入力（未入力で次へ）
 await page.getByRole('button', { name: '新しい子を紹介' }).click()
@@ -168,6 +259,16 @@ await postBox.fill(post + ' ＃追加のタグ')
 check(await page.getByRole('button', { name: '名簿に保存する' }).isDisabled(), '投稿文のハッシュタグが6こになると、先へ進めない')
 await shot('5b_確認_ハッシュタグ6こ')
 await postBox.fill(post)
+// 手で直した投稿文は、［戻る］→［次へ］で黙って消えない（見直し A3）
+await postBox.fill(post + '\n手で直した一文')
+dialogAnswer = 'no'
+await page.getByRole('button', { name: '戻る' }).click()
+await page.getByRole('button', { name: '次へ' }).click()
+check((await postBox.inputValue()).includes('手で直した一文'), '手で直した投稿文は、［戻る］→［次へ］でも残る（作り直すかを聞いて「いいえ」）')
+dialogAnswer = 'yes'
+await page.getByRole('button', { name: '戻る' }).click()
+await page.getByRole('button', { name: '次へ' }).click()
+check((await postBox.inputValue()) === post, '作り直すかを聞いて「はい」なら、入力の内容で作り直す')
 await page.getByRole('button', { name: '名簿に保存する' }).click()
 await page.getByText('名簿に保存しました').waitFor()
 await shot('6_保存_仮')
@@ -175,7 +276,7 @@ await shot('6_保存_仮')
 // 7. タブを閉じて開き直しても、登録と名簿が残るか
 await page.close()
 page = await context.newPage()
-page.on('dialog', (d) => d.accept())
+page.on('dialog', (d) => (dialogAnswer === 'yes' ? d.accept() : d.dismiss()))
 // 1か月後（12/2）に開いた、という形にする
 await page.clock.setFixedTime(new Date('2026-12-02T10:00:00'))
 await page.goto(url)
@@ -208,6 +309,9 @@ check(await page.getByText('1匹').isVisible(), '同じ子を保存し直して�
 // 10. 保存の状態の表示
 await page.getByRole('button', { name: 'シェルター情報を直す' }).click()
 await shot('10_シェルター情報', true)
+// 「#保護猫#里親募集」のように続けて書いても、2こに分ける（見直し A4。保存はしない）
+await page.getByLabel('いつものハッシュタグ').fill('#保護猫#里親募集')
+check(await page.getByText('2こ', { exact: true }).isVisible(), '「#保護猫#里親募集」と続けて書いても、2こと数える')
 console.log('表示:', await page.locator('.status-line').innerText())
 
 await browser.close()
