@@ -135,7 +135,10 @@ const seenWithoutScroll = async (p, loc) => {
             const db = req.result
             const tx = db.transaction(Object.keys(stores), 'readwrite')
             for (const [name, items] of Object.entries(stores))
-              for (const [key, value] of items) key === null ? tx.objectStore(name).put(value) : tx.objectStore(name).put(value, key)
+              for (const [key, value] of items) {
+                if (key === null) tx.objectStore(name).put(value)
+                else tx.objectStore(name).put(value, key)
+              }
             tx.oncomplete = () => resolve(true)
             tx.onerror = () => reject(tx.error)
           }
