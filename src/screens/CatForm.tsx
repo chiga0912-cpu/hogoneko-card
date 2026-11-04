@@ -21,21 +21,33 @@ type Props = {
   onChange: (update: (c: Cat) => Cat) => void
   onBack: () => void
   onNext: () => void
+  autosaveFailed?: boolean // 入力の途中を残せなかった
 }
 
 type HealthKey = 'vaccine' | 'neuter' | 'virusTest'
 
 // 入力（1画面）。並びは SPEC 2.2 のとおり
-export default function CatForm({ cat, fromRoster, onChange, onBack, onNext }: Props) {
+export default function CatForm({ cat, fromRoster, onChange, onBack, onNext, autosaveFailed }: Props) {
   const [showErrors, setShowErrors] = useState(false)
+  const [photoNote, setPhotoNote] = useState('')
   const set = <K extends keyof Cat>(key: K, value: Cat[K]) => onChange((c) => ({ ...c, [key]: value }))
   const photoUrls = useBlobUrls(cat.photos)
 
   const addPhotos = async (files: FileList | null) => {
     if (!files) return
-    const picked = Array.from(files).slice(0, MAX_PHOTOS - cat.photos.length)
-    const copies = await Promise.all(picked.map(copyBlob))
-    onChange((c) => ({ ...c, photos: [...c.photos, ...copies].slice(0, MAX_PHOTOS) }))
+    // 選ぶ欄はこのあと空にされるので、枚数は先に数えておく
+    const total = files.length
+    const room = MAX_PHOTOS - cat.photos.length
+    const picked = Array.from(files).slice(0, room)
+    try {
+      const copies = await Promise.all(picked.map(copyBlob))
+      onChange((c) => ({ ...c, photos: [...c.photos, ...copies].slice(0, MAX_PHOTOS) }))
+      setPhotoNote(
+        total > room ? `写真は${MAX_PHOTOS}枚までです。選んだうちの最初の${picked.length}枚を入れました。` : '',
+      )
+    } catch {
+      setPhotoNote('写真を読み込めませんでした。もう一度選んでください。')
+    }
   }
 
   const removePhoto = (i: number) => onChange((c) => ({ ...c, photos: c.photos.filter((_, j) => j !== i) }))
@@ -72,6 +84,9 @@ export default function CatForm({ cat, fromRoster, onChange, onBack, onNext }: P
       <TopBar title={fromRoster ? `${cat.name}の紹介` : '新しい子の紹介'} onBack={onBack} />
 
       {showErrors && missing.length > 0 && <p className="alert">まだ入っていません：{missing.join('、')}</p>}
+      {autosaveFailed && (
+        <p className="alert">入力の途中を、スマホの中に残せませんでした。ほかのアプリに移ると、入力が消えることがあります。</p>
+      )}
 
       {/* 1. 写真 */}
       <div className="field">
@@ -111,6 +126,7 @@ export default function CatForm({ cat, fromRoster, onChange, onBack, onNext }: P
             </label>
           )}
         </div>
+        {photoNote && <p className="notice">{photoNote}</p>}
         <small className="muted">1枚目が表紙になります。動画は近日中に選べるようになります</small>
       </div>
 

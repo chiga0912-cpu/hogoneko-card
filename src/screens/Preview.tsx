@@ -14,6 +14,7 @@ type Props = {
 // 確認（仮）。カードと根拠の印は11/5〜11/6に作る。今は決まった形の投稿文だけ
 export default function Preview({ shelter, post, onPostChange, onBack, onSave }: Props) {
   const [saving, setSaving] = useState(false)
+  const [saveFailed, setSaveFailed] = useState(false)
   const tagCount = countHashtags(post)
   const tooMany = tagCount > MAX_HASHTAGS
   return (
@@ -39,13 +40,21 @@ export default function Preview({ shelter, post, onPostChange, onBack, onSave }:
         <small className="muted">入れた項目を決まった形に並べた文章です。AIで整えるのは次の段階です</small>
       </label>
 
+      {saveFailed && <p className="alert">名簿に保存できませんでした。もう一度押してください。</p>}
+
       <div className="bottom-bar">
         <button
           className="btn btn-primary btn-big"
           disabled={saving || tooMany}
           onClick={async () => {
             setSaving(true)
-            await onSave()
+            setSaveFailed(false)
+            try {
+              await onSave()
+            } catch {
+              setSaveFailed(true)
+              setSaving(false)
+            }
           }}
         >
           名簿に保存する

@@ -19,13 +19,21 @@ export default function ShelterForm({ initial, first, onSave, onBack }: Props) {
   const [venuesText, setVenuesText] = useState((initial?.venues ?? []).join('\n'))
   const [showError, setShowError] = useState(false)
   const [saving, setSaving] = useState(false)
+  const [saveFailed, setSaveFailed] = useState(false)
+  const [logoFailed, setLogoFailed] = useState(false)
   const logoUrl = useBlobUrl(s.logo)
   const set = <K extends keyof Shelter>(key: K, value: Shelter[K]) => setS((prev) => ({ ...prev, [key]: value }))
   const tags = parseHashtags(tagsText)
 
   const pickLogo = async (files: FileList | null) => {
     const file = files?.[0]
-    if (file) set('logo', await copyBlob(file))
+    if (!file) return
+    try {
+      set('logo', await copyBlob(file))
+      setLogoFailed(false)
+    } catch {
+      setLogoFailed(true)
+    }
   }
 
   const save = async () => {
@@ -35,7 +43,9 @@ export default function ShelterForm({ initial, first, onSave, onBack }: Props) {
       return
     }
     setSaving(true)
-    await onSave({
+    setSaveFailed(false)
+    try {
+      await onSave({
       ...s,
       name: s.name.trim(),
       hashtags: tags,
@@ -43,7 +53,10 @@ export default function ShelterForm({ initial, first, onSave, onBack }: Props) {
         .split('\n')
         .map((v) => v.trim())
         .filter(Boolean),
-    })
+      })
+    } catch {
+      setSaveFailed(true)
+    }
     setSaving(false)
   }
 
@@ -77,6 +90,7 @@ export default function ShelterForm({ initial, first, onSave, onBack }: Props) {
 
       <div className="field">
         <span>ロゴ</span>
+        {logoFailed && <p className="alert">ロゴを読み込めませんでした。もう一度選んでください。</p>}
         <div className="logo-row">
           {logoUrl && <img className="logo-thumb" src={logoUrl} alt="ロゴ" />}
           <label className="btn btn-small">
@@ -144,6 +158,8 @@ export default function ShelterForm({ initial, first, onSave, onBack }: Props) {
       </label>
 
       {isStandalone() && <p className="icon-warning">{ICON_WARNING}</p>}
+
+      {saveFailed && <p className="alert">保存できませんでした。もう一度押してください。</p>}
 
       {/* 確認用の灰色の文字。本番（スタッフさんに渡す版）では出さない */}
       {import.meta.env.VITE_SHOW_CHECK === '1' && <StorageStatus />}
