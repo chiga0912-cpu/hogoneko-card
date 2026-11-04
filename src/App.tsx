@@ -24,6 +24,24 @@ function guideSkipped(): boolean {
 // 初めて開いた人に、ホーム画面に追加する案内を出すか
 const needsGuide = () => detectBrowser() !== 'not-ios' && !isStandalone() && !guideSkipped()
 
+// 何か1つでも入れたか（開いてすぐ戻っただけなら「入力の途中」にしない）
+const hasContent = (c: Cat) => {
+  const blank = '未確認'
+  return (
+    c.photos.length > 0 ||
+    c.clip !== null ||
+    c.name.trim() !== '' ||
+    c.memo.trim() !== '' ||
+    c.goodPoints.length > 0 ||
+    c.carerWords.trim() !== '' ||
+    c.age.mode !== 'unknown' ||
+    c.sex !== blank ||
+    c.vaccine.value !== blank ||
+    c.neuter.value !== blank ||
+    c.virusTest.value !== blank
+  )
+}
+
 export default function App() {
   const [screen, setScreen] = useState<Screen>('loading')
   const [error, setError] = useState('')
@@ -33,6 +51,10 @@ export default function App() {
   const [fromRoster, setFromRoster] = useState(false)
   const [post, setPost] = useState('')
   const [hasDraft, setHasDraft] = useState(false)
+  const [unreadableCats, setUnreadableCats] = useState(0) // 名簿の中で、読めなかった子の数（消さずに残している）
+  const [draftUnreadable, setDraftUnreadable] = useState(false) // 入力の途中が読めなかった
+  const [postEdited, setPostEdited] = useState(false) // 投稿文を手で直したか
+  const [autosaveFailed, setAutosaveFailed] = useState(false) // 入力の途中を残せなかった
 
   const go = (next: Screen) => {
     setScreen(next)
@@ -44,25 +66,32 @@ export default function App() {
     void db.requestPersist()
     ;(async () => {
       try {
-        const [s, list, saved] = await Promise.all([db.loadShelter(), db.loadCats(), db.loadDraft()])
-        setCats(list)
+        // 1つずつ読む。名簿や途中の1件が読めなくても、ほかは使えるようにする（db.ts で形をそろえる）
+        const s = await db.loadShelter()
+        const list = await db.loadCats()
+        const saved = await db.loadDraft()
+        setCats(list.cats)
+        setUnreadableCats(list.unreadable)
         if (!s) {
           setScreen(needsGuide() ? 'guide' : 'welcome')
           return
         }
         setShelter(s)
-        if (saved) {
+        if (saved === 'unreadable') {
+          setDraftUnreadable(true)
+        } else if (saved) {
           // 入力の途中で読み込み直されたときは、その画面に戻す
-          setCat({ ...saved.draft.cat, photos: saved.photos })
+          setCat(saved.cat)
           setFromRoster(saved.draft.fromRoster)
           setPost(saved.draft.post)
+          setPostEdited(saved.draft.postEdited)
           setHasDraft(true)
           setScreen(saved.draft.screen)
           return
         }
         setScreen('home')
       } catch (e) {
-        setError(String(e))
+        setError(e instanceof db.OpenError ? 'open' : String(e))
       }
     })()
   }, [])
@@ -73,21 +102,32 @@ export default function App() {
   const timer = useRef<number | undefined>(undefined)
   const flush = useCallback(() => {
     window.clearTimeout(timer.current)
-    if (latest.current) void db.saveDraft(latest.current)
+    if (!latest.current) return
+    setHasDraft(true)
+    db.saveDraft(latest.current).then(
+        () => setAutosaveFailed(false),
+        () => setAutosaveFailed(true),
+      )
   }, [])
 
+  // 名簿から選んだ子か、何か1つでも入れたときだけ「入力の途中」として残す
+  const worthKeeping = editing && (fromRoster || hasContent(cat))
   useEffect(() => {
-    if (!editing) return
+    if (!worthKeeping) return
     const { photos: _photos, ...rest } = cat
-    latest.current = { cat: rest, fromRoster, screen, post }
+    latest.current = { cat: rest, fromRoster, screen: screen as 'cat' | 'preview', post, postEdited }
     window.clearTimeout(timer.current)
     timer.current = window.setTimeout(flush, 300)
-  }, [cat, fromRoster, screen, post, editing, flush])
+  }, [cat, fromRoster, screen, post, postEdited, worthKeeping, flush])
 
   // 写真は大きいので、変わったときだけ書く
   useEffect(() => {
-    if (editing) void db.saveDraftPhotos(cat.photos)
-  }, [cat.photos, editing])
+    if (worthKeeping)
+      db.saveDraftPhotos(cat.photos).then(
+        () => setAutosaveFailed(false),
+        () => setAutosaveFailed(true),
+      )
+  }, [cat.photos, worthKeeping])
 
   // LINEなどに移る瞬間に、待たずに書く
   useEffect(() => {
@@ -107,15 +147,17 @@ export default function App() {
     await discardDraft()
     setCat(newCat())
     setFromRoster(false)
-    setHasDraft(true)
+    setPost('')
+    setPostEdited(false)
     go('cat')
   }
 
   const discardDraft = async () => {
     window.clearTimeout(timer.current)
     latest.current = null
-    await db.clearDraft()
     setHasDraft(false)
+    setDraftUnreadable(false)
+    await db.clearDraft()
   }
 
   const pickFromRoster = async (picked: Cat) => {
@@ -123,10 +165,12 @@ export default function App() {
     await discardDraft()
     setCat(picked)
     setFromRoster(true)
-    setHasDraft(true)
+    setPost('')
+    setPostEdited(false)
     go('cat')
   }
 
+  // 保存に失敗したら、呼んだ画面で知らせる（ここでは受け止めない）
   const saveShelter = async (s: Shelter) => {
     await db.saveShelter(s)
     setShelter(s)
@@ -141,19 +185,34 @@ export default function App() {
     setCat(saved)
     go('save')
     await discardDraft()
-    setCats(await db.loadCats())
+    await reloadCats()
+  }
+
+  const reloadCats = async () => {
+    const list = await db.loadCats()
+    setCats(list.cats)
+    setUnreadableCats(list.unreadable)
   }
 
   const removeCat = async (id: string) => {
     await db.deleteCat(id)
-    setCats(await db.loadCats())
+    await reloadCats()
   }
 
   if (error) {
+    // 理由と違う知らせを出さない。名簿は消していないことを伝える
     return (
       <main className="screen">
-        <p className="alert">スマホの中の保存場所が開けませんでした。プライベートブラウズでは使えません。</p>
-        <p className="muted">{error}</p>
+        {error === 'open' ? (
+          <p className="alert">
+            スマホの中の保存場所が開けませんでした。名簿は消していません。アプリを閉じて、開き直してください。
+          </p>
+        ) : (
+          <p className="alert">
+            保存してある内容を読み込めませんでした。名簿は消していません。アプリを閉じて、開き直してください。
+          </p>
+        )}
+        {error !== 'open' && <p className="muted">{error}</p>}
       </main>
     )
   }
@@ -189,6 +248,9 @@ export default function App() {
           shelter={shelter}
           catCount={cats.length}
           draftName={hasDraft ? cat.name || '名前はまだ' : null}
+          unreadableCats={unreadableCats}
+          draftUnreadable={draftUnreadable}
+          storageWarning={guideSkipped() && !isStandalone() && detectBrowser() !== 'not-ios'}
           onNew={startNew}
           onContinue={() => go('cat')}
           go={go}
@@ -204,16 +266,31 @@ export default function App() {
           onChange={setCat}
           onBack={() => go('home')}
           onNext={() => {
-            if (shelter) setPost(makeFixedPost(cat, shelter))
+            if (shelter) {
+              const fresh = makeFixedPost(cat, shelter)
+              // 手で直した投稿文は、黙って作り直さない（二度書かせないため）
+              if (
+                !postEdited ||
+                post === fresh ||
+                window.confirm('投稿文を手で直しています。入力の内容で作り直しますか？\n（作り直すと、直した文は消えます）')
+              ) {
+                setPost(fresh)
+                setPostEdited(false)
+              }
+            }
             go('preview')
           }}
+          autosaveFailed={autosaveFailed}
         />
       )}
       {screen === 'preview' && shelter && (
         <Preview
           shelter={shelter}
           post={post}
-          onPostChange={setPost}
+          onPostChange={(p) => {
+            setPost(p)
+            setPostEdited(true)
+          }}
           onBack={() => go('cat')}
           onSave={saveToRoster}
         />
