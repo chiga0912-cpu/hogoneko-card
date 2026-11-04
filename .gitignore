@@ -28,6 +28,8 @@ dist-ssr
 .env.*
 .dev.vars
 .wrangler
+# Claude Code の自分だけの設定
+.claude/settings.local.json
 
 # 写真・撮影結果は上げない（猫の写真はリポジトリに入れない）
 screenshots/

@@ -1,4 +1,4 @@
-// iPhoneの画面サイズで各画面を撮影し、名簿が残るかを確かめる
+// iPhoneとAndroidの画面サイズで各画面を撮影し、名簿が残るかを確かめる
 // 使い方：npm run dev を動かした状態で
 //   node scripts/screenshots.mjs <保存先フォルダ> [アドレス]
 //   ENGINE=webkit を付けると、Safariと同じ仕組み（WebKit）で動かす
@@ -54,6 +54,29 @@ const iphone = devices['iPhone 15']
   check(await p.getByText('このアイコンを消すと、名簿も消えます').isVisible(), 'ホーム画面のアプリの登録画面に、アイコンを消すと名簿も消えると出る')
   check((await p.locator('.status-line').innerText()).includes('ホーム画面のアプリ'), '確認用の文字に「ホーム画面のアプリ」と出る')
   await p.screenshot({ path: join(outDir, '0c_ホーム画面のアプリ_登録.png'), fullPage: true })
+  await ctx.close()
+}
+
+// Androidの画面の大きさ（Pixel 7・幅412px）で、横にはみ出さないか
+// 画面の大きさを確かめるだけ。Androidの実機で確かめたことにはしない
+// Androidの案内（SPEC 2.0）はまだ作っていないので、今は登録から始まる
+{
+  const ctx = await browser.newContext({ ...devices['Pixel 7'] })
+  const p = await ctx.newPage()
+  const fits = () => p.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)
+  await p.goto(url)
+  await p.getByText('シェルター登録').first().waitFor()
+  await p.screenshot({ path: join(outDir, '0d_Android_登録.png'), fullPage: true })
+  check(await fits(), 'Androidの画面の大きさ（412px）で、登録画面が横にはみ出さない')
+  await p.getByLabel('団体名').fill('テスト保護猫の会')
+  await p.getByRole('button', { name: '登録して始める' }).click()
+  await p.getByText('新しい子を紹介').waitFor()
+  await p.screenshot({ path: join(outDir, '0f_Android_ホーム.png') })
+  check(await fits(), 'Androidの画面の大きさで、ホームが横にはみ出さない')
+  await p.getByRole('button', { name: '新しい子を紹介' }).click()
+  await p.getByLabel('名前').waitFor()
+  await p.screenshot({ path: join(outDir, '0g_Android_入力.png'), fullPage: true })
+  check(await fits(), 'Androidの画面の大きさで、入力画面が横にはみ出さない')
   await ctx.close()
 }
 
