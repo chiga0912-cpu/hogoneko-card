@@ -8,6 +8,7 @@ export const ICON_WARNING = 'このアイコンを消すと、名簿も消えま
 type Props = { browser: Browser; onSkip: () => void }
 
 // 初めて開いたとき、シェルター登録の前に出す。
+// Safariの手順は、iPhone 15 Plus・iOS 27.0.1 の本物の画面に合わせた（DEVLOG 11/4）
 // ホーム画面から開くと、名簿が消えにくくなる。Safariとホーム画面のアプリでは中身が別々なので、登録の前に案内する
 export default function InstallGuide({ browser, onSkip }: Props) {
   return (
@@ -22,12 +23,14 @@ export default function InstallGuide({ browser, onSkip }: Props) {
       {browser === 'safari' && (
         <ol className="steps">
           <li>
-            画面の下（または上）の<b>共有ボタン</b>（四角から矢印が出ている形）を押す
-            <small>見つからないときは「…」を押すと出てきます</small>
+            画面下のアドレス欄の左にある<b>横線3本</b>のボタンを押す
+            <small>横線3本が見つからないときは「…」を探してください</small>
           </li>
           <li>
-            <b>「ホーム画面に追加」</b>を押す
-            <small>見つからないときは、下へずらして探してください</small>
+            <b>「共有」</b>を押す
+          </li>
+          <li>
+            <b>「表示を増やす」</b>を押して、<b>「ホーム画面に追加」</b>を押す
           </li>
           <li>
             右上の<b>「追加」</b>を押す
@@ -37,6 +40,11 @@ export default function InstallGuide({ browser, onSkip }: Props) {
             <small className="warn">{ICON_WARNING}</small>
           </li>
         </ol>
+      )}
+      {browser === 'safari' && (
+        <p className="muted guide-private">
+          プライベートブラウズでは「ホーム画面に追加」が出ないことがあります。ふつうの画面で開いてください。
+        </p>
       )}
 
       {browser === 'chrome' && (

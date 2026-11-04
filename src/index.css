@@ -379,12 +379,12 @@ input[type='color'] {
   counter-reset: step;
   display: flex;
   flex-direction: column;
-  gap: 10px;
+  gap: 8px;
 }
 .steps li {
   counter-increment: step;
   position: relative;
-  padding: 14px 14px 14px 52px;
+  padding: 10px 12px 10px 50px;
   border-radius: 14px;
   background: var(--surface);
   line-height: 1.6;
@@ -393,7 +393,7 @@ input[type='color'] {
   content: counter(step);
   position: absolute;
   left: 14px;
-  top: 14px;
+  top: 11px;
   width: 26px;
   height: 26px;
   border-radius: 99px;
@@ -412,6 +412,10 @@ input[type='color'] {
   margin-top: 4px;
   color: #a33a22;
   font-weight: 700;
+}
+.guide-private {
+  margin: -4px 0 16px;
+  line-height: 1.6;
 }
 .note-box {
   margin: 0 0 16px;

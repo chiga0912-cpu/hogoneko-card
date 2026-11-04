@@ -74,6 +74,15 @@ await page.getByText('はじめに').waitFor()
 await shot('0a_案内_Safari', true)
 check(await page.getByText('ブラウザごと').isVisible(), '案内に「ブラウザごとに分かれて残る」が出る')
 check(await page.getByText('このアイコンを消すと、名簿も消えます').isVisible(), '案内に「アイコンを消すと名簿も消える」が出る')
+check(await page.getByText('横線3本のボタン').isVisible() && await page.getByText('「表示を増やす」').isVisible(), 'Safariの手順が、本物の画面の流れ（横線3本 → 共有 → 表示を増やす）になっている')
+check(await page.getByText('プライベートブラウズでは「ホーム画面に追加」が出ないことがあります').isVisible(), 'Safariでは、プライベートブラウズの注意が出る')
+{
+  // スクロールしなくても、アイコンの注意が下のボタンに隠れずに見えるか
+  const box = await page.getByText('このアイコンを消すと、名簿も消えます').boundingBox()
+  const barTop = (await page.locator('.bottom-bar button').boundingBox()).y
+  check(box && box.y + box.height <= barTop, `スクロールしなくても、アイコンの注意が見える（注意の下端 ${Math.round(box.y + box.height)} ／ ボタンの上端 ${Math.round(barTop)}）`)
+  await page.screenshot({ path: join(outDir, '0e_案内_Safari_画面のまま.png') })
+}
 await page.getByRole('button', { name: '追加せずに、このまま使う' }).click()
 
 // 2. シェルター登録（団体名だけ必須）
