@@ -1,16 +1,17 @@
 import { useState } from 'react'
-import { TopBar } from './ShelterForm'
+import type { Cat } from '../types'
 
-type Props = { post: string; onBack: () => void; onHome: () => void }
+type Props = { cat: Cat; post: string; onHome: () => void; onRoster: () => void }
 
-export default function Save({ post, onBack, onHome }: Props) {
+// 保存（仮）。動画と共有の画面は11/5に作る
+export default function Save({ cat, post, onHome, onRoster }: Props) {
   const [copied, setCopied] = useState(false)
 
   const copy = async () => {
     try {
       await navigator.clipboard.writeText(post)
     } catch {
-      // 古いブラウザ向けの予備
+      // https でないときなどの予備
       const ta = document.createElement('textarea')
       ta.value = post
       document.body.appendChild(ta)
@@ -19,34 +20,29 @@ export default function Save({ post, onBack, onHome }: Props) {
       ta.remove()
     }
     setCopied(true)
-    setTimeout(() => setCopied(false), 2000)
   }
 
   return (
     <main className="screen">
-      <TopBar title="保存" onBack={onBack} />
+      <header className="hero hero-small">
+        <h1>名簿に保存しました ✓</h1>
+        <p className="hero-lead">{cat.name}の内容は、このスマホの中に残りました。次からは「名簿から選ぶ」で開けます。</p>
+      </header>
 
       <section className="card-box">
-        <h3>1. 画像をスマホに保存</h3>
-        <button className="btn btn-big" disabled>
-          画像を保存
-          <span className="soon">11/3につくります</span>
-        </button>
-      </section>
-
-      <section className="card-box">
-        <h3>2. 投稿文をコピー</h3>
+        <h3>投稿文</h3>
         <button className="btn btn-primary btn-big" onClick={copy}>
           {copied ? 'コピーしました ✓' : '投稿文をコピー'}
         </button>
-        <p className="muted">Instagramのリール編集で画像を並べ、投稿文を貼りつけてください。</p>
+        <p className="muted">動画を作って、Instagramへ渡す画面は、これから作ります。</p>
       </section>
 
-      <p className="note">投稿の前に、内容がまちがっていないか必ず確認してください。</p>
-
-      <div className="bottom-bar">
+      <div className="stack">
+        <button className="btn btn-big" onClick={onRoster}>
+          名簿を見る
+        </button>
         <button className="btn btn-ghost btn-big" onClick={onHome}>
-          はじめに戻る
+          ホームへ
         </button>
       </div>
     </main>

@@ -1,0 +1,10 @@
+{
+  "name": "保護猫カード（仮）",
+  "short_name": "保護猫カード",
+  "lang": "ja",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "background_color": "#f6efe6",
+  "theme_color": "#f6efe6"
+}

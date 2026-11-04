@@ -1,42 +1,62 @@
 import { useState } from 'react'
-import { MAX_PHOTOS, type Cat, type Health } from '../types'
+import {
+  AGE_STAGES,
+  MAX_PHOTOS,
+  NEUTERS,
+  SEXES,
+  VACCINES,
+  VIRUS_TESTS,
+  type Age,
+  type Cat,
+  type Health,
+} from '../types'
+import { copyBlob } from '../db'
+import { ageText, fromMonthValue, jpDate, toMonthValue, todayString } from '../lib/age'
+import { useBlobUrls } from '../lib/useBlobUrls'
 import { TopBar } from './ShelterForm'
 
 type Props = {
   cat: Cat
-  onChange: (c: Cat) => void
+  fromRoster: boolean // 名簿から選んだ子か
+  onChange: (update: (c: Cat) => Cat) => void
   onBack: () => void
   onNext: () => void
 }
 
-export default function CatForm({ cat, onChange, onBack, onNext }: Props) {
+type HealthKey = 'vaccine' | 'neuter' | 'virusTest'
+
+// 入力（1画面）。並びは SPEC 2.2 のとおり
+export default function CatForm({ cat, fromRoster, onChange, onBack, onNext }: Props) {
   const [showErrors, setShowErrors] = useState(false)
-  const set = <K extends keyof Cat>(key: K, value: Cat[K]) => onChange({ ...cat, [key]: value })
+  const set = <K extends keyof Cat>(key: K, value: Cat[K]) => onChange((c) => ({ ...c, [key]: value }))
+  const photoUrls = useBlobUrls(cat.photos)
 
-  const addPhotos = (files: FileList | null) => {
+  const addPhotos = async (files: FileList | null) => {
     if (!files) return
-    const room = MAX_PHOTOS - cat.photos.length
-    const urls = Array.from(files)
-      .slice(0, room)
-      .map((f) => URL.createObjectURL(f))
-    set('photos', [...cat.photos, ...urls])
+    const picked = Array.from(files).slice(0, MAX_PHOTOS - cat.photos.length)
+    const copies = await Promise.all(picked.map(copyBlob))
+    onChange((c) => ({ ...c, photos: [...c.photos, ...copies].slice(0, MAX_PHOTOS) }))
   }
 
-  const removePhoto = (i: number) => {
-    URL.revokeObjectURL(cat.photos[i])
-    set(
-      'photos',
-      cat.photos.filter((_, j) => j !== i),
-    )
-  }
+  const removePhoto = (i: number) => onChange((c) => ({ ...c, photos: c.photos.filter((_, j) => j !== i) }))
+  const makeCover = (i: number) =>
+    onChange((c) => ({ ...c, photos: [c.photos[i], ...c.photos.filter((_, j) => j !== i)] }))
 
-  const missing = [
-    cat.photos.length === 0 && '写真',
-    !cat.name.trim() && '名前',
-    !cat.age.trim() && '年齢',
-    !cat.sex && '性別',
-    !cat.personality.trim() && '性格のひとこと',
-  ].filter(Boolean) as string[]
+  const setAge = (patch: Partial<Age>) => onChange((c) => ({ ...c, age: { ...c.age, ...patch } }))
+
+  // 健康の値を直したら、確認した日を今日にする（「載せる」を変えただけのときは変えない）
+  const setHealth = (key: HealthKey, h: Health<string>) =>
+    onChange((c) => ({
+      ...c,
+      [key]: h,
+      healthCheckedAt: c[key].value !== h.value ? todayString() : c.healthCheckedAt,
+    }))
+
+  const healthKnown = [cat.vaccine, cat.neuter, cat.virusTest].some((h) => h.value !== '未確認')
+  const healthIsOld =
+    fromRoster && healthKnown && cat.healthCheckedAt !== null && cat.healthCheckedAt !== todayString()
+
+  const missing = [cat.photos.length === 0 && '写真', !cat.name.trim() && '名前'].filter(Boolean) as string[]
 
   const next = () => {
     if (missing.length) {
@@ -49,26 +69,29 @@ export default function CatForm({ cat, onChange, onBack, onNext }: Props) {
 
   return (
     <main className="screen">
-      <TopBar title="猫の情報" onBack={onBack} />
+      <TopBar title={fromRoster ? `${cat.name}の紹介` : '新しい子の紹介'} onBack={onBack} />
 
-      {showErrors && missing.length > 0 && (
-        <p className="alert">まだ入っていません：{missing.join('、')}</p>
-      )}
+      {showErrors && missing.length > 0 && <p className="alert">まだ入っていません：{missing.join('、')}</p>}
 
-      <h3 className="section">必ず入れる</h3>
-
+      {/* 1. 写真 */}
       <div className="field">
         <span>
-          写真（{cat.photos.length}/{MAX_PHOTOS}枚）
+          写真（{cat.photos.length}/{MAX_PHOTOS}枚） <em className="req">必須</em>
         </span>
         <div className="photo-grid">
-          {cat.photos.map((url, i) => (
-            <div className="photo" key={url}>
-              <img src={url} alt={`写真${i + 1}`} />
-              <button className="photo-x" onClick={() => removePhoto(i)} aria-label="写真を外す">
+          {cat.photos.map((_, i) => (
+            <div className="photo" key={photoUrls[i]}>
+              <img src={photoUrls[i]} alt={`写真${i + 1}`} />
+              <button className="photo-x" onClick={() => removePhoto(i)} aria-label={`写真${i + 1}を外す`}>
                 ×
               </button>
-              {i === 0 && <span className="photo-tag">表紙</span>}
+              {i === 0 ? (
+                <span className="photo-tag">表紙</span>
+              ) : (
+                <button className="photo-tag photo-tag-btn" onClick={() => makeCover(i)}>
+                  表紙にする
+                </button>
+              )}
             </div>
           ))}
           {cat.photos.length < MAX_PHOTOS && (
@@ -81,88 +104,143 @@ export default function CatForm({ cat, onChange, onBack, onNext }: Props) {
                 multiple
                 hidden
                 onChange={(e) => {
-                  addPhotos(e.target.files)
+                  void addPhotos(e.target.files)
                   e.target.value = ''
                 }}
               />
             </label>
           )}
         </div>
+        <small className="muted">1枚目が表紙になります。動画は近日中に選べるようになります</small>
       </div>
 
+      {/* 2. メッセージ欄 */}
       <label className="field">
-        <span>名前</span>
+        <span>預かりさんからのメッセージ・メモ</span>
+        <textarea
+          rows={5}
+          placeholder="LINEやメールの文章を、ここに貼ってください。自分で書いてもOKです"
+          value={cat.memo}
+          onChange={(e) => set('memo', e.target.value)}
+        />
+        <small className="muted">🎤 キーボードのマイクで話して入れてもOK</small>
+      </label>
+
+      {/* 3. 読み取り（Claudeを入れるまでは押せない） */}
+      <button className="btn btn-big" disabled>
+        メッセージから読み取る
+        <span className="soon">準備中</span>
+      </button>
+      <p className="muted center">今は、下の項目を手で入れてください</p>
+
+      {/* 4. 項目 */}
+      <label className="field">
+        <span>
+          名前 <em className="req">必須</em>
+        </span>
         <input value={cat.name} onChange={(e) => set('name', e.target.value)} />
       </label>
 
-      <label className="field">
+      <div className="field">
         <span>年齢</span>
-        <input
-          placeholder="例：生後3か月、推定2歳"
-          value={cat.age}
-          onChange={(e) => set('age', e.target.value)}
+        <Choices
+          label="年齢の入れ方"
+          options={['不明', '生まれた年月', 'おおよその年代']}
+          value={{ unknown: '不明', birth: '生まれた年月', stage: 'おおよその年代' }[cat.age.mode]}
+          onChange={(v) =>
+            setAge({ mode: v === '生まれた年月' ? 'birth' : v === 'おおよその年代' ? 'stage' : 'unknown' })
+          }
         />
-      </label>
+        {cat.age.mode === 'birth' && (
+          <div className="sub">
+            <input
+              type="month"
+              aria-label="生まれた年月"
+              value={toMonthValue(cat.age)}
+              max={todayString().slice(0, 7)}
+              onChange={(e) => setAge(fromMonthValue(e.target.value))}
+            />
+            <label className="toggle">
+              <input
+                type="checkbox"
+                checked={cat.age.estimated ?? false}
+                onChange={(e) => setAge({ estimated: e.target.checked })}
+              />
+              推定
+            </label>
+            {ageText(cat.age) && <small className="muted">今は「{ageText(cat.age)}」。月齢は自動で増えます</small>}
+          </div>
+        )}
+        {cat.age.mode === 'stage' && (
+          <div className="sub">
+            <Choices
+              label="おおよその年代"
+              options={[...AGE_STAGES]}
+              value={cat.age.stage ?? ''}
+              onChange={(v) => setAge({ stage: v as Age['stage'] })}
+            />
+          </div>
+        )}
+        {cat.age.mode === 'unknown' && <small className="muted">年齢は、カードにも投稿文にも書きません</small>}
+      </div>
 
       <div className="field">
         <span>性別</span>
-        <Choices
-          options={['オス', 'メス']}
-          value={cat.sex}
-          onChange={(v) => set('sex', v as Cat['sex'])}
-        />
+        <Choices label="性別" options={[...SEXES]} value={cat.sex} onChange={(v) => set('sex', v as Cat['sex'])} />
       </div>
 
-      <label className="field">
-        <span>性格のひとこと</span>
-        <input
-          placeholder="例：抱っこが大好きな甘えんぼう"
-          value={cat.personality}
-          onChange={(e) => set('personality', e.target.value)}
-        />
-      </label>
-
-      <h3 className="section">わかれば入れる</h3>
-
-      <label className="field">
-        <span>保護したときの様子</span>
-        <textarea rows={3} value={cat.rescueStory} onChange={(e) => set('rescueStory', e.target.value)} />
-      </label>
-
-      <label className="field">
-        <span>今の様子</span>
-        <textarea rows={3} value={cat.nowStory} onChange={(e) => set('nowStory', e.target.value)} />
-      </label>
-
-      <label className="field">
-        <span>預かりさん・スタッフさんのひとこと</span>
-        <textarea rows={3} value={cat.carerWords} onChange={(e) => set('carerWords', e.target.value)} />
-        <small className="muted">書いた言葉のまま、カードに載せます</small>
-      </label>
-
       <h3 className="section">健康のこと</h3>
+      {healthIsOld && (
+        <div className="notice">
+          <p>
+            健康情報は前回（{jpDate(cat.healthCheckedAt!)}）のものです。
+            <br />
+            今も正しいですか？
+          </p>
+          <button className="btn btn-small" onClick={() => set('healthCheckedAt', todayString())}>
+            今も正しい
+          </button>
+          <small>ちがうときは、下で直してください</small>
+        </div>
+      )}
       <HealthField
         label="ワクチン"
-        options={['済み', '1回目済み', 'まだ']}
+        options={[...VACCINES]}
         health={cat.vaccine}
-        onChange={(h) => set('vaccine', h as Cat['vaccine'])}
+        onChange={(h) => setHealth('vaccine', h)}
       />
       <HealthField
         label="不妊・去勢手術"
-        options={['済み', '予定', 'まだ']}
+        options={[...NEUTERS]}
         health={cat.neuter}
-        onChange={(h) => set('neuter', h as Cat['neuter'])}
+        onChange={(h) => setHealth('neuter', h)}
       />
       <HealthField
         label="猫エイズ・白血病の検査"
-        options={['陰性', '未検査']}
+        options={[...VIRUS_TESTS]}
         health={cat.virusTest}
-        onChange={(h) => set('virusTest', h as Cat['virusTest'])}
+        onChange={(h) => setHealth('virusTest', h)}
       />
+
+      <label className="field">
+        <span>いいところ</span>
+        <textarea
+          rows={4}
+          placeholder={'1行に1つ\n例：ひざの上が大好き\n例：ごはんの時間を教えてくれる'}
+          value={cat.goodPoints.join('\n')}
+          onChange={(e) => set('goodPoints', e.target.value.split('\n'))}
+        />
+      </label>
+
+      <label className="field">
+        <span>預かりさん・スタッフさんのひとこと（なくてもOK）</span>
+        <textarea rows={3} value={cat.carerWords} onChange={(e) => set('carerWords', e.target.value)} />
+        <small className="muted">書いた言葉のまま載せます（書き換えません）</small>
+      </label>
 
       <div className="bottom-bar">
         <button className="btn btn-primary btn-big" onClick={next}>
-          プレビューへ
+          次へ
         </button>
       </div>
     </main>
@@ -170,23 +248,25 @@ export default function CatForm({ cat, onChange, onBack, onNext }: Props) {
 }
 
 function Choices({
+  label,
   options,
   value,
   onChange,
 }: {
+  label: string
   options: string[]
   value: string
   onChange: (v: string) => void
 }) {
   return (
-    <div className="choices">
+    <div className="choices" role="group" aria-label={label}>
       {options.map((o) => (
         <button
           key={o}
           type="button"
           className={`chip ${value === o ? 'chip-on' : ''}`}
           aria-pressed={value === o}
-          onClick={() => onChange(value === o ? '' : o)}
+          onClick={() => onChange(o)}
         >
           {o}
         </button>
@@ -206,18 +286,24 @@ function HealthField({
   health: Health<string>
   onChange: (h: Health<string>) => void
 }) {
+  const unknown = health.value === '未確認'
   return (
     <div className="field health">
       <span>{label}</span>
-      <Choices options={options} value={health.value} onChange={(v) => onChange({ ...health, value: v })} />
-      <label className="toggle">
+      <Choices
+        label={label}
+        options={options}
+        value={health.value}
+        onChange={(v) => onChange({ value: v, show: v === '未確認' ? false : health.show })}
+      />
+      <label className={`toggle ${unknown ? 'toggle-off' : ''}`}>
         <input
           type="checkbox"
-          checked={health.showOnCard}
-          disabled={!health.value}
-          onChange={(e) => onChange({ ...health, showOnCard: e.target.checked })}
+          checked={health.show && !unknown}
+          disabled={unknown}
+          onChange={(e) => onChange({ ...health, show: e.target.checked })}
         />
-        カードに載せる
+        投稿文に載せる
       </label>
     </div>
   )

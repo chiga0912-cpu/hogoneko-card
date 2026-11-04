@@ -1,57 +1,100 @@
-import type { Shelter } from '../types'
+import { useEffect, useState } from 'react'
+import { emptyShelter, MAX_HASHTAGS, type Shelter } from '../types'
+import { copyBlob, isPersisted } from '../db'
+import { openedAs } from '../lib/browser'
+import { parseHashtags } from '../lib/hashtags'
+import { useBlobUrl } from '../lib/useBlobUrls'
 
 type Props = {
-  shelter: Shelter
-  onChange: (s: Shelter) => void
-  onDone: () => void
+  initial: Shelter | null
+  first: boolean // 初めての登録か（戻るボタンを出さない）
+  onSave: (s: Shelter) => void | Promise<void>
+  onBack: () => void
 }
 
-export default function ShelterForm({ shelter, onChange, onDone }: Props) {
-  const set = <K extends keyof Shelter>(key: K, value: Shelter[K]) =>
-    onChange({ ...shelter, [key]: value })
+export default function ShelterForm({ initial, first, onSave, onBack }: Props) {
+  const [s, setS] = useState<Shelter>(initial ?? emptyShelter())
+  const [tagsText, setTagsText] = useState((initial?.hashtags ?? []).join(' '))
+  const [venuesText, setVenuesText] = useState((initial?.venues ?? []).join('\n'))
+  const [showError, setShowError] = useState(false)
+  const [saving, setSaving] = useState(false)
+  const logoUrl = useBlobUrl(s.logo)
+  const set = <K extends keyof Shelter>(key: K, value: Shelter[K]) => setS((prev) => ({ ...prev, [key]: value }))
+  const tags = parseHashtags(tagsText)
 
-  const pickLogo = (files: FileList | null) => {
+  const pickLogo = async (files: FileList | null) => {
     const file = files?.[0]
-    if (!file) return
-    if (shelter.logoUrl) URL.revokeObjectURL(shelter.logoUrl)
-    set('logoUrl', URL.createObjectURL(file))
+    if (file) set('logo', await copyBlob(file))
+  }
+
+  const save = async () => {
+    if (!s.name.trim()) {
+      setShowError(true)
+      window.scrollTo({ top: 0, behavior: 'smooth' })
+      return
+    }
+    setSaving(true)
+    await onSave({
+      ...s,
+      name: s.name.trim(),
+      hashtags: tags,
+      venues: venuesText
+        .split('\n')
+        .map((v) => v.trim())
+        .filter(Boolean),
+    })
+    setSaving(false)
   }
 
   return (
     <main className="screen">
-      <TopBar title="シェルター情報" onBack={onDone} />
-      <p className="note">最初に一度だけ登録します。毎回のカードと投稿文に入ります。</p>
+      {first ? (
+        <header className="hero hero-small">
+          <h1>シェルター登録</h1>
+          <p className="hero-lead">最初に一度だけ。必ず入れるのは団体名だけです。ほかは、あとからでも入れられます。</p>
+        </header>
+      ) : (
+        <TopBar title="シェルター情報" onBack={onBack} />
+      )}
+
+      {showError && <p className="alert">団体名を入れてください</p>}
 
       <label className="field">
-        <span>団体名</span>
-        <input value={shelter.name} onChange={(e) => set('name', e.target.value)} />
+        <span>
+          団体名 <em className="req">必須</em>
+        </span>
+        <input value={s.name} onChange={(e) => set('name', e.target.value)} />
       </label>
 
       <label className="field">
         <span>テーマ色</span>
         <div className="color-row">
-          <input
-            type="color"
-            value={shelter.themeColor}
-            onChange={(e) => set('themeColor', e.target.value)}
-          />
-          <span className="muted">{shelter.themeColor}</span>
+          <input type="color" value={s.themeColor} onChange={(e) => set('themeColor', e.target.value)} />
+          <span className="muted">カードやボタンの色になります</span>
         </div>
       </label>
 
       <div className="field">
         <span>ロゴ</span>
         <div className="logo-row">
-          {shelter.logoUrl && <img className="logo-thumb" src={shelter.logoUrl} alt="ロゴ" />}
+          {logoUrl && <img className="logo-thumb" src={logoUrl} alt="ロゴ" />}
           <label className="btn btn-small">
-            {shelter.logoUrl ? 'ロゴを変える' : 'ロゴを選ぶ'}
+            {s.logo ? 'ロゴを変える' : 'ロゴを選ぶ'}
             <input
               type="file"
               accept="image/*"
               hidden
-              onChange={(e) => pickLogo(e.target.files)}
+              onChange={(e) => {
+                void pickLogo(e.target.files)
+                e.target.value = ''
+              }}
             />
           </label>
+          {s.logo && (
+            <button type="button" className="btn btn-small btn-ghost" onClick={() => set('logo', null)}>
+              外す
+            </button>
+          )}
         </div>
       </div>
 
@@ -59,8 +102,8 @@ export default function ShelterForm({ shelter, onChange, onDone }: Props) {
         <span>連絡先</span>
         <textarea
           rows={2}
-          placeholder="例：Instagramのメッセージ、電話番号など"
-          value={shelter.contact}
+          placeholder="例：InstagramのDMでお問い合わせください"
+          value={s.contact}
           onChange={(e) => set('contact', e.target.value)}
         />
       </label>
@@ -69,8 +112,8 @@ export default function ShelterForm({ shelter, onChange, onDone }: Props) {
         <span>毎回同じ文章</span>
         <textarea
           rows={3}
-          placeholder="例：予約不要です／当日は連れて帰れません"
-          value={shelter.fixedText}
+          placeholder="例：譲渡会は予約不要です。当日のお渡しはできません。"
+          value={s.fixedText}
           onChange={(e) => set('fixedText', e.target.value)}
         />
       </label>
@@ -80,17 +123,47 @@ export default function ShelterForm({ shelter, onChange, onDone }: Props) {
         <textarea
           rows={2}
           placeholder="#保護猫 #里親募集"
-          value={shelter.hashtags}
-          onChange={(e) => set('hashtags', e.target.value)}
+          value={tagsText}
+          onChange={(e) => setTagsText(e.target.value)}
+        />
+        <small className="muted">
+          {tags.length}こ
+          {tags.length > MAX_HASHTAGS && `。投稿文に入るのは${MAX_HASHTAGS}こまでです（作るときに選べます）`}
+        </small>
+      </label>
+
+      <label className="field">
+        <span>いつもの譲渡会場所</span>
+        <textarea
+          rows={2}
+          placeholder="1行に1つ"
+          value={venuesText}
+          onChange={(e) => setVenuesText(e.target.value)}
         />
       </label>
 
+      <StorageStatus />
+
       <div className="bottom-bar">
-        <button className="btn btn-primary btn-big" onClick={onDone}>
-          保存する
+        <button className="btn btn-primary btn-big" onClick={save} disabled={saving}>
+          {first ? '登録して始める' : '保存する'}
         </button>
       </div>
     </main>
+  )
+}
+
+// 確認用：今どこで開いているか、「消えにくい設定」が通っているか
+function StorageStatus() {
+  const [persisted, setPersisted] = useState<boolean | null | undefined>(undefined)
+  useEffect(() => {
+    void isPersisted().then(setPersisted)
+  }, [])
+  const label = persisted === undefined ? '…' : persisted === null ? '不明' : persisted ? '○' : '×'
+  return (
+    <p className="status-line">
+      開き方：{openedAs()} ／ 消えにくい設定：{label}
+    </p>
   )
 }
 
