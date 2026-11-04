@@ -408,6 +408,11 @@ input[type='color'] {
   color: var(--muted);
   font-size: 13px;
 }
+.steps small.warn {
+  margin-top: 4px;
+  color: #a33a22;
+  font-weight: 700;
+}
 .note-box {
   margin: 0 0 16px;
   padding: 12px 14px;
@@ -462,6 +467,12 @@ input[type='color'] {
   font: inherit;
   font-size: 12px;
   font-weight: 700;
+}
+.icon-warning {
+  margin: 20px 0 0;
+  font-size: 13px;
+  line-height: 1.6;
+  color: var(--muted);
 }
 .status-line {
   margin: 24px 0 0;

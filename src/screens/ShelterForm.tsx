@@ -1,7 +1,8 @@
 import { useEffect, useState } from 'react'
 import { emptyShelter, MAX_HASHTAGS, type Shelter } from '../types'
 import { copyBlob, isPersisted } from '../db'
-import { openedAs } from '../lib/browser'
+import { isStandalone, openedAs } from '../lib/browser'
+import { ICON_WARNING } from './InstallGuide'
 import { parseHashtags } from '../lib/hashtags'
 import { useBlobUrl } from '../lib/useBlobUrls'
 
@@ -142,7 +143,10 @@ export default function ShelterForm({ initial, first, onSave, onBack }: Props) {
         />
       </label>
 
-      <StorageStatus />
+      {isStandalone() && <p className="icon-warning">{ICON_WARNING}</p>}
+
+      {/* 確認用の灰色の文字。本番（スタッフさんに渡す版）では出さない */}
+      {import.meta.env.VITE_SHOW_CHECK === '1' && <StorageStatus />}
 
       <div className="bottom-bar">
         <button className="btn btn-primary btn-big" onClick={save} disabled={saving}>

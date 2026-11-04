@@ -2,6 +2,9 @@ import type { Browser } from '../lib/browser'
 
 export const GUIDE_SKIPPED_KEY = 'install-guide-skipped'
 
+// iPhoneで確かめた結果：アイコンを消して追加し直すと、データは消えていた（DEVLOG 11/4）
+export const ICON_WARNING = 'このアイコンを消すと、名簿も消えます（追加し直しても戻りません）。'
+
 type Props = { browser: Browser; onSkip: () => void }
 
 // 初めて開いたとき、シェルター登録の前に出す。
@@ -29,23 +32,28 @@ export default function InstallGuide({ browser, onSkip }: Props) {
           <li>
             右上の<b>「追加」</b>を押す
           </li>
-          <li>このページを閉じて、ホーム画面にできたアイコンから開く</li>
+          <li>
+            このページを閉じて、ホーム画面にできたアイコンから開く
+            <small className="warn">{ICON_WARNING}</small>
+          </li>
         </ol>
       )}
 
       {browser === 'chrome' && (
         <ol className="steps">
           <li>
-            アドレス欄の右の<b>共有ボタン</b>（四角から矢印が出ている形）を押す
-            <small>見つからないときは、右下の「…」から探してください</small>
+            <b>共有ボタン</b>（四角から矢印が出ている形）を押す
           </li>
           <li>
-            <b>「ホーム画面に追加」</b>を押す
+            出てきた一覧を<b>下までスクロール</b>して、<b>「ホーム画面に追加」</b>を押す
           </li>
           <li>
             <b>「追加」</b>を押す
           </li>
-          <li>このページを閉じて、ホーム画面にできたアイコンから開く</li>
+          <li>
+            このページを閉じて、ホーム画面にできたアイコンから開く
+            <small className="warn">{ICON_WARNING}</small>
+          </li>
         </ol>
       )}
 

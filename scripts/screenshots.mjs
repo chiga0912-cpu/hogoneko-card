@@ -39,7 +39,21 @@ const iphone = devices['iPhone 15']
   await p.goto(url)
   await p.getByText('はじめに').waitFor()
   await p.screenshot({ path: join(outDir, '0b_案内_Chrome.png'), fullPage: true })
-  check(await p.getByText('アドレス欄の右の').isVisible(), 'Chromeでは、Chrome用の手順が出る')
+  check(await p.getByText('下までスクロール').isVisible(), 'Chromeでは、Chrome用の手順（一覧を下までスクロール）が出る')
+  await ctx.close()
+}
+
+// ホーム画面のアイコンから開いたとき（案内は出さない。アイコンを消すと名簿も消えることを知らせる）
+{
+  const ctx = await browser.newContext({ ...iphone })
+  await ctx.addInitScript(() => Object.defineProperty(navigator, 'standalone', { get: () => true }))
+  const p = await ctx.newPage()
+  await p.goto(url)
+  await p.getByText('シェルター登録').first().waitFor()
+  check(!(await p.getByText('はじめに').isVisible()), 'ホーム画面のアプリでは、案内を出さずに登録から始まる')
+  check(await p.getByText('このアイコンを消すと、名簿も消えます').isVisible(), 'ホーム画面のアプリの登録画面に、アイコンを消すと名簿も消えると出る')
+  check((await p.locator('.status-line').innerText()).includes('ホーム画面のアプリ'), '確認用の文字に「ホーム画面のアプリ」と出る')
+  await p.screenshot({ path: join(outDir, '0c_ホーム画面のアプリ_登録.png'), fullPage: true })
   await ctx.close()
 }
 
@@ -59,6 +73,7 @@ await page.goto(url)
 await page.getByText('はじめに').waitFor()
 await shot('0a_案内_Safari', true)
 check(await page.getByText('ブラウザごと').isVisible(), '案内に「ブラウザごとに分かれて残る」が出る')
+check(await page.getByText('このアイコンを消すと、名簿も消えます').isVisible(), '案内に「アイコンを消すと名簿も消える」が出る')
 await page.getByRole('button', { name: '追加せずに、このまま使う' }).click()
 
 // 2. シェルター登録（団体名だけ必須）
