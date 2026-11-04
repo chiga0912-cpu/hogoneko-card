@@ -1,9 +1,10 @@
 import { MAX_HASHTAGS } from '../types'
 
-// 「#保護猫 #里親募集」「保護猫、里親募集」などを、1つずつに分ける。同じものは1つにする
+// 「#保護猫 #里親募集」「保護猫、里親募集」「#保護猫#里親募集」などを、1つずつに分ける。同じものは1つにする
+// 投稿文の中では「#」ごとに数えるので（countHashtags）、登録のときも「#」の前で分ける
 export function parseHashtags(text: string): string[] {
   const tags = text
-    .split(/[\s,、，]+/)
+    .split(/[\s,、，]+|(?=[#＃])/)
     .map((t) => t.replace(/^[#＃]+/, '').trim())
     .filter(Boolean)
     .map((t) => `#${t}`)
