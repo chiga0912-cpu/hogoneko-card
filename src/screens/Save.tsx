@@ -7,19 +7,29 @@ type Props = { cat: Cat; post: string; onHome: () => void; onRoster: () => void 
 export default function Save({ cat, post, onHome, onRoster }: Props) {
   const [copied, setCopied] = useState(false)
 
+  const [copyFailed, setCopyFailed] = useState(false)
+
+  // 本当にコピーできたときだけ「コピーしました ✓」にする
   const copy = async () => {
+    let ok = false
     try {
       await navigator.clipboard.writeText(post)
+      ok = true
     } catch {
       // https でないときなどの予備
       const ta = document.createElement('textarea')
       ta.value = post
       document.body.appendChild(ta)
       ta.select()
-      document.execCommand('copy')
+      try {
+        ok = document.execCommand('copy')
+      } catch {
+        ok = false
+      }
       ta.remove()
     }
-    setCopied(true)
+    setCopied(ok)
+    setCopyFailed(!ok)
   }
 
   return (
@@ -34,6 +44,12 @@ export default function Save({ cat, post, onHome, onRoster }: Props) {
         <button className="btn btn-primary btn-big" onClick={copy}>
           {copied ? 'コピーしました ✓' : '投稿文をコピー'}
         </button>
+        {copyFailed && (
+          <>
+            <p className="alert">コピーできませんでした。下の投稿文を長押しして、コピーしてください。</p>
+            <textarea className="copy-fallback" rows={8} readOnly value={post} onFocus={(e) => e.target.select()} />
+          </>
+        )}
         <p className="muted">動画を作って、Instagramへ渡す画面は、これから作ります。</p>
       </section>
 
