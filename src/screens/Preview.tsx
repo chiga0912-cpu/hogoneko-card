@@ -40,9 +40,9 @@ export default function Preview({ shelter, post, onPostChange, onBack, onSave }:
         <small className="muted">入れた項目を決まった形に並べた文章です。AIで整えるのは次の段階です</small>
       </label>
 
-      {saveFailed && <p className="alert">名簿に保存できませんでした。もう一度押してください。</p>}
-
       <div className="bottom-bar">
+        {/* 押した場所のすぐ上に出す（スクロールしなくても見えるように） */}
+        {saveFailed && <p className="alert bar-alert">名簿に保存できませんでした。もう一度押してください。</p>}
         <button
           className="btn btn-primary btn-big"
           disabled={saving || tooMany}

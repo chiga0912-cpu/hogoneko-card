@@ -328,6 +328,13 @@ input[type='color'] {
   margin: 0 auto;
   display: flex;
 }
+/* 下のボタンのすぐ上に出す知らせ（保存の失敗など） */
+.bottom-bar > .bar-alert {
+  display: block;
+  margin: 0 auto 8px;
+  font-size: 14px;
+  line-height: 1.5;
+}
 
 .loading {
   padding: 40px 16px;

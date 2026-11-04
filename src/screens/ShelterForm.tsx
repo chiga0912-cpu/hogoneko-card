@@ -159,12 +159,12 @@ export default function ShelterForm({ initial, first, onSave, onBack }: Props) {
 
       {isStandalone() && <p className="icon-warning">{ICON_WARNING}</p>}
 
-      {saveFailed && <p className="alert">保存できませんでした。もう一度押してください。</p>}
-
       {/* 確認用の灰色の文字。本番（スタッフさんに渡す版）では出さない */}
       {import.meta.env.VITE_SHOW_CHECK === '1' && <StorageStatus />}
 
       <div className="bottom-bar">
+        {/* 押した場所のすぐ上に出す（スクロールしなくても見えるように） */}
+        {saveFailed && <p className="alert bar-alert">保存できませんでした。もう一度押してください。</p>}
         <button className="btn btn-primary btn-big" onClick={save} disabled={saving}>
           {first ? '登録して始める' : '保存する'}
         </button>

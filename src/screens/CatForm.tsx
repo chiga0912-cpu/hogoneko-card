@@ -84,9 +84,6 @@ export default function CatForm({ cat, fromRoster, onChange, onBack, onNext, aut
       <TopBar title={fromRoster ? `${cat.name}の紹介` : '新しい子の紹介'} onBack={onBack} />
 
       {showErrors && missing.length > 0 && <p className="alert">まだ入っていません：{missing.join('、')}</p>}
-      {autosaveFailed && (
-        <p className="alert">入力の途中を、スマホの中に残せませんでした。ほかのアプリに移ると、入力が消えることがあります。</p>
-      )}
 
       {/* 1. 写真 */}
       <div className="field">
@@ -255,6 +252,10 @@ export default function CatForm({ cat, fromRoster, onChange, onBack, onNext, aut
       </label>
 
       <div className="bottom-bar">
+        {/* どこまでスクロールしていても見えるように、ボタンのすぐ上に出す */}
+        {autosaveFailed && (
+          <p className="alert bar-alert">入力の途中を、スマホの中に残せませんでした。ほかのアプリに移ると、入力が消えることがあります。</p>
+        )}
         <button className="btn btn-primary btn-big" onClick={next}>
           次へ
         </button>
