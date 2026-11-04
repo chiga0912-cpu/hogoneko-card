@@ -22,6 +22,20 @@ const dummy = (color, label) => ({
 
 let failures = 0
 let dialogAnswer = 'yes' // 確認の窓が出たときの答え
+
+// 保存場所（IndexedDB）の、決まった置き場所への書き込みだけを、わざと失敗させる（容量がいっぱいのときの代わり）
+const breakStore = (p, store) =>
+  p.evaluate((store) => {
+    window.__put ??= IDBObjectStore.prototype.put
+    IDBObjectStore.prototype.put = function (...a) {
+      if (this.name === store) throw new DOMException('わざと失敗させた', 'QuotaExceededError')
+      return window.__put.apply(this, a)
+    }
+  }, store)
+const fixStore = (p) =>
+  p.evaluate(() => {
+    if (window.__put) IDBObjectStore.prototype.put = window.__put
+  })
 const check = (ok, what) => {
   console.log(ok ? `確認OK: ${what}` : `確認NG: ${what}`)
   if (!ok) failures++
@@ -29,6 +43,27 @@ const check = (ok, what) => {
 
 const browser = await engine.launch()
 const iphone = devices['iPhone 15']
+// WIDTH=android を付けると、主な流れと古い形のデータの確認を、Androidの画面の大きさ（Pixel 7・幅412px）で動かす。
+// 画面の大きさを変えるだけ（iPhoneのふりのまま）。Androidの実機で確かめたことにはしない
+const pixel = devices['Pixel 7']
+const phone =
+  process.env.WIDTH === 'android'
+    ? { ...iphone, viewport: pixel.viewport, screen: pixel.screen, deviceScaleFactor: pixel.deviceScaleFactor }
+    : iphone
+console.log(`画面の大きさ：${phone.viewport.width}×${phone.viewport.height}（${process.env.WIDTH === 'android' ? 'Androidの幅' : 'iPhone 15'}）`)
+
+// スクロールしなくても見えるか（画面の中にあり、下に固定されたボタンに隠れていない）
+const seenWithoutScroll = async (p, loc) => {
+  const el = await loc.elementHandle({ timeout: 2000 }).catch(() => null)
+  if (!el) return false
+  return p.evaluate((el) => {
+    const r = el.getBoundingClientRect()
+    if (r.height === 0 || r.top < 0 || r.bottom > window.innerHeight) return false
+    const bar = document.querySelector('.bottom-bar')
+    if (bar && !bar.contains(el) && r.bottom > bar.getBoundingClientRect().top) return false
+    return true
+  }, el)
+}
 
 // iPhoneのChromeで初めて開いたとき（Chromeは「CriOS」と名乗る）
 {
@@ -84,7 +119,7 @@ const iphone = devices['iPhone 15']
 // 古い形・壊れた形の仮のデータを入れて開いても、真っ白にならず、名簿が消えないか（見直し A1）
 // 写真は使わない。11/4に公開した最初の形（版の番号なし・項目が足りない）をまねる
 {
-  const ctx = await browser.newContext({ ...iphone })
+  const ctx = await browser.newContext({ ...phone })
   const errors = []
   let p = await ctx.newPage()
   p.on('dialog', (d) => d.accept())
@@ -135,6 +170,7 @@ const iphone = devices['iPhone 15']
   await p.getByRole('button', { name: '戻る' }).click()
   await p.getByText('新しい子を紹介').waitFor()
   check(await p.getByText('読めなかった子が1匹います').isVisible(), '読めなかった子がいると、ホームで「読めなかった子が1匹います」と知らせる')
+  check(await seenWithoutScroll(p, p.getByText('読めなかった子が1匹います')), '「読めなかった子」の知らせは、スクロールしなくても見える')
   check(await p.getByText('2匹').isVisible(), '読めた子（2匹）は名簿に出る')
   await p.screenshot({ path: join(outDir, '0i_古い形_ホーム.png') })
   await p.getByRole('button', { name: /名簿から選ぶ/ }).click()
@@ -145,6 +181,13 @@ const iphone = devices['iPhone 15']
   await p.locator('input[type=file]').setInputFiles(['写真1', '写真2', '写真3', '写真4'].map((l) => dummy('#c9a27e', l)))
   await p.getByText('最初の3枚を入れました').waitFor({ timeout: 3000 }).catch(() => {})
   check(await p.getByText('写真は3枚までです。選んだうちの最初の3枚を入れました').isVisible(), '写真を4枚選ぶと、3枚までと知らせる')
+  check(await seenWithoutScroll(p, p.getByText('写真は3枚までです')), '「写真は3枚まで」の知らせは、スクロールしなくても見える')
+  // 入力の途中を残せないとき（見直し A2）。下までスクロールしていても見えるか
+  await breakStore(p, 'drafts')
+  await p.getByLabel('預かりさん・スタッフさんのひとこと（なくてもOK）').fill('（架空）残せないときの試し')
+  await p.getByText('入力の途中を、スマホの中に残せませんでした').waitFor({ timeout: 3000 }).catch(() => {})
+  check(await seenWithoutScroll(p, p.getByText('入力の途中を、スマホの中に残せませんでした')), '入力の途中を残せないときの知らせが、スクロールしなくても見える（下の方を入力中でも）')
+  await p.screenshot({ path: join(outDir, '0k_途中を残せない.png') })
   // 入力の途中を、こわれた形にして開き直す
   // （開いたまま書き換えると、閉じるときの自動保存で上書きされるので、一度閉じてから、アプリではないページで書き換える）
   await p.waitForTimeout(600)
@@ -156,6 +199,7 @@ const iphone = devices['iPhone 15']
   await p.goto(url)
   await p.getByText('新しい子を紹介').waitFor({ timeout: 5000 }).catch(() => {})
   check(await p.getByText('入力の途中の内容が読めなかったので、ホームから始めます').isVisible(), '入力の途中が読めないときは、ホームへ出して知らせる')
+  check(await seenWithoutScroll(p, p.getByText('入力の途中の内容が読めなかったので')), '「入力の途中が読めなかった」の知らせは、スクロールしなくても見える')
   await p.screenshot({ path: join(outDir, '0j_古い形_途中が読めない.png') })
   check((await countCats()) === 3, `読めなかった子も消さずに残っている（保存場所に${await countCats()}匹）`)
   check(!(await p.getByText('プライベートブラウズでは使えません').isVisible()), '理由と違う「プライベートブラウズでは使えません」が出ない')
@@ -163,7 +207,7 @@ const iphone = devices['iPhone 15']
   await ctx.close()
 }
 
-const context = await browser.newContext({ ...iphone })
+const context = await browser.newContext({ ...phone })
 // 健康情報を「前に確認した」状態にするため、最初は11/1として動かす（時計だけ変える）
 let page = await context.newPage()
 await page.clock.setFixedTime(new Date('2026-11-01T10:00:00'))
@@ -269,9 +313,37 @@ dialogAnswer = 'yes'
 await page.getByRole('button', { name: '戻る' }).click()
 await page.getByRole('button', { name: '次へ' }).click()
 check((await postBox.inputValue()) === post, '作り直すかを聞いて「はい」なら、入力の内容で作り直す')
+// 名簿への保存を、わざと失敗させる（見直し A2）
+await breakStore(page, 'cats')
+await page.getByRole('button', { name: '名簿に保存する' }).click()
+await page.getByText('名簿に保存できませんでした').waitFor({ timeout: 3000 }).catch(() => {})
+check(await page.getByText('名簿に保存できませんでした。もう一度押してください。').isVisible(), '名簿への保存に失敗すると、知らせが出る')
+check(await seenWithoutScroll(page, page.getByText('名簿に保存できませんでした')), '名簿への保存の失敗の知らせは、スクロールしなくても見える')
+check(await page.getByRole('button', { name: '名簿に保存する' }).isEnabled(), '名簿への保存に失敗しても、ボタンが押せる状態に戻る')
+check((await postBox.inputValue()) === post, '名簿への保存に失敗しても、投稿文は消えない')
+await shot('5c_確認_保存の失敗')
+await page.getByRole('button', { name: '戻る' }).click()
+check((await page.getByLabel('名前').inputValue()) === 'テスト' && (await page.locator('.photo img').count()) === 2, '名簿への保存に失敗しても、入力した名前と写真は消えない')
+await page.getByRole('button', { name: '次へ' }).click()
+await fixStore(page)
 await page.getByRole('button', { name: '名簿に保存する' }).click()
 await page.getByText('名簿に保存しました').waitFor()
 await shot('6_保存_仮')
+// コピーを、わざと失敗させる（見直し A10）
+await page.evaluate(() => {
+  Object.defineProperty(navigator, 'clipboard', { value: { writeText: () => Promise.reject(new Error('わざと失敗させた')) }, configurable: true })
+  document.execCommand = () => false
+})
+await page.getByRole('button', { name: '投稿文をコピー' }).click()
+await page.waitForTimeout(200)
+check(!(await page.getByText('コピーしました ✓').isVisible()), 'コピーに失敗すると、「コピーしました ✓」が出ない')
+check(await page.getByText('コピーできませんでした。下の投稿文を長押しして、コピーしてください。').isVisible(), 'コピーに失敗すると、知らせが出る')
+check(await seenWithoutScroll(page, page.getByText('コピーできませんでした')), 'コピーの失敗の知らせは、スクロールしなくても見える')
+check(
+  (await page.locator('.copy-fallback').isVisible()) && (await page.locator('.copy-fallback').inputValue()) === post,
+  'コピーに失敗すると、長押しでコピーできる欄に投稿文が出る',
+)
+await shot('6b_保存_コピーの失敗', true)
 
 // 7. タブを閉じて開き直しても、登録と名簿が残るか
 await page.close()
@@ -312,6 +384,16 @@ await shot('10_シェルター情報', true)
 // 「#保護猫#里親募集」のように続けて書いても、2こに分ける（見直し A4。保存はしない）
 await page.getByLabel('いつものハッシュタグ').fill('#保護猫#里親募集')
 check(await page.getByText('2こ', { exact: true }).isVisible(), '「#保護猫#里親募集」と続けて書いても、2こと数える')
+// シェルター情報の保存を、わざと失敗させる（見直し A2）
+await breakStore(page, 'shelter')
+await page.getByRole('button', { name: '保存する' }).click()
+await page.getByText('保存できませんでした。もう一度押してください。').waitFor({ timeout: 3000 }).catch(() => {})
+check(await page.getByText('保存できませんでした。もう一度押してください。').isVisible(), 'シェルター情報の保存に失敗すると、知らせが出る')
+check(await seenWithoutScroll(page, page.getByText('保存できませんでした。もう一度押してください。')), 'シェルター情報の保存の失敗の知らせは、スクロールしなくても見える')
+check(await page.getByRole('button', { name: '保存する' }).isEnabled(), 'シェルター情報の保存に失敗しても、ボタンが押せる状態に戻る')
+check((await page.getByLabel('いつものハッシュタグ').inputValue()) === '#保護猫#里親募集' && (await page.getByLabel('団体名').inputValue()) === 'テスト保護猫の会', 'シェルター情報の保存に失敗しても、入力した内容は消えない')
+await shot('10b_シェルター情報_保存の失敗')
+await fixStore(page)
 console.log('表示:', await page.locator('.status-line').innerText())
 
 await browser.close()
