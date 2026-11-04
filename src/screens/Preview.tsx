@@ -1,10 +1,87 @@
-import { useState } from 'react'
-import { MAX_HASHTAGS, type Shelter } from '../types'
+import { useEffect, useRef, useState } from 'react'
+import { MAX_HASHTAGS, type Cat, type Shelter } from '../types'
 import { countHashtags } from '../lib/hashtags'
+import { CARD_H, CARD_W, drawCatCard, loadImage, type CardLayout, type CardSize, type TextPosition } from '../lib/card'
 import { TopBar } from './ShelterForm'
+
+const POSITIONS: [TextPosition, string][] = [
+  ['up', '少し上'],
+  ['normal', 'ふつう'],
+  ['down', '少し下'],
+]
+const SIZES: [CardSize, string][] = [
+  ['small', '小'],
+  ['normal', '中'],
+  ['large', '大'],
+]
+
+// 猫カード（SPEC 3.2 の3番目）。写真はスマホの中で描くだけ
+function CatCard({
+  cat,
+  shelter,
+  size,
+  className,
+  onLayout,
+  onClick,
+}: {
+  cat: Cat
+  shelter: Shelter
+  size: CardSize
+  className: string
+  onLayout?: (l: CardLayout) => void
+  onClick: () => void
+}) {
+  const ref = useRef<HTMLCanvasElement>(null)
+  const [layout, setLayout] = useState<CardLayout | null>(null)
+  // 猫カードは写真の2枚目、なければ1枚目（SPEC 3.2）
+  const photoBlob = cat.photos[1] ?? cat.photos[0] ?? null
+  useEffect(() => {
+    let stop = false
+    ;(async () => {
+      const [photo, logo] = await Promise.all([
+        photoBlob ? loadImage(photoBlob).catch(() => null) : null,
+        shelter.logo ? loadImage(shelter.logo).catch(() => null) : null,
+      ])
+      const ctx = ref.current?.getContext('2d')
+      if (stop || !ctx) return
+      const l = drawCatCard(ctx, {
+        photo,
+        logo,
+        name: cat.name,
+        lines: cat.goodPoints,
+        theme: shelter.themeColor,
+        position: cat.textPosition,
+        size,
+      })
+      setLayout(l)
+      onLayout?.(l)
+    })()
+    return () => {
+      stop = true
+    }
+  }, [photoBlob, shelter.logo, shelter.themeColor, cat.name, cat.goodPoints, cat.textPosition, size, onLayout])
+  return (
+    <canvas
+      ref={ref}
+      width={CARD_W}
+      height={CARD_H}
+      className={className}
+      onClick={onClick}
+      data-drawn={layout ? '1' : '0'}
+      data-fits={layout?.fits ? '1' : '0'}
+      data-scale={layout?.scale}
+      data-lines-shown={layout?.linesShown}
+      data-lines-total={layout?.linesTotal}
+      data-contrast={layout?.contrast}
+      aria-label="猫カード（押すと画面いっぱいに出ます）"
+    />
+  )
+}
 
 type Props = {
   shelter: Shelter
+  cat: Cat
+  onCatChange: (update: (c: Cat) => Cat) => void
   post: string
   onPostChange: (s: string) => void
   onBack: () => void
@@ -12,7 +89,10 @@ type Props = {
 }
 
 // 確認（仮）。カードと根拠の印は11/5〜11/6に作る。今は決まった形の投稿文だけ
-export default function Preview({ shelter, post, onPostChange, onBack, onSave }: Props) {
+export default function Preview({ shelter, cat, onCatChange, post, onPostChange, onBack, onSave }: Props) {
+  const [size, setSize] = useState<CardSize>('normal') // 試し用。決まったら外す
+  const [full, setFull] = useState(false)
+  const [layout, setLayout] = useState<CardLayout | null>(null)
   const [saving, setSaving] = useState(false)
   const [saveFailed, setSaveFailed] = useState(false)
   const tagCount = countHashtags(post)
@@ -20,7 +100,51 @@ export default function Preview({ shelter, post, onPostChange, onBack, onSave }:
   return (
     <main className="screen">
       <TopBar title="確認（仮）" onBack={onBack} />
-      <p className="note">カードはこれから作ります。今は投稿文だけ確かめられます。</p>
+      <p className="note">猫カードを1枚だけ作りました。ほかのカードと動画は、これから作ります。</p>
+
+      <section className="card-preview">
+        <CatCard cat={cat} shelter={shelter} size={size} className="card-canvas" onLayout={setLayout} onClick={() => setFull(true)} />
+        <p className="muted center">カードを押すと、画面いっぱいに出ます</p>
+        {layout && layout.linesShown < layout.linesTotal && (
+          <p className="notice">
+            いいところが長くて入りきらないので、最初の{layout.linesShown}行だけ載せました（行の途中では切っていません）。
+          </p>
+        )}
+        {layout && layout.linesShown === layout.linesTotal && layout.scale < 1 && (
+          <p className="notice">いいところが長いので、カードの文字を少し小さくしました。</p>
+        )}
+        {layout && !layout.fits && <p className="alert">名前が長くて、カードに入りきりません。</p>}
+
+        <div className="choices" role="group" aria-label="文字の位置">
+          {POSITIONS.map(([v, label]) => (
+            <button
+              key={v}
+              className={`chip ${cat.textPosition === v ? 'chip-on' : ''}`}
+              onClick={() => onCatChange((c) => ({ ...c, textPosition: v }))}
+            >
+              {label}
+            </button>
+          ))}
+        </div>
+        <div className="choices" role="group" aria-label="文字の大きさ（試し用）">
+          <span className="muted">文字の大きさ（試し用）</span>
+          {SIZES.map(([v, label]) => (
+            <button key={v} className={`chip ${size === v ? 'chip-on' : ''}`} onClick={() => setSize(v)}>
+              {label}
+            </button>
+          ))}
+        </div>
+      </section>
+
+      {full && (
+        <div className="card-full" role="dialog" aria-label="猫カードを画面いっぱいに表示" onClick={() => setFull(false)}>
+          <CatCard cat={cat} shelter={shelter} size={size} className="card-full-canvas" onClick={() => setFull(false)} />
+          <button className="card-close" onClick={() => setFull(false)}>
+            × 閉じる
+          </button>
+          <p className="card-full-hint">画面のどこを押しても閉じます</p>
+        </div>
+      )}
 
       {shelter.hashtags.length > MAX_HASHTAGS && (
         <p className="notice">

@@ -559,3 +559,61 @@ input[type='color'] {
   margin-top: 20px;
   font-size: 13px;
 }
+
+/* 猫カード */
+.card-preview {
+  margin: 0 0 20px;
+}
+.card-canvas {
+  display: block;
+  width: 62%;
+  max-width: 280px;
+  aspect-ratio: 9 / 16;
+  height: auto;
+  margin: 0 auto 6px;
+  border-radius: 12px;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.15);
+  cursor: zoom-in;
+}
+/* 画面いっぱいの表示（リールで見たときの大きさを確かめるため） */
+.card-full {
+  position: fixed;
+  inset: 0;
+  z-index: 50;
+  background: #000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.card-full-canvas {
+  /* 縦横の比（9:16）を崩さずに、画面に入るいちばん大きな大きさ */
+  width: min(100vw, calc(100dvh * 9 / 16));
+  height: auto;
+  aspect-ratio: 9 / 16;
+}
+.card-close {
+  position: absolute;
+  top: calc(12px + env(safe-area-inset-top));
+  right: 12px;
+  padding: 10px 16px;
+  border: 0;
+  border-radius: 999px;
+  background: rgba(0, 0, 0, 0.6);
+  color: #fff;
+  font-size: 16px;
+  font-weight: 700;
+}
+.card-full-hint {
+  /* 左上はロゴの場所なので、下に出す */
+  position: absolute;
+  bottom: calc(16px + env(safe-area-inset-bottom));
+  left: 50%;
+  transform: translateX(-50%);
+  white-space: nowrap;
+  margin: 0;
+  padding: 6px 10px;
+  border-radius: 999px;
+  background: rgba(0, 0, 0, 0.5);
+  color: #fff;
+  font-size: 13px;
+}

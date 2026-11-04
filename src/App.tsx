@@ -286,6 +286,8 @@ export default function App() {
       {screen === 'preview' && shelter && (
         <Preview
           shelter={shelter}
+          cat={cat}
+          onCatChange={setCat}
           post={post}
           onPostChange={(p) => {
             setPost(p)
