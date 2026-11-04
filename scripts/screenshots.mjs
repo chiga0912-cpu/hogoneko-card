@@ -210,6 +210,57 @@ const seenWithoutScroll = async (p, loc) => {
   await ctx.close()
 }
 
+// 猫カード：長い名前・長い「いいところ」・「いいところ」が空・明るいテーマ色（仮の画像）
+{
+  const ctx = await browser.newContext({ ...phone })
+  const p = await ctx.newPage()
+  p.on('dialog', (d) => d.accept())
+  await p.goto(url)
+  await p.getByText('はじめに').waitFor()
+  await p.getByRole('button', { name: '追加せずに、このまま使う' }).click()
+  await p.getByLabel('団体名').fill('テスト保護猫の会')
+  await p.locator('input[type=color]').fill('#fff27a') // 明るいテーマ色
+  await p.getByRole('button', { name: '登録して始める' }).click()
+  await p.getByRole('button', { name: '新しい子を紹介' }).click()
+  await p.locator('input[type=file]').setInputFiles(dummy('#8fa9a3', '写真'))
+  await p.locator('.photo img').first().waitFor()
+  await p.getByLabel('名前').fill('とてもながいなまえのテストねこエリザベス・ミルクティー・ショコラ・ド・マカロン三世')
+  await p
+    .getByLabel('いいところ')
+    .fill(
+      [
+        '（架空）朝はいちばんに起きてきて、台所の前でごはんの時間を知らせてくれる、とても几帳面な子です',
+        '（架空）ほかの猫とも仲よくでき、子猫が来たときは毛づくろいをしてあげる、面倒見のよいお兄さんです',
+        '（架空）抱っこはまだ少し苦手ですが、ひざの上には自分から乗ってきて、そのまま一時間でも眠っています',
+      ].join('\n'),
+    )
+  await p.getByRole('button', { name: '次へ' }).click()
+  const card = p.locator('.card-canvas')
+  await p.locator('.card-canvas[data-drawn="1"]').waitFor()
+  await p.waitForTimeout(300)
+  const a = async (k) => card.getAttribute(k)
+  check((await a('data-fits')) === '1', '長い名前と長い「いいところ」でも、文字がカードからはみ出さない')
+  console.log(
+    `  どう収めたか：文字の大きさ ${Math.round(Number(await a('data-scale')) * 100)}%、いいところ ${await a('data-lines-shown')}/${await a('data-lines-total')}行（行の途中では切らない）`,
+  )
+  check(Number(await a('data-contrast')) >= 4.5, `明るいテーマ色でも、カードの文字が読みやすい（見やすさ ${await a('data-contrast')}）`)
+  await p.screenshot({ path: join(outDir, '5f_猫カード_長い名前と長いいいところ_明るい色.png'), fullPage: true })
+  for (const size of ['大', '小']) {
+    await p.getByRole('group', { name: '文字の大きさ（試し用）' }).getByRole('button', { name: size }).click()
+    await p.waitForTimeout(300)
+    check((await a('data-fits')) === '1', `文字の大きさ「${size}」でも、長い文字がはみ出さない（${Math.round(Number(await a('data-scale')) * 100)}%・${await a('data-lines-shown')}/${await a('data-lines-total')}行）`)
+  }
+  // 「いいところ」が空のとき
+  await p.getByRole('button', { name: '戻る' }).click()
+  await p.getByLabel('名前').fill('テスト')
+  await p.getByLabel('いいところ').fill('')
+  await p.getByRole('button', { name: '次へ' }).click()
+  await p.waitForTimeout(400)
+  check((await a('data-lines-total')) === '0' && (await a('data-lines-shown')) === '0' && (await a('data-fits')) === '1', '「いいところ」が空のときは、カードに空欄を作らない（名前だけ）')
+  await p.screenshot({ path: join(outDir, '5g_猫カード_いいところなし.png'), fullPage: true })
+  await ctx.close()
+}
+
 const context = await browser.newContext({ ...phone })
 // 健康情報を「前に確認した」状態にするため、最初は11/1として動かす（時計だけ変える）
 let page = await context.newPage()
@@ -296,6 +347,36 @@ check((await page.getByLabel('いいところ').inputValue()).includes('ごは�
 // 6. 確認（仮）→ 名簿に保存
 await page.getByRole('button', { name: '次へ' }).click()
 await shot('5_確認_仮')
+// 猫カード（仮の画像）
+{
+  const card = page.locator('.card-canvas')
+  await page.locator('.card-canvas[data-drawn="1"]').waitFor()
+  check((await card.getAttribute('data-fits')) === '1', '猫カードが描かれ、名前とカードの言葉が収まっている')
+  check(Number(await card.getAttribute('data-contrast')) >= 4.5, `カードの文字が読みやすい色（見やすさ ${await card.getAttribute('data-contrast')}。4.5以上）`)
+  await page.getByRole('group', { name: '文字の位置' }).getByRole('button', { name: '少し上' }).click()
+  await page.getByRole('group', { name: '文字の大きさ（試し用）' }).getByRole('button', { name: '大' }).click()
+  await page.waitForTimeout(300)
+  check(
+    (await page.getByRole('group', { name: '文字の位置' }).getByRole('button', { name: '少し上' }).getAttribute('class')).includes('chip-on'),
+    '文字の位置を「少し上」に変えられる',
+  )
+  await shot('5d_猫カード_少し上_大', true)
+  await card.click()
+  const fullCanvas = page.locator('.card-full-canvas')
+  await fullCanvas.waitFor()
+  const box = await fullCanvas.boundingBox()
+  const vp = page.viewportSize()
+  check(
+    box && box.height <= vp.height + 1 && box.width <= vp.width + 1 && Math.abs(box.width / box.height - 9 / 16) < 0.01,
+    `カードを押すと、画面いっぱいに9:16のまま出る（${Math.round(box.width)}×${Math.round(box.height)}）`,
+  )
+  check(await page.getByRole('button', { name: '× 閉じる' }).isVisible(), '画面いっぱいの表示に「× 閉じる」が出る')
+  await shot('5e_猫カード_画面いっぱい')
+  await page.getByRole('button', { name: '× 閉じる' }).click()
+  check(!(await fullCanvas.isVisible()), '「× 閉じる」で元の画面に戻る')
+  await page.getByRole('group', { name: '文字の位置' }).getByRole('button', { name: 'ふつう' }).click()
+  await page.getByRole('group', { name: '文字の大きさ（試し用）' }).getByRole('button', { name: '中' }).click()
+}
 const post = await page.getByLabel('投稿文（その場で直せます）').inputValue()
 check((post.match(/#/g) ?? []).length === 5, `ハッシュタグを7こ登録しても、投稿文は5つまで（${(post.match(/#/g) ?? []).length}こ）`)
 check(post.includes('ワクチン：済み') && !post.includes('陰性'), '健康は「載せる」を選んだものだけ投稿文に出る')
