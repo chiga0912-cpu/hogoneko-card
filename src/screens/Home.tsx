@@ -7,6 +7,7 @@ type Props = {
   catCount: number
   draftName: string | null // 入力の途中の子の名前（途中がなければ null）
   unreadableCats: number // 名簿の中で読めなかった子の数（消さずに残している）
+  checkLine: string | null // 確認モードのときだけ出す、名簿の形の数（issue #3）
   draftUnreadable: boolean // 入力の途中が読めなかった
   storageWarning: boolean // ホーム画面に追加する案内を飛ばして、ブラウザのまま使っている
   onNew: () => void
@@ -19,6 +20,7 @@ export default function Home({
   catCount,
   draftName,
   unreadableCats,
+  checkLine,
   draftUnreadable,
   storageWarning,
   onNew,
@@ -41,6 +43,12 @@ export default function Home({
       {unreadableCats > 0 && (
         <p className="notice">
           名簿の中に、読めなかった子が{unreadableCats}匹います。消さずに残してあります。
+        </p>
+      )}
+
+      {checkLine && (
+        <p className="muted" data-testid="roster-shape">
+          {checkLine}
         </p>
       )}
 

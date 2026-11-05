@@ -1,19 +1,20 @@
 import { useMemo } from 'react'
-import type { Cat } from '../types'
+import type { CatSummary } from '../db'
 import { ageText } from '../lib/age'
 import { useBlobUrls } from '../lib/useBlobUrls'
 import { TopBar } from './ShelterForm'
 
 type Props = {
-  cats: Cat[]
+  cats: CatSummary[]
+  pickError: boolean // 選んだ子の写真が読めなかった
   onBack: () => void
-  onPick: (c: Cat) => void
+  onPick: (c: CatSummary) => void
   onDelete: (id: string) => void
 }
 
-export default function Roster({ cats, onBack, onPick, onDelete }: Props) {
-  // 一覧には表紙（1枚目）だけ出す
-  const covers = useMemo(() => cats.map((c) => c.photos[0] ?? new Blob()), [cats])
+export default function Roster({ cats, pickError, onBack, onPick, onDelete }: Props) {
+  // 一覧には小さな表紙だけ出す（写真そのものは、選んだときに読む）
+  const covers = useMemo(() => cats.map((c) => c.cover ?? new Blob()), [cats])
   const urls = useBlobUrls(covers)
 
   return (
@@ -27,7 +28,7 @@ export default function Roster({ cats, onBack, onPick, onDelete }: Props) {
         {cats.map((c, i) => (
           <li key={c.id} className="roster-item">
             <button className="roster-main" onClick={() => onPick(c)}>
-              {c.photos[0] ? <img src={urls[i]} alt="" /> : <span className="roster-noimg" />}
+              {c.cover ? <img src={urls[i]} alt="" /> : <span className="roster-noimg" />}
               <span className="roster-text">
                 <strong>{c.name}</strong>
                 <small>
@@ -48,6 +49,14 @@ export default function Roster({ cats, onBack, onPick, onDelete }: Props) {
           </li>
         ))}
       </ul>
+
+      {pickError && (
+        <div className="bottom-bar">
+          <p className="alert bar-alert" role="alert">
+            写真を読み込めませんでした。名簿は消していません。もう一度押してください。
+          </p>
+        </div>
+      )}
     </main>
   )
 }

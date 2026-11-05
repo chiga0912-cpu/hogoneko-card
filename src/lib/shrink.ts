@@ -9,6 +9,9 @@ import { loadImage } from './card'
 
 export const PHOTO_MAX = 2560
 const QUALITY = 0.85
+// 名簿の一覧の小さな表紙（issue #3）。一覧では56pxで出すので、画面のきめ細かさ（3倍）でも足りる大きさ。
+// 一覧にだけ使う。カード・動画には使わない（元の写真を使う）
+export const COVER_MAX = 240
 
 // ?sizes=1 で開いたときだけ画面に出す数字（写真の名前は持たない）
 export type ShrinkInfo = {
@@ -22,19 +25,32 @@ export type ShrinkInfo = {
   result: 'shrunk' | 'kept-small' | 'kept-unreadable'
 }
 
-const toJpeg = (canvas: HTMLCanvasElement): Promise<Blob | null> =>
+const toJpeg = (canvas: HTMLCanvasElement, quality = QUALITY): Promise<Blob | null> =>
   new Promise((resolve) => {
     try {
-      canvas.toBlob((b) => resolve(b), 'image/jpeg', QUALITY)
+      canvas.toBlob((b) => resolve(b), 'image/jpeg', quality)
     } catch {
       resolve(null) // 描けない画像（安全のため書き出しが止められたときなど）
     }
   })
 
 export async function shrinkPhoto(file: Blob): Promise<{ blob: Blob; info: ShrinkInfo }> {
-  const t0 = performance.now()
   // 先に中身を写しておく（iPhoneでは、選んだファイルがあとで読めなくなることがあるため）
-  const copy = await copyBlob(file)
+  return resize(await copyBlob(file), PHOTO_MAX, QUALITY)
+}
+
+// 名簿の一覧の表紙を作る。作れなかったときは、元の写真をそのまま表紙にする（一覧で写真が消えたように見せない）
+export async function makeCover(photo: Blob | null | undefined): Promise<Blob | null> {
+  if (!photo) return null
+  try {
+    return (await resize(photo, COVER_MAX, 0.8)).blob
+  } catch {
+    return photo
+  }
+}
+
+async function resize(copy: Blob, max: number, quality: number): Promise<{ blob: Blob; info: ShrinkInfo }> {
+  const t0 = performance.now()
   const info = (blob: Blob, w: number, h: number, toW: number, toH: number, result: ShrinkInfo['result']) => ({
     blob,
     info: { fromW: w, fromH: h, fromBytes: copy.size, toW, toH, toBytes: blob.size, ms: performance.now() - t0, result },
@@ -46,11 +62,17 @@ export async function shrinkPhoto(file: Blob): Promise<{ blob: Blob; info: Shrin
   } catch {
     return info(copy, 0, 0, 0, 0, 'kept-unreadable')
   }
+  // 描く前に、写真をほどいておく（描くときにほどくと、その間画面が固まるため。移し替えの間も固めない。issue #3）
+  try {
+    await img.decode()
+  } catch {
+    // ほどけなくても、描いてみる（下で失敗したら元の写真のまま）
+  }
   const w = img.naturalWidth
   const h = img.naturalHeight
   if (!w || !h) return info(copy, w, h, w, h, 'kept-unreadable')
 
-  const s = Math.min(1, PHOTO_MAX / Math.max(w, h))
+  const s = Math.min(1, max / Math.max(w, h))
   const tw = Math.max(1, Math.round(w * s))
   const th = Math.max(1, Math.round(h * s))
   const canvas = document.createElement('canvas')
@@ -64,7 +86,7 @@ export async function shrinkPhoto(file: Blob): Promise<{ blob: Blob; info: Shrin
     ctx.imageSmoothingEnabled = true
     ctx.imageSmoothingQuality = 'high'
     ctx.drawImage(img, 0, 0, tw, th)
-    out = await toJpeg(canvas)
+    out = await toJpeg(canvas, quality)
   }
   // iPhoneのSafariは、使い終わった画像の場所をすぐに返さないことがあるので、空にしておく
   canvas.width = 0
