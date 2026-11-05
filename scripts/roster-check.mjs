@@ -249,6 +249,31 @@ const blank = `${url}/favicon.svg` // アプリを開かずに、同じアドレ
 
 const browser = await engine.launch()
 
+// ツールの画面の中の確認の知らせ（#43）に、自動で答える。window.__confirmAnswer が 'no' なら［やめる］側、ほかは［はい］側を押す。
+// ブラウザの確認の窓が出たら数える（もう出ないはず）
+const AUTO_CONFIRM = () => {
+  window.__browserDialogs = 0
+  const tick = () => {
+    const d = document.querySelector('[data-confirm-dialog]')
+    if (d && !d.dataset.answered && !window.__confirmManual) {
+      d.dataset.answered = '1'
+      const btn = d.querySelector(window.__confirmAnswer === 'no' ? '[data-confirm="no"]' : '[data-confirm="yes"]')
+      window.__confirmSeen = (window.__confirmSeen ?? 0) + 1
+      setTimeout(() => btn?.click(), 50)
+    }
+  }
+  new MutationObserver(tick).observe(document, { childList: true, subtree: true })
+}
+{
+  const _newContext = browser.newContext.bind(browser)
+  browser.newContext = async (o) => {
+    const c = await _newContext(o)
+    await c.addInitScript(AUTO_CONFIRM)
+    c.on('page', (pg) => pg.on('dialog', () => pg.evaluate(() => (window.__browserDialogs += 1)).catch(() => {})))
+    return c
+  }
+}
+
 // ---- 1. 大きな写真が入った古い形の名簿を開き、移し替える ----
 {
   const ctx = await newCtx()

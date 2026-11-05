@@ -2,6 +2,7 @@ import { useMemo } from 'react'
 import type { CatSummary } from '../db'
 import { ageText } from '../lib/age'
 import { useBlobUrls } from '../lib/useBlobUrls'
+import { askConfirm } from '../lib/confirm'
 import { TopBar } from './ShelterForm'
 
 type Props = {
@@ -40,8 +41,8 @@ export default function Roster({ cats, pickError, onBack, onPick, onDelete }: Pr
             <button
               className="roster-del"
               aria-label={`${c.name}を名簿から消す`}
-              onClick={() => {
-                if (window.confirm(`${c.name}を名簿から消しますか？元に戻せません。`)) onDelete(c.id)
+              onClick={async () => {
+                if (await askConfirm(`${c.name}を名簿から消しますか？元に戻せません。`, { yes: '消す', danger: true })) onDelete(c.id)
               }}
             >
               消す

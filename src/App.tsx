@@ -6,6 +6,7 @@ import { detectBrowser, isStandalone } from './lib/browser'
 import { makeFixedPost } from './lib/post'
 import { makeCover } from './lib/shrink'
 import { migrateOldCats } from './lib/migrate'
+import { askConfirm, ConfirmHost } from './lib/confirm'
 import InstallGuide, { GUIDE_SKIPPED_KEY } from './screens/InstallGuide'
 import Home from './screens/Home'
 import ShelterForm from './screens/ShelterForm'
@@ -217,7 +218,7 @@ export default function App() {
   }, [flush])
 
   const startNew = async () => {
-    if (hasDraft && !window.confirm('入力の途中の内容があります。消して、新しく始めますか？')) return
+    if (hasDraft && !(await askConfirm('入力の途中の内容があります。消して、新しく始めますか？', { yes: '消して新しく始める' }))) return
     await discardDraft()
     setCat(newCat())
     setFromRoster(false)
@@ -235,7 +236,7 @@ export default function App() {
   }
 
   const pickFromRoster = async (picked: db.CatSummary) => {
-    if (hasDraft && !window.confirm('入力の途中の内容があります。消して、この子を開きますか？')) return
+    if (hasDraft && !(await askConfirm('入力の途中の内容があります。消して、この子を開きますか？', { yes: '消してこの子を開く' }))) return
     // 一覧には写真がないので、ここで元の写真を読む。読めなかったら開かない
     // （写真のないまま開いて保存すると、写真が消えてしまうため）。入力の途中も消さない
     let full: Cat
@@ -309,6 +310,7 @@ export default function App() {
   return (
     <div className="app" style={{ ['--theme' as string]: themeColor }}>
       {CHECK_MODE && <p className="check-mode">確認モード・版 {APP_VERSION}</p>}
+      <ConfirmHost />
       {screen === 'loading' &&
         (blocked ? (
           <p className="alert">ほかに開いているタブを閉じてください。名簿は消していません。</p>
@@ -374,14 +376,17 @@ export default function App() {
           fromRoster={fromRoster}
           onChange={setCat}
           onBack={() => go('home')}
-          onNext={() => {
+          onNext={async () => {
             if (shelter) {
               const fresh = makeFixedPost(cat, shelter)
               // 手で直した投稿文は、黙って作り直さない（二度書かせないため）
               if (
                 !postEdited ||
                 post === fresh ||
-                window.confirm('投稿文を手で直しています。入力の内容で作り直しますか？\n（作り直すと、直した文は消えます）')
+                (await askConfirm('投稿文を手で直しています。入力の内容で作り直しますか？\n（作り直すと、直した文は消えます）', {
+                  yes: '作り直す',
+                  no: '直した文のまま',
+                }))
               ) {
                 setPost(fresh)
                 setPostEdited(false)

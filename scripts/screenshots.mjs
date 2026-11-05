@@ -42,6 +42,31 @@ const check = (ok, what) => {
 }
 
 const browser = await engine.launch()
+
+// ツールの画面の中の確認の知らせ（#43）に、自動で答える。window.__confirmAnswer が 'no' なら［やめる］側、ほかは［はい］側を押す。
+// ブラウザの確認の窓が出たら数える（もう出ないはず）
+const AUTO_CONFIRM = () => {
+  window.__browserDialogs = 0
+  const tick = () => {
+    const d = document.querySelector('[data-confirm-dialog]')
+    if (d && !d.dataset.answered && !window.__confirmManual) {
+      d.dataset.answered = '1'
+      const btn = d.querySelector(window.__confirmAnswer === 'no' ? '[data-confirm="no"]' : '[data-confirm="yes"]')
+      window.__confirmSeen = (window.__confirmSeen ?? 0) + 1
+      setTimeout(() => btn?.click(), 50)
+    }
+  }
+  new MutationObserver(tick).observe(document, { childList: true, subtree: true })
+}
+{
+  const _newContext = browser.newContext.bind(browser)
+  browser.newContext = async (o) => {
+    const c = await _newContext(o)
+    await c.addInitScript(AUTO_CONFIRM)
+    c.on('page', (pg) => pg.on('dialog', () => pg.evaluate(() => (window.__browserDialogs += 1)).catch(() => {})))
+    return c
+  }
+}
 const iphone = devices['iPhone 15']
 // WIDTH=android を付けると、主な流れと古い形のデータの確認を、Androidの画面の大きさ（Pixel 7・幅412px）で動かす。
 // 画面の大きさを変えるだけ（iPhoneのふりのまま）。Androidの実機で確かめたことにはしない
@@ -520,10 +545,15 @@ await postBox.fill(post)
 // 手で直した投稿文は、［戻る］→［次へ］で黙って消えない（見直し A3）
 await postBox.fill(post + '\n手で直した一文')
 dialogAnswer = 'no'
+await page.evaluate(() => (window.__confirmAnswer = 'no'))
 await page.getByRole('button', { name: '戻る' }).click()
+await page.evaluate(() => (window.__confirmSeen = 0))
 await page.getByRole('button', { name: '次へ' }).click()
+await page.waitForTimeout(400)
+check((await page.evaluate(() => window.__confirmSeen)) === 1 && (await page.evaluate(() => window.__browserDialogs)) === 0, '作り直すかの確認は、ブラウザの窓ではなく、ツールの画面の中に出る（#43）')
 check((await postBox.inputValue()).includes('手で直した一文'), '手で直した投稿文は、［戻る］→［次へ］でも残る（作り直すかを聞いて「いいえ」）')
 dialogAnswer = 'yes'
+await page.evaluate(() => (window.__confirmAnswer = 'yes'))
 await page.getByRole('button', { name: '戻る' }).click()
 await page.getByRole('button', { name: '次へ' }).click()
 check((await postBox.inputValue()) === post, '作り直すかを聞いて「はい」なら、入力の内容で作り直す')
@@ -742,6 +772,52 @@ console.log('表示:', await page.locator('.status-line').innerText())
   check((await p2.getByTestId('photo-sizes').count()) === 0, '?sizes=1 を付けずに開いたときは、大きさの数字を出さない')
   check((await p2.getByText('確認モード').count()) === 0, '?sizes=1 を付けずに開いたときは、「確認モード」を出さない')
   await ctx2.close()
+}
+
+// 確認の知らせ（#43）：ツールの画面の中に出て、［やめる］なら何も消えない。ブラウザの窓は出ない
+{
+  const ctx4 = await browser.newContext({ ...phone })
+  const p4 = await ctx4.newPage()
+  await p4.goto(url)
+  await p4.getByText('はじめに').waitFor()
+  await p4.getByRole('button', { name: '追加せずに、このまま使う' }).click()
+  await p4.getByLabel('団体名').fill('テスト保護猫の会')
+  await p4.getByRole('button', { name: '登録して始める' }).click()
+  await p4.getByRole('button', { name: '新しい子を紹介' }).click()
+  await p4.locator('input[type=file][accept="image/*"]').setInputFiles(dummy('#c9b8a6', '写真'))
+  await p4.locator('.photo img').first().waitFor()
+  await p4.getByLabel('名前').fill('確認の子')
+  await p4.waitForTimeout(500)
+  await p4.getByRole('button', { name: '戻る' }).click()
+  await p4.evaluate(() => (window.__confirmManual = true))
+  await p4.getByRole('button', { name: '新しい子を紹介' }).click()
+  const dlg = p4.getByRole('alertdialog')
+  await dlg.waitFor({ timeout: 3000 }).catch(() => {})
+  check(await dlg.isVisible(), '入力の途中があるときの確認が、ツールの画面の中に出る')
+  check((await seenWithoutScroll(p4, p4.locator('[data-confirm="yes"]'))) && (await seenWithoutScroll(p4, p4.locator('[data-confirm="no"]'))), '確認の2つのボタンが、スクロールしなくても見える')
+  await p4.screenshot({ path: join(outDir, '7a_確認の知らせ_入力の途中.png') })
+  await p4.locator('[data-confirm="no"]').click()
+  await p4.waitForTimeout(300)
+  check(!(await dlg.isVisible()) && (await p4.getByText('入力の続き').isVisible()), '［やめる］を押すと、知らせが消え、入力の途中も残る')
+  // 名簿から消すときの確認
+  await p4.getByRole('button', { name: '入力の続き' }).click()
+  await p4.getByRole('button', { name: '次へ' }).click()
+  await p4.getByRole('button', { name: '動画を作る' }).click()
+  await p4.getByText('名簿に保存しました').waitFor()
+  await p4.getByRole('button', { name: '名簿を見る' }).click()
+  await p4.getByRole('button', { name: '確認の子を名簿から消す' }).click()
+  await dlg.waitFor({ timeout: 3000 }).catch(() => {})
+  check(await dlg.getByText('確認の子を名簿から消しますか？元に戻せません。').isVisible(), '名簿から消すときの確認が、ツールの画面の中に出る')
+  await p4.screenshot({ path: join(outDir, '7b_確認の知らせ_名簿から消す.png') })
+  await p4.locator('[data-confirm="no"]').click()
+  await p4.waitForTimeout(300)
+  check(await p4.getByRole('button', { name: '確認の子を名簿から消す' }).isVisible(), '［やめる］なら、名簿から消さない')
+  await p4.getByRole('button', { name: '確認の子を名簿から消す' }).click()
+  await p4.locator('[data-confirm="yes"]').click()
+  await p4.waitForTimeout(500)
+  check(!(await p4.getByRole('button', { name: '確認の子を名簿から消す' }).isVisible()), '［消す］なら、名簿から消える')
+  check((await p4.evaluate(() => window.__browserDialogs)) === 0, 'ブラウザの確認の窓は、一度も出ない')
+  await ctx4.close()
 }
 
 await browser.close()
