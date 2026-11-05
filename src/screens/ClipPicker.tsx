@@ -5,9 +5,12 @@ import { useBlobUrl } from '../lib/useBlobUrls'
 // 使う長さは5秒に決まっている。5秒より短い動画は全部使う（SPEC 2.2）
 export const CLIP_SEC = 5
 // 選べる動画の上限（#45）。とても大きい動画は、スマホの中で何度か写すと、iPhoneでページが落ちるおそれがあるため ⚙
-// 数字は仮（11/6 夜中。作者に決めてもらう）。1080pで1分ほどの動画は100MB前後
+// 200MB・3分は11/6朝に作者が決めた（SPEC 2.2）。1080pで1分ほどの動画は100MB前後
 export const MAX_CLIP_BYTES = 200_000_000
 export const MAX_CLIP_SEC = 180
+
+// 超えたときの理由と、どうすればよいか（SPEC 2.2）
+const WHY = 'スマホの中で動画を作るときに、止まってしまうことがあるためです。写真アプリの［編集］で、使いたい所の前後を切って短くしてから、もう一度選んでください。'
 
 const fmt = (t: number) => `${Math.floor(t / 60)}:${String(Math.floor(t % 60)).padStart(2, '0')}`
 
@@ -23,7 +26,7 @@ export default function ClipPicker({ clip, onChange }: { clip: Clip | null; onCh
     if (!file) return
     // 中身を写す前に、大きさと長さを確かめる（大きすぎる動画を丸ごと写さないため。#45）
     if (file.size > MAX_CLIP_BYTES) {
-      setNote(`この動画は大きすぎるため選べません（${Math.round(MAX_CLIP_BYTES / 1_000_000)}MBまで）。写真アプリで短く切ってから、選んでください。`)
+      setNote(`この動画は大きすぎるため選べません（${Math.round(file.size / 1_000_000)}MB。${Math.round(MAX_CLIP_BYTES / 1_000_000)}MBまで）。${WHY}`)
       return
     }
     setNote('動画を読み込んでいます…')
@@ -34,7 +37,7 @@ export default function ClipPicker({ clip, onChange }: { clip: Clip | null; onCh
       // 長さを確かめる。いつまでも分からないときは、待ちすぎずに読めなかったことにする（見直し③の中7）
       const d = await withTimeout(durationOf(blob), 8000)
       if (d > MAX_CLIP_SEC) {
-        setNote(`この動画は長すぎるため選べません（${MAX_CLIP_SEC / 60}分まで）。写真アプリで短く切ってから、選んでください。`)
+        setNote(`この動画は長すぎるため選べません（${fmt(d)}。${MAX_CLIP_SEC / 60}分まで）。${WHY}`)
         return
       }
       onChange({ blob, start: 0, length: Math.min(CLIP_SEC, d) })

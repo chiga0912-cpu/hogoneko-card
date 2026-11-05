@@ -192,10 +192,10 @@ ok((await p.getByText('5秒より短い動画なので、全部使います').is
   // #45：大きすぎる動画・長すぎる動画は、中身を写さずに知らせる
   await p3.locator('input[type=file][accept="video/*"]').setInputFiles(join(FAKE, 'big.mp4'))
   await p3.getByText('この動画は大きすぎるため選べません').waitFor({ timeout: 5000 }).catch(() => {})
-  ok((await p3.getByText('この動画は大きすぎるため選べません（200MBまで）').isVisible()) && !(await p3.locator('.clip-time').isVisible()), '200MBを超える動画は選べず、知らせる（#45）')
+  ok((await p3.getByText(/この動画は大きすぎるため選べません（\d+MB。200MBまで）。スマホの中で動画を作るときに、止まってしまうことがあるためです。写真アプリの［編集］で/).isVisible()) && !(await p3.locator('.clip-time').isVisible()), '200MBを超える動画は選べず、大きさ・理由・どうすればよいかを知らせる（#45）')
   await p3.locator('input[type=file][accept="video/*"]').setInputFiles(join(FAKE, 'long190.mp4'))
   await p3.getByText('この動画は長すぎるため選べません').waitFor({ timeout: 10000 }).catch(() => {})
-  ok((await p3.getByText('この動画は長すぎるため選べません（3分まで）').isVisible()) && !(await p3.locator('.clip-time').isVisible()), '3分を超える動画は選べず、知らせる（#45）')
+  ok((await p3.getByText(/この動画は長すぎるため選べません（3:10。3分まで）。スマホの中で動画を作るときに、止まってしまうことがあるためです。写真アプリの［編集］で/).isVisible()) && !(await p3.locator('.clip-time').isVisible()), '3分を超える動画は選べず、長さ・理由・どうすればよいかを知らせる（#45）')
   await p3.screenshot({ path: join(outDir, '6e_動画が長すぎる.png'), fullPage: true })
   // (a) 短い動画を残したあと、長い動画に替え、その中身を書き終える前に読み込み直す
   await p3.locator('input[type=file][accept="video/*"]').setInputFiles(join(FAKE, 'wide3.mp4'))

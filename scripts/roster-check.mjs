@@ -318,7 +318,7 @@ const AUTO_CONFIRM = () => {
   check(!(await shapeLine(p)).includes('移せなかった'), '移せなかった子がいない')
 
   const d = await dump(p)
-  check(d.version === 2, '保存場所の番号が2になる')
+  check(d.version === 3, '保存場所の番号が3になる（11/6 決定A）')
   check(
     seed.ids.every((id) => d.cats[id]?.schemaVersion === 2 && !d.cats[id].hasPhotos && !d.cats[id].hasClip),
     '移した子の名簿の記録は版2で、写真と動画を持たない',
@@ -483,6 +483,50 @@ for (const [key, label] of [
   await b.getByRole('button', { name: '新しい子を紹介' }).waitFor({ timeout: 5000 }).catch(() => {})
   check(await b.getByRole('button', { name: '新しい子を紹介' }).isVisible(), 'そのタブが閉じられると、開き直さなくても続きが動いてホームが出る')
   check((await waitShape(b, /古い形0匹/, 20000)) >= 0, 'そのあと、移し替えも終わる')
+  await ctx.close()
+}
+
+// ---- 5b. 版2（今の試し用アドレスの版）のタブを開いたまま、新しい版（番号3）を開く（11/6 決定A）----
+// 版2のタブは道をあけて閉じ、そのあとは開けない（新しい形の入力の途中を読んで、写真0枚と見なさないように）
+{
+  const ctx = await newCtx()
+  const a = await ctx.newPage()
+  await a.goto(blank)
+  await a.evaluate(
+    () =>
+      new Promise((res) => {
+        const r = indexedDB.open('hogoneko-card', 2)
+        r.onupgradeneeded = () => {
+          for (const n of ['shelter', 'cats', 'events', 'drafts', 'catMedia'])
+            if (!r.result.objectStoreNames.contains(n)) r.result.createObjectStore(n, n === 'cats' || n === 'events' ? { keyPath: 'id' } : undefined)
+        }
+        r.onsuccess = () => {
+          window.__closed = false
+          // 版2のプログラムと同じ動き：新しい版が来たら閉じる
+          r.result.onversionchange = () => {
+            r.result.close()
+            window.__closed = true
+          }
+          res()
+        }
+      }),
+  )
+  const b = await ctx.newPage()
+  await b.goto(`${url}/?sizes=1`)
+  await a.waitForFunction(() => window.__closed, null, { timeout: 8000 }).catch(() => {})
+  await b.waitForTimeout(1500)
+  check(!(await b.getByText('ほかに開いているタブを閉じてください。名簿は消していません。').isVisible()), '版2のタブが開いていても、新しい版は止まらずに開く')
+  check(await a.evaluate(() => window.__closed), '版2のタブは、新しい版が開くと保存場所を閉じる')
+  const again = await a.evaluate(
+    () =>
+      new Promise((res) => {
+        const r = indexedDB.open('hogoneko-card', 2)
+        r.onsuccess = () => res('開けた')
+        r.onerror = () => res(r.error?.name ?? 'error')
+      }),
+  )
+  check(again === 'VersionError', `そのあと版2のタブは保存場所を開けない（結果：${again}）`)
+  check((await dump(b)).version === 3, '保存場所の番号は3')
   await ctx.close()
 }
 
