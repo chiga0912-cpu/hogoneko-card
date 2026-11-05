@@ -1,5 +1,5 @@
 // 1匹の紹介の順番（SPEC 3.2）に、カードと撮った動画を並べる
-//   1 表紙 2秒 → 2 撮った動画（選んだ5秒。なければ飛ばす）→ 3 猫カード 3秒 → 4 ひとこと（これから作る）→ 5 最後の1枚 4秒
+//   1 表紙 3秒 → 2 撮った動画（選んだ5秒。なければ飛ばす）→ 3 猫カード 3秒 → 4 ひとこと（これから作る）→ 5 最後の1枚 4秒
 import type { AdoptionEvent, Cat, Shelter } from '../types'
 import { CARD_H, CARD_W, drawCatCard, drawClipName, drawCoverCard, drawEndCard, loadImage } from './card'
 import { clipFrame, type Segment } from './video'
@@ -36,7 +36,7 @@ export async function buildSegments(cat: Cat, shelter: Shelter, event: AdoptionE
   const end = canvas()
   drawEndCard(end.getContext('2d')!, { logo, shelterName: shelter.name, contact: shelter.contact, event, theme: shelter.themeColor })
 
-  const segs: Segment[] = [{ kind: 'card', label: '表紙', sec: 2, image: cover }]
+  const segs: Segment[] = [{ kind: 'card', label: '表紙', sec: 3, image: cover }] // 表紙は3秒（11/5夜 作者の決定。SPEC 3.2）
   if (cat.clip)
     segs.push({
       kind: 'clip',

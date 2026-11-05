@@ -137,7 +137,7 @@ export default function Save({ cat, shelter, event, post, onHome, onRoster, onBa
             <video className="reel-video" src={url} controls playsInline loop muted autoPlay data-sec={made.sec} data-method={made.method} />
             <p className="muted center">
               長さ {Math.round(made.sec)}秒
-              {CHECK_MODE && `（作り方：${made.method === 'frames' ? '1コマずつ' : '録画'}・${(made.ms / 1000).toFixed(1)}秒・${(made.blob.size / 1024 / 1024).toFixed(1)}MB）`}
+              {CHECK_MODE && `（作り方：${made.method === 'frames' ? '1コマずつ' : '録画'}・${(made.ms / 1000).toFixed(1)}秒・${(made.blob.size / 1_000_000).toFixed(1)}MB）`}
             </p>
           </>
         )}

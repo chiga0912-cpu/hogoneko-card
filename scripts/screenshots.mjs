@@ -794,6 +794,21 @@ console.log('表示:', await page.locator('.status-line').innerText())
   await ctx2.close()
 }
 
+// 確認モードの合図は、日本語のキーボードで打った全角（？sizes＝１）でも読む（11/5夜 iPhoneで見つけた）
+{
+  const ctx5 = await browser.newContext({ ...phone })
+  const p5 = await ctx5.newPage()
+  for (const q of ['/%EF%BC%9Fsizes%EF%BC%9D%EF%BC%91', '/?sizes%EF%BC%9D1', '/?sizes=1']) {
+    await p5.goto(url + q)
+    await p5.waitForTimeout(500)
+    check(await p5.getByText('確認モード').isVisible(), `確認モードの合図を読む（${decodeURIComponent(q)}）`)
+  }
+  await p5.goto(url + '/?sizes=10')
+  await p5.waitForTimeout(500)
+  check(!(await p5.getByText('確認モード').isVisible()), '「?sizes=10」のような別の数では、確認モードにしない')
+  await ctx5.close()
+}
+
 // 確認の知らせ（#43）：ツールの画面の中に出て、［やめる］なら何も消えない。ブラウザの窓は出ない
 {
   const ctx4 = await browser.newContext({ ...phone })

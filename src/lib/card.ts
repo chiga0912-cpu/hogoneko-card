@@ -429,39 +429,89 @@ export function loadImage(blob: Blob): Promise<HTMLImageElement> {
 }
 
 // ── 小さなクローバー（飾り。画像は使わず、図形で描く）──
-export function drawClover(ctx: CanvasRenderingContext2D, cx: number, cy: number, r: number, color: string, shadow = false) {
+// 葉を少し離して、四つ葉とわかる形にする。表紙は緑の葉に白いふち（11/5夜 作者が見本の案2を選んだ。少し大きめ）
+const CLOVER_GREEN = '#5f9e5a'
+type CloverStyle = { fill: string; outline?: string; vein?: string; stem?: string }
+function leafPath(ctx: CanvasRenderingContext2D, r: number, gap: number) {
+  ctx.beginPath()
+  ctx.moveTo(0, -gap)
+  ctx.bezierCurveTo(-r * 0.95, -gap - r * 0.35, -r * 0.8, -gap - r * 1.2, 0, -gap - r * 0.8)
+  ctx.bezierCurveTo(r * 0.8, -gap - r * 1.2, r * 0.95, -gap - r * 0.35, 0, -gap)
+}
+export function drawClover(ctx: CanvasRenderingContext2D, cx: number, cy: number, r: number, style: CloverStyle) {
+  const gap = r * 0.2
   ctx.save()
-  ctx.fillStyle = color
-  if (shadow) {
-    ctx.shadowColor = 'rgba(0,0,0,0.45)'
-    ctx.shadowBlur = 12
+  ctx.translate(cx, cy)
+  const leaves = (scale: number, color: string) => {
+    ctx.fillStyle = color
+    for (let i = 0; i < 4; i++) {
+      ctx.save()
+      ctx.rotate((Math.PI / 2) * i + Math.PI / 4)
+      ctx.scale(scale, scale)
+      leafPath(ctx, r, gap / scale)
+      ctx.fill()
+      ctx.restore()
+    }
   }
-  // ハートの形の葉を4枚
-  for (let i = 0; i < 4; i++) {
-    ctx.save()
-    ctx.translate(cx, cy)
-    ctx.rotate((Math.PI / 2) * i + Math.PI / 4)
-    ctx.beginPath()
-    ctx.moveTo(0, 0)
-    ctx.bezierCurveTo(-r * 0.9, -r * 0.35, -r * 0.75, -r * 1.15, 0, -r * 0.78)
-    ctx.bezierCurveTo(r * 0.75, -r * 1.15, r * 0.9, -r * 0.35, 0, 0)
-    ctx.fill()
-    ctx.restore()
+  if (style.outline) leaves(1.18, style.outline) // 白いふち（写真の上でも形が見えるように）
+  leaves(1, style.fill)
+  if (style.vein) {
+    ctx.strokeStyle = style.vein
+    ctx.lineWidth = Math.max(1.5, r * 0.06)
+    for (let i = 0; i < 4; i++) {
+      ctx.save()
+      ctx.rotate((Math.PI / 2) * i + Math.PI / 4)
+      ctx.beginPath()
+      ctx.moveTo(0, -gap)
+      ctx.lineTo(0, -gap - r * 0.75)
+      ctx.stroke()
+      ctx.restore()
+    }
   }
   // 茎
-  ctx.strokeStyle = color
-  ctx.lineWidth = Math.max(2, r * 0.14)
+  ctx.strokeStyle = style.stem ?? style.fill
+  ctx.lineWidth = Math.max(2, r * 0.12)
   ctx.lineCap = 'round'
   ctx.beginPath()
-  ctx.moveTo(cx, cy)
-  ctx.quadraticCurveTo(cx + r * 0.25, cy + r * 0.8, cx + r * 0.05, cy + r * 1.25)
+  ctx.moveTo(0, r * 0.1)
+  ctx.quadraticCurveTo(r * 0.35, r * 0.8, r * 0.15, r * 1.3)
   ctx.stroke()
   ctx.restore()
 }
+const COVER_CLOVER: CloverStyle = { fill: CLOVER_GREEN, outline: WHITE, vein: 'rgba(255,255,255,0.7)', stem: WHITE }
 
-// ── 表紙（SPEC 3.2 の1番目）：写真1枚目・名前・小さなクローバー ──
-// 名前は、猫カードの名前と同じあたり（下）に置く（11/5 作る人が、仮の画像で「真ん中より上」と見比べて決めた）
+// ── 表紙（SPEC 3.2 の1番目）：写真1枚目・「ずっとのおうちを探しています」・「○○です」・小さなクローバー ──
+// 言葉は決まった文で、入力にない事実を足さない（11/5夜 作者の決定）。名前は猫カードと同じく下のほう（11/5 作者の決定）
+export const COVER_GREETING = 'ずっとのおうちを探しています'
 export type CoverLayout = { design: CardDesign; fits: boolean; contrast: number; nameSize: number }
+const GREET_PX = 60
+const GREET_GAP = 18
+
+// 決まった言葉を、横幅に入る大きさで1行にする（入らなければ小さくする。言葉は変えない）
+function planGreeting(ctx: CanvasRenderingContext2D, k: number, width: number) {
+  for (const s of [1, 0.92, 0.84, 0.76, 0.68]) {
+    const size = Math.round(GREET_PX * k * s)
+    ctx.font = `700 ${size}px ${FONT}`
+    if (ctx.measureText(COVER_GREETING).width <= width) return size
+  }
+  return Math.round(GREET_PX * k * 0.68)
+}
+function drawGreeting(ctx: CanvasRenderingContext2D, size: number, y: number, color: string, shadow: boolean) {
+  ctx.save()
+  ctx.font = `700 ${size}px ${FONT}`
+  ctx.fillStyle = color
+  ctx.textAlign = 'center'
+  ctx.textBaseline = 'top'
+  if (shadow) {
+    ctx.shadowColor = 'rgba(0,0,0,0.55)'
+    ctx.shadowBlur = 14
+    ctx.shadowOffsetY = 2
+  }
+  ctx.fillText(COVER_GREETING, CARD_W / 2, y)
+  const w = ctx.measureText(COVER_GREETING).width
+  ctx.restore()
+  return w
+}
 
 export function drawCoverCard(
   ctx: CanvasRenderingContext2D,
@@ -469,37 +519,44 @@ export function drawCoverCard(
 ): CoverLayout {
   ctx.clearRect(0, 0, CARD_W, CARD_H)
   const design = designFor(opts.photo)
+  const title = opts.name.trim() ? `${opts.name.trim()}です` : ''
   if (design === 'B') {
-    // 横・正方形の写真：猫カードの案Bと同じく、上下にテーマ色の帯。名前は上の帯、クローバーは下の帯
+    // 横・正方形の写真：猫カードの案Bと同じく、上下にテーマ色の帯。言葉と名前は上の帯、クローバーは下の帯
     const { band, color, contrast } = bandColors(opts.theme)
     const logoH = opts.logo ? B_LOGO + 14 : 0
-    const { size, lines } = planName(ctx, opts.name, 1.1, WIDE_W)
-    const topH = SAFE.top + logoH + lines.length * size * NAME_LH + B_PAD
-    const botH = SAFE.bottom + 160
+    const gSize = planGreeting(ctx, 0.9, WIDE_W)
+    const { size, lines } = planName(ctx, title, 1.0, WIDE_W)
+    const textTop = SAFE.top + logoH
+    const nameTop = textTop + gSize * 1.2 + GREET_GAP
+    const topH = nameTop + lines.length * size * NAME_LH + B_PAD
+    const botH = SAFE.bottom + 170
     ctx.fillStyle = band
     ctx.fillRect(0, 0, CARD_W, CARD_H)
     if (opts.photo) drawContain(ctx, opts.photo, 0, topH, CARD_W, CARD_H - topH - botH)
     drawLogo(ctx, opts.logo, SAFE.left, SAFE.top, B_LOGO)
+    const gw = drawGreeting(ctx, gSize, textTop, color, false)
     const p: Planned = { nameLines: lines, body: [], nameSize: size, lineSize: 0, h: 0 }
-    const n = drawText(ctx, p, CARD_W / 2, SAFE.top + logoH, color, 'center', false, 'name')
-    drawClover(ctx, CARD_W / 2, CARD_H - botH + 70, 44, color)
-    return { design, fits: n.widest <= WIDE_W + 0.5 && n.bottom <= topH, contrast: round1(contrast), nameSize: size }
+    const n = drawText(ctx, p, CARD_W / 2, nameTop, color, 'center', false, 'name')
+    drawClover(ctx, CARD_W / 2, CARD_H - botH + 70, 40, COVER_CLOVER)
+    return { design, fits: gw <= WIDE_W + 0.5 && n.widest <= WIDE_W + 0.5 && n.bottom <= topH, contrast: round1(contrast), nameSize: size }
   }
 
-  // 縦の写真：写真を全面に。名前は白い大きな文字（影つき）
+  // 縦の写真：写真を全面に。言葉と名前は白い文字（影つき）
   ctx.fillStyle = '#6b5f55'
   ctx.fillRect(0, 0, CARD_W, CARD_H)
   if (opts.photo) drawCover(ctx, opts.photo, 0, 0, CARD_W, CARD_H)
-  const { size, lines } = planName(ctx, opts.name, 1.15, WIDE_W)
-  const h = lines.length * size * NAME_LH
-  const cloverR = 40
-  // 猫カードの名前と同じあたり（下のほう）。名前は真ん中にそろえるので、右下のボタンの高さ（下から540）より上に置く
+  const gSize = planGreeting(ctx, 1, WIDE_W)
+  const { size, lines } = planName(ctx, title, 1.1, WIDE_W)
+  const nameH = lines.length * size * NAME_LH
+  const h = gSize * 1.2 + GREET_GAP + nameH // 言葉＋名前のかたまり
+  const cloverR = 34
+  // 猫カードの名前と同じあたり（下のほう）。真ん中にそろえるので、右下のボタンの高さ（下から540）より上に置く
   const top = CORNER_TOP - 10 - h
   const [r, g, b] = brightLums(ctx, SAFE.left, top, WIDE_W, h)
   let darken = 0.3
   const after = (a: number) => lum(r * (1 - a), g * (1 - a), b * (1 - a))
   while (darken < 0.85 && ratio(1, after(darken)) < 4.5) darken = Math.min(0.85, darken + 0.05)
-  // 名前の周りだけを、上下にぼかして暗くする
+  // 言葉と名前の周りだけを、上下にぼかして暗くする
   const pad = 220
   const grad = ctx.createLinearGradient(0, top - pad, 0, top + h + pad)
   grad.addColorStop(0, 'rgba(0,0,0,0)')
@@ -509,11 +566,18 @@ export function drawCoverCard(
   ctx.fillStyle = grad
   ctx.fillRect(0, top - pad, CARD_W, h + pad * 2)
   drawLogo(ctx, opts.logo, SAFE.left, SAFE.top)
-  const p: Planned = { nameLines: lines, body: [], nameSize: size, lineSize: 0, h }
-  const n = drawText(ctx, p, CARD_W / 2, top, WHITE, 'center', true, 'name')
-  drawClover(ctx, CARD_W / 2, top - cloverR - 34, cloverR, WHITE, true)
+  const gw = drawGreeting(ctx, gSize, top, WHITE, true)
+  const p: Planned = { nameLines: lines, body: [], nameSize: size, lineSize: 0, h: nameH }
+  const n = drawText(ctx, p, CARD_W / 2, top + gSize * 1.2 + GREET_GAP, WHITE, 'center', true, 'name')
+  const cloverY = top - cloverR * 1.3 - 26
+  drawClover(ctx, CARD_W / 2, cloverY, cloverR, COVER_CLOVER)
   const w = widthFor(n.bottom)
-  return { design, fits: n.widest <= w + 0.5 && top - cloverR * 2 - 34 >= SAFE.top && n.bottom <= CARD_H - SAFE.bottom, contrast: round1(ratio(1, after(darken))), nameSize: size }
+  return {
+    design,
+    fits: gw <= WIDE_W + 0.5 && n.widest <= w + 0.5 && cloverY - cloverR * 1.5 >= SAFE.top && n.bottom <= CARD_H - SAFE.bottom,
+    contrast: round1(ratio(1, after(darken))),
+    nameSize: size,
+  }
 }
 
 // ── 最後の1枚（SPEC 3.2 の5番目）：次の譲渡会の日時・場所、団体名、ロゴ、連絡先 ──
@@ -615,8 +679,8 @@ export function drawEndCard(
     }
   }
   // 飾りのクローバー（文字のない所に小さく）
-  drawClover(ctx, CARD_W - SAFE.right - 70, SAFE.top + 40, 34, band)
-  drawClover(ctx, SAFE.left + 60, CARD_H - SAFE.bottom - 10, 28, band)
+  drawClover(ctx, CARD_W - SAFE.right - 70, SAFE.top + 40, 34, { fill: band })
+  drawClover(ctx, SAFE.left + 60, CARD_H - SAFE.bottom - 10, 28, { fill: band })
   return { fits, scale: k, hasEvent: !!opts.event, contrast: round1(contrast) }
 }
 

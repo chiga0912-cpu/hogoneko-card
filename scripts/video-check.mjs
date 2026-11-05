@@ -87,7 +87,7 @@ await p.screenshot({ path: join(outDir, '6b_動画だけ_確認画面.png'), ful
 await p.getByRole('button', { name: '動画を作る' }).click()
 await p.locator('.reel-video, .reel-images, .alert').first().waitFor({ timeout: 60000 })
 const info = await p.evaluate(async () => { const v = document.querySelector('.reel-video'); if (!v) return document.querySelector('.reel-box').textContent; if (!v.duration) await new Promise(r => v.addEventListener('loadedmetadata', r, { once: true })); return { d: v.duration, m: v.dataset.method } })
-ok(info && info.d >= 13.9 && info.d <= 14.1, '表紙2秒＋動画5秒＋猫カード3秒＋最後の1枚4秒＝14秒の動画ができる（' + JSON.stringify(info) + '・' + (await p.locator('.reel-box .muted').textContent().catch(() => '')) + '）')
+ok(info && info.d >= 14.9 && info.d <= 15.1, '表紙3秒＋動画5秒＋猫カード3秒＋最後の1枚4秒＝15秒の動画ができる（' + JSON.stringify(info) + '・' + (await p.locator('.reel-box .muted').textContent().catch(() => '')) + '）')
 await p.screenshot({ path: join(outDir, '6c_動画_保存の画面.png') })
 ok((await p.getByTestId('location').textContent()).includes('なし'), 'できた動画の位置情報を確かめて「なし」と出る（確認モード）')
 ok(await p.getByRole('button', { name: '投稿文をコピーしてInstagramへ' }).isEnabled(), '位置情報が「なし」なら、大きいボタンが押せる')

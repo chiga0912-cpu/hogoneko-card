@@ -33,7 +33,8 @@ type HealthKey = 'vaccine' | 'neuter' | 'virusTest'
 const SHOW_SIZES = CHECK_MODE
 // 数字は写真1枚ずつにひもづける（外した写真の数字が残らないように。11/5 iPhoneで前の分が残って2行になったため）
 const sizeOf = new WeakMap<Blob, ShrinkInfo>()
-const mb = (n: number) => `${(n / 1024 / 1024).toFixed(1)}MB`
+// 写真アプリと同じ数え方（1MB＝1,000,000バイト）。11/5夜までは1,048,576バイトで数えていた
+const mb = (n: number) => `${(n / 1_000_000).toFixed(1)}MB`
 const sizeText = (z: ShrinkInfo) =>
   z.result === 'kept-unreadable'
     ? `読めなかったので元のまま（${mb(z.fromBytes)}）`
