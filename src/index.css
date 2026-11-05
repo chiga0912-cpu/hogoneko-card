@@ -575,6 +575,50 @@ input[type='color'] {
   box-shadow: 0 4px 16px rgba(0, 0, 0, 0.15);
   cursor: zoom-in;
 }
+/* カードを横に並べて、めくって見る（SPEC 2.4） */
+.card-strip {
+  display: flex;
+  gap: 14px;
+  overflow-x: auto;
+  scroll-snap-type: x mandatory;
+  padding: 4px 19% 10px;
+  margin: 0 -16px;
+  -webkit-overflow-scrolling: touch;
+}
+.card-slot {
+  flex: 0 0 62%;
+  max-width: 280px;
+  margin: 0;
+  scroll-snap-align: center;
+}
+.card-slot figcaption {
+  text-align: center;
+  font-size: 13px;
+  color: #7a6d63;
+}
+.card-slot .card-canvas,
+.card-thumb {
+  display: block;
+  width: 100%;
+  max-width: none;
+  aspect-ratio: 9 / 16;
+  height: auto;
+  margin: 0 0 6px;
+  border-radius: 12px;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.15);
+  cursor: zoom-in;
+}
+.check-row {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  margin: 0 0 16px;
+  font-size: 15px;
+}
+.check-row input {
+  width: 22px;
+  height: 22px;
+}
 /* 画面いっぱいの表示（リールで見たときの大きさを確かめるため） */
 .card-full {
   position: fixed;

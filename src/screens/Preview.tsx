@@ -1,7 +1,18 @@
 import { useEffect, useRef, useState } from 'react'
-import { MAX_HASHTAGS, type Cat, type Shelter } from '../types'
+import { MAX_HASHTAGS, type AdoptionEvent, type Cat, type Shelter } from '../types'
 import { countHashtags } from '../lib/hashtags'
-import { CARD_H, CARD_W, drawCatCard, loadImage, type CardLayout, type TextPosition } from '../lib/card'
+import {
+  CARD_H,
+  CARD_W,
+  drawCatCard,
+  drawCoverCard,
+  drawEndCard,
+  loadImage,
+  type CardLayout,
+  type TextPosition,
+} from '../lib/card'
+import * as db from '../db'
+import { nextEvent } from '../lib/events'
 import { TopBar } from './ShelterForm'
 
 const POSITIONS: [TextPosition, string][] = [
@@ -72,6 +83,27 @@ function CatCard({
   )
 }
 
+// 表紙・最後の1枚（写真はスマホの中で描くだけ）
+type Painter = (ctx: CanvasRenderingContext2D) => Promise<Record<string, string | number | boolean>>
+function PaintedCard({ paint, deps, className, label, onClick }: { paint: Painter; deps: unknown[]; className: string; label: string; onClick: () => void }) {
+  const ref = useRef<HTMLCanvasElement>(null)
+  const [info, setInfo] = useState<Record<string, string | number | boolean> | null>(null)
+  useEffect(() => {
+    let stop = false
+    const ctx = ref.current?.getContext('2d')
+    if (!ctx) return
+    paint(ctx).then((i) => {
+      if (!stop) setInfo(i)
+    })
+    return () => {
+      stop = true
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, deps)
+  const data = Object.fromEntries(Object.entries(info ?? {}).map(([k, v]) => [`data-${k}`, String(v === true ? 1 : v === false ? 0 : v)]))
+  return <canvas ref={ref} width={CARD_W} height={CARD_H} className={className} onClick={onClick} data-drawn={info ? '1' : '0'} {...data} aria-label={label} />
+}
+
 type Props = {
   shelter: Shelter
   cat: Cat
@@ -84,8 +116,33 @@ type Props = {
 
 // 確認（仮）。カードと根拠の印は11/5〜11/6に作る。今は決まった形の投稿文だけ
 export default function Preview({ shelter, cat, onCatChange, post, onPostChange, onBack, onSave }: Props) {
-  const [full, setFull] = useState(false)
+  const [full, setFull] = useState<'cover' | 'cat' | 'end' | null>(null)
   const [layout, setLayout] = useState<CardLayout | null>(null)
+  const [event, setEvent] = useState<AdoptionEvent | null>(null)
+  const [showEvent, setShowEvent] = useState(true) // 最後の1枚に譲渡会を入れるか（確認画面で外せる）
+  useEffect(() => {
+    db.loadEvents().then(
+      (list) => setEvent(nextEvent(list)),
+      () => setEvent(null), // 読めなくても、連絡先だけで作れる
+    )
+  }, [])
+  const photo1 = cat.photos[0] ?? null
+  const paintCover: Painter = async (ctx) => {
+    const [photo, logo] = await Promise.all([
+      photo1 ? loadImage(photo1).catch(() => null) : null,
+      shelter.logo ? loadImage(shelter.logo).catch(() => null) : null,
+    ])
+    const l = drawCoverCard(ctx, { photo, logo, name: cat.name, theme: shelter.themeColor })
+    return { fits: l.fits, design: l.design, contrast: l.contrast }
+  }
+  const usedEvent = showEvent ? event : null
+  const paintEnd: Painter = async (ctx) => {
+    const logo = shelter.logo ? await loadImage(shelter.logo).catch(() => null) : null
+    const l = drawEndCard(ctx, { logo, shelterName: shelter.name, contact: shelter.contact, event: usedEvent, theme: shelter.themeColor })
+    return { fits: l.fits, scale: l.scale, event: l.hasEvent }
+  }
+  const coverDeps = [photo1, shelter.logo, shelter.themeColor, cat.name]
+  const endDeps = [shelter.logo, shelter.name, shelter.contact, shelter.themeColor, usedEvent]
   const [saving, setSaving] = useState(false)
   const [saveFailed, setSaveFailed] = useState(false)
   const tagCount = countHashtags(post)
@@ -93,17 +150,31 @@ export default function Preview({ shelter, cat, onCatChange, post, onPostChange,
   return (
     <main className="screen">
       <TopBar title="確認（仮）" onBack={onBack} />
-      <p className="note">猫カードを1枚だけ作りました。ほかのカードと動画は、これから作ります。</p>
+      <p className="note">表紙・猫カード・最後の1枚を作りました。撮った動画とひとことカードは、これから作ります。</p>
 
       <section className="card-preview">
-        <CatCard cat={cat} shelter={shelter} className="card-canvas" onLayout={setLayout} onClick={() => setFull(true)} />
-        <p className="muted center">カードを押すと、画面いっぱいに出ます</p>
+        {/* 横にめくって全部見られる（SPEC 2.4） */}
+        <div className="card-strip" aria-label="カード（横にめくれます）">
+          <figure className="card-slot">
+            <PaintedCard paint={paintCover} deps={coverDeps} className="card-thumb card-cover" label="表紙（押すと画面いっぱいに出ます）" onClick={() => setFull('cover')} />
+            <figcaption>1 表紙</figcaption>
+          </figure>
+          <figure className="card-slot">
+            <CatCard cat={cat} shelter={shelter} className="card-canvas" onLayout={setLayout} onClick={() => setFull('cat')} />
+            <figcaption>2 猫カード</figcaption>
+          </figure>
+          <figure className="card-slot">
+            <PaintedCard paint={paintEnd} deps={endDeps} className="card-thumb card-end" label="最後の1枚（押すと画面いっぱいに出ます）" onClick={() => setFull('end')} />
+            <figcaption>3 最後の1枚</figcaption>
+          </figure>
+        </div>
+        <p className="muted center">横にめくると、ほかのカードが見られます。カードを押すと、画面いっぱいに出ます</p>
         {layout && layout.linesShown < layout.linesTotal && (
           <p className="notice">
             いいところが長くて入りきらないので、最初の{layout.linesShown}行だけ載せました（行の途中では切っていません）。
           </p>
         )}
-        {layout && layout.linesShown === layout.linesTotal && layout.scale < 1 && (
+        {layout && layout.linesTotal > 0 && layout.linesShown === layout.linesTotal && layout.scale < 1 && (
           <p className="notice">いいところが長いので、カードの文字を少し小さくしました。</p>
         )}
         {layout && !layout.fits && <p className="alert">名前が長くて、カードに入りきりません。</p>}
@@ -127,10 +198,20 @@ export default function Preview({ shelter, cat, onCatChange, post, onPostChange,
         )}
       </section>
 
+      {event && (
+        <label className="check-row">
+          <input type="checkbox" checked={showEvent} onChange={(e) => setShowEvent(e.target.checked)} />
+          最後の1枚に、次の譲渡会（{event.date.slice(5).replace('-', '/')}）を入れる
+        </label>
+      )}
+      {!event && <p className="muted">次の譲渡会が登録されていないので、最後の1枚には団体名と連絡先だけを入れます。</p>}
+
       {full && (
-        <div className="card-full" role="dialog" aria-label="猫カードを画面いっぱいに表示" onClick={() => setFull(false)}>
-          <CatCard cat={cat} shelter={shelter} className="card-full-canvas" onClick={() => setFull(false)} />
-          <button className="card-close" onClick={() => setFull(false)}>
+        <div className="card-full" role="dialog" aria-label="カードを画面いっぱいに表示" onClick={() => setFull(null)}>
+          {full === 'cat' && <CatCard cat={cat} shelter={shelter} className="card-full-canvas" onClick={() => setFull(null)} />}
+          {full === 'cover' && <PaintedCard paint={paintCover} deps={coverDeps} className="card-full-canvas" label="表紙" onClick={() => setFull(null)} />}
+          {full === 'end' && <PaintedCard paint={paintEnd} deps={endDeps} className="card-full-canvas" label="最後の1枚" onClick={() => setFull(null)} />}
+          <button className="card-close" onClick={() => setFull(null)}>
             × 閉じる
           </button>
           <p className="card-full-hint">画面のどこを押しても閉じます</p>

@@ -273,6 +273,101 @@ const seenWithoutScroll = async (p, loc) => {
   await ctx.close()
 }
 
+// 表紙と最後の1枚（#5 #6）：仮の画像・架空の団体名と譲渡会
+{
+  const ctx = await browser.newContext({ ...phone })
+  const p = await ctx.newPage()
+  p.on('dialog', (d) => d.accept())
+  await p.goto(url)
+  await p.getByText('はじめに').waitFor()
+  await p.getByRole('button', { name: '追加せずに、このまま使う' }).click()
+  await p.getByLabel('団体名').fill('テスト保護猫の会')
+  await p.getByLabel('連絡先').fill('（架空）Instagramのメッセージで\nお問い合わせください')
+  await p.getByRole('button', { name: '登録して始める' }).click()
+  const addEvents = (events) =>
+    p.evaluate(
+      (events) =>
+        new Promise((resolve, reject) => {
+          const req = indexedDB.open('hogoneko-card')
+          req.onsuccess = () => {
+            const tx = req.result.transaction('events', 'readwrite')
+            tx.objectStore('events').clear()
+            for (const e of events) tx.objectStore('events').put(e)
+            tx.oncomplete = () => {
+              req.result.close()
+              resolve(true)
+            }
+            tx.onerror = () => reject(tx.error)
+          }
+          req.onerror = () => reject(req.error)
+        }),
+      events,
+    )
+  const ymd = (days) => {
+    const d = new Date(Date.now() + days * 86400000)
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+  }
+  const openPreview = async (photo) => {
+    await p.getByRole('button', { name: '新しい子を紹介' }).click()
+    await p.locator('input[type=file]').setInputFiles(photo)
+    await p.locator('.photo img').first().waitFor()
+    await p.getByLabel('名前').fill('とてもながいなまえのテストねこエリザベス・ミルクティー・ショコラ・ド・マカロン三世')
+    await p.getByRole('button', { name: '次へ' }).click()
+    await p.locator('.card-cover[data-drawn="1"]').waitFor()
+    await p.locator('.card-end[data-drawn="1"]').waitFor()
+    await p.waitForTimeout(300)
+  }
+  const cover = p.locator('.card-cover')
+  const end = p.locator('.card-end')
+  // 譲渡会なし
+  await openPreview(dummy('#c9b8a6', '縦', 600, 800))
+  check((await cover.getAttribute('data-fits')) === '1' && Number(await cover.getAttribute('data-contrast')) >= 4.5, `表紙（縦の写真）：長い名前でも、隠れる所にかからず読める（見やすさ ${await cover.getAttribute('data-contrast')}）`)
+  check((await end.getAttribute('data-event')) === '0' && (await end.getAttribute('data-fits')) === '1', '譲渡会がないとき、最後の1枚は団体名と連絡先だけで、はみ出さない')
+  check(await p.getByText('次の譲渡会が登録されていないので').isVisible(), '譲渡会がないとき、そのことを確認画面に出す')
+  await p.screenshot({ path: join(outDir, '5j_表紙と最後の1枚_譲渡会なし.png'), fullPage: true })
+  await p.locator('.card-strip').evaluate((el) => el.scrollTo({ left: el.scrollWidth }))
+  await p.waitForTimeout(300)
+  await p.screenshot({ path: join(outDir, '5k_最後の1枚までめくった.png') })
+  // 過ぎた譲渡会だけがあるとき
+  // 確認画面を開くたびに譲渡会を読み直すので、入力へ戻ってから［次へ］で開き直す
+  await p.getByRole('button', { name: '戻る' }).click()
+  await addEvents([{ id: 'e-old', date: ymd(-1), startTime: '13:00', endTime: '16:00', venue: '（架空）過ぎた会場', catIds: [] }])
+  await p.getByRole('button', { name: '次へ' }).click()
+  await p.locator('.card-end[data-drawn="1"]').waitFor()
+  await p.waitForTimeout(300)
+  check((await end.getAttribute('data-event')) === '0', '過ぎた譲渡会は、最後の1枚に入らない')
+  // これからの譲渡会があるとき（近いほうを入れる）
+  await p.getByRole('button', { name: '戻る' }).click()
+  await addEvents([
+    { id: 'e-old', date: ymd(-1), startTime: '13:00', endTime: '16:00', venue: '（架空）過ぎた会場', catIds: [] },
+    { id: 'e-far', date: ymd(30), startTime: '13:00', endTime: '16:00', venue: '（架空）遠い会場', catIds: [] },
+    { id: 'e-near', date: ymd(0), startTime: '13:00', endTime: '16:00', venue: '（架空）みどり公民館 2階 和室', catIds: [] },
+  ])
+  await p.getByRole('button', { name: '次へ' }).click()
+  await p.locator('.card-end[data-drawn="1"][data-event="1"]').waitFor({ timeout: 3000 }).catch(() => {})
+  check((await end.getAttribute('data-event')) === '1' && (await end.getAttribute('data-fits')) === '1', '今日からの譲渡会があれば、最後の1枚に入り、はみ出さない')
+  const box = p.getByLabel(/最後の1枚に、次の譲渡会/)
+  check((await box.isVisible()) && (await p.getByText(`次の譲渡会（${ymd(0).slice(5).replace('-', '/')}）`).isVisible()), 'いちばん近い譲渡会（今日）を選び、確認画面で外せる')
+  await p.screenshot({ path: join(outDir, '5l_最後の1枚_譲渡会あり.png'), fullPage: true })
+  await end.click()
+  await p.locator('.card-full .card-full-canvas[data-drawn="1"]').waitFor()
+  await p.screenshot({ path: join(outDir, '5m_最後の1枚_画面いっぱい.png') })
+  await p.getByRole('button', { name: '× 閉じる' }).click()
+  await box.uncheck()
+  await p.locator('.card-end[data-event="0"]').waitFor({ timeout: 3000 }).catch(() => {})
+  check((await end.getAttribute('data-event')) === '0', '譲渡会を外すと、最後の1枚から消える')
+  // 横の写真の表紙
+  await p.getByRole('button', { name: '戻る' }).click()
+  await p.getByRole('button', { name: '写真1を外す' }).click()
+  await p.locator('input[type=file]').setInputFiles(dummy('#9fb3a0', '横', 800, 600))
+  await p.locator('.photo img').first().waitFor()
+  await p.getByRole('button', { name: '次へ' }).click()
+  await p.locator('.card-cover[data-design="B"][data-drawn="1"]').waitFor({ timeout: 3000 }).catch(() => {})
+  check((await cover.getAttribute('data-design')) === 'B' && (await cover.getAttribute('data-fits')) === '1' && Number(await cover.getAttribute('data-contrast')) >= 4.5, '表紙（横の写真）：色の帯に名前が入り、はみ出さず読める')
+  await p.screenshot({ path: join(outDir, '5n_表紙_横の写真.png'), fullPage: true })
+  await ctx.close()
+}
+
 // 案B：中くらいの明るさのテーマ色でも、帯の文字が読めるか（11/5 見直し①の1番。白でも濃い色でも4.5に届かない色）
 for (const theme of ['#888888', '#5b8fb9', '#d9534f']) {
   const ctx = await browser.newContext({ ...phone })

@@ -55,17 +55,30 @@ type Img = CanvasImageSource & { width: number; height: number }
 // 日本語を、幅に収まるように折り返す（「、」「。」などで行を始めない）
 const NO_START = '、。，．,.）」』】〕！？!?ーぁぃぅぇぉっゃゅょァィゥェォッャュョ'
 function wrap(ctx: CanvasRenderingContext2D, text: string, width: number): string[] {
+  // 英数字のつながり（電話番号・時刻・メールアドレスなど）は、途中で折らない（入りきらないほど長いときだけ折る）
+  const units = text.match(/[A-Za-z0-9@.:/_~+\-]+|./gsu) ?? []
   const lines: string[] = []
   let cur = ''
-  for (const ch of [...text]) {
-    if (ctx.measureText(cur + ch).width <= width || cur === '') {
-      cur += ch
-    } else if (NO_START.includes(ch) && cur.length > 1) {
-      lines.push(cur.slice(0, -1))
-      cur = cur.slice(-1) + ch
+  const pushChars = (u: string) => {
+    for (const ch of [...u]) {
+      if (ctx.measureText(cur + ch).width <= width || cur === '') cur += ch
+      else if (NO_START.includes(ch) && cur.length > 1) {
+        lines.push(cur.slice(0, -1))
+        cur = cur.slice(-1) + ch
+      } else {
+        lines.push(cur)
+        cur = ch
+      }
+    }
+  }
+  for (const u of units) {
+    if (u.length === 1 || ctx.measureText(cur + u).width <= width) {
+      pushChars(u)
+    } else if (ctx.measureText(u).width <= width) {
+      if (cur) lines.push(cur)
+      cur = u
     } else {
-      lines.push(cur)
-      cur = ch
+      pushChars(u)
     }
   }
   if (cur) lines.push(cur)
@@ -368,4 +381,196 @@ export function loadImage(blob: Blob): Promise<HTMLImageElement> {
     }
     img.src = url
   })
+}
+
+// ── 小さなクローバー（飾り。画像は使わず、図形で描く）──
+export function drawClover(ctx: CanvasRenderingContext2D, cx: number, cy: number, r: number, color: string, shadow = false) {
+  ctx.save()
+  ctx.fillStyle = color
+  if (shadow) {
+    ctx.shadowColor = 'rgba(0,0,0,0.45)'
+    ctx.shadowBlur = 12
+  }
+  // ハートの形の葉を4枚
+  for (let i = 0; i < 4; i++) {
+    ctx.save()
+    ctx.translate(cx, cy)
+    ctx.rotate((Math.PI / 2) * i + Math.PI / 4)
+    ctx.beginPath()
+    ctx.moveTo(0, 0)
+    ctx.bezierCurveTo(-r * 0.9, -r * 0.35, -r * 0.75, -r * 1.15, 0, -r * 0.78)
+    ctx.bezierCurveTo(r * 0.75, -r * 1.15, r * 0.9, -r * 0.35, 0, 0)
+    ctx.fill()
+    ctx.restore()
+  }
+  // 茎
+  ctx.strokeStyle = color
+  ctx.lineWidth = Math.max(2, r * 0.14)
+  ctx.lineCap = 'round'
+  ctx.beginPath()
+  ctx.moveTo(cx, cy)
+  ctx.quadraticCurveTo(cx + r * 0.25, cy + r * 0.8, cx + r * 0.05, cy + r * 1.25)
+  ctx.stroke()
+  ctx.restore()
+}
+
+// ── 表紙（SPEC 3.2 の1番目）：写真1枚目・名前・小さなクローバー ──
+// 名前は、猫カードの名前と同じあたり（下）に置く（11/5 作る人が、仮の画像で「真ん中より上」と見比べて決めた）
+export type CoverLayout = { design: CardDesign; fits: boolean; contrast: number; nameSize: number }
+
+export function drawCoverCard(
+  ctx: CanvasRenderingContext2D,
+  opts: { photo: Img | null; logo: Img | null; name: string; theme: string },
+): CoverLayout {
+  ctx.clearRect(0, 0, CARD_W, CARD_H)
+  const design = designFor(opts.photo)
+  if (design === 'B') {
+    // 横・正方形の写真：猫カードの案Bと同じく、上下にテーマ色の帯。名前は上の帯、クローバーは下の帯
+    const { band, color, contrast } = bandColors(opts.theme)
+    const logoH = opts.logo ? B_LOGO + 14 : 0
+    const { size, lines } = planName(ctx, opts.name, 1.1, WIDE_W)
+    const topH = SAFE.top + logoH + lines.length * size * NAME_LH + B_PAD
+    const botH = SAFE.bottom + 160
+    ctx.fillStyle = band
+    ctx.fillRect(0, 0, CARD_W, CARD_H)
+    if (opts.photo) drawContain(ctx, opts.photo, 0, topH, CARD_W, CARD_H - topH - botH)
+    drawLogo(ctx, opts.logo, SAFE.left, SAFE.top, B_LOGO)
+    const p: Planned = { nameLines: lines, body: [], nameSize: size, lineSize: 0, h: 0 }
+    const n = drawText(ctx, p, CARD_W / 2, SAFE.top + logoH, color, 'center', false, 'name')
+    drawClover(ctx, CARD_W / 2, CARD_H - botH + 70, 44, color)
+    return { design, fits: n.widest <= WIDE_W + 0.5 && n.bottom <= topH, contrast: round1(contrast), nameSize: size }
+  }
+
+  // 縦の写真：写真を全面に。名前は白い大きな文字（影つき）
+  ctx.fillStyle = '#6b5f55'
+  ctx.fillRect(0, 0, CARD_W, CARD_H)
+  if (opts.photo) drawCover(ctx, opts.photo, 0, 0, CARD_W, CARD_H)
+  const { size, lines } = planName(ctx, opts.name, 1.15, WIDE_W)
+  const h = lines.length * size * NAME_LH
+  const cloverR = 40
+  // 猫カードの名前と同じあたり（下のほう）。名前は真ん中にそろえるので、右下のボタンの高さ（下から540）より上に置く
+  const top = CORNER_TOP - 10 - h
+  const [r, g, b] = brightLums(ctx, SAFE.left, top, WIDE_W, h)
+  let darken = 0.3
+  const after = (a: number) => lum(r * (1 - a), g * (1 - a), b * (1 - a))
+  while (darken < 0.85 && ratio(1, after(darken)) < 4.5) darken = Math.min(0.85, darken + 0.05)
+  // 名前の周りだけを、上下にぼかして暗くする
+  const pad = 220
+  const grad = ctx.createLinearGradient(0, top - pad, 0, top + h + pad)
+  grad.addColorStop(0, 'rgba(0,0,0,0)')
+  grad.addColorStop(0.35, `rgba(0,0,0,${darken})`)
+  grad.addColorStop(0.65, `rgba(0,0,0,${darken})`)
+  grad.addColorStop(1, 'rgba(0,0,0,0)')
+  ctx.fillStyle = grad
+  ctx.fillRect(0, top - pad, CARD_W, h + pad * 2)
+  drawLogo(ctx, opts.logo, SAFE.left, SAFE.top)
+  const p: Planned = { nameLines: lines, body: [], nameSize: size, lineSize: 0, h }
+  const n = drawText(ctx, p, CARD_W / 2, top, WHITE, 'center', true, 'name')
+  drawClover(ctx, CARD_W / 2, top - cloverR - 34, cloverR, WHITE, true)
+  const w = widthFor(n.bottom)
+  return { design, fits: n.widest <= w + 0.5 && top - cloverR * 2 - 34 >= SAFE.top && n.bottom <= CARD_H - SAFE.bottom, contrast: round1(ratio(1, after(darken))), nameSize: size }
+}
+
+// ── 最後の1枚（SPEC 3.2 の5番目）：次の譲渡会の日時・場所、団体名、ロゴ、連絡先 ──
+// 写真のないカード。真ん中あたりに置き、Instagramの表示が重なる所は避ける（SPEC 3.1）
+export type EndEvent = { date: string; startTime: string; endTime: string; venue: string }
+export type EndLayout = { fits: boolean; scale: number; hasEvent: boolean; contrast: number }
+
+const WEEK = ['日', '月', '火', '水', '木', '金', '土']
+export function eventDateText(e: EndEvent): string {
+  const [y, m, d] = e.date.split('-').map(Number)
+  if (!y || !m || !d) return e.date
+  return `${m}月${d}日（${WEEK[new Date(y, m - 1, d).getDay()]}）`
+}
+export const eventTimeText = (e: EndEvent) => (e.startTime ? `${e.startTime}〜${e.endTime}` : '')
+const PAPER = '#fbf6ee'
+
+export function drawEndCard(
+  ctx: CanvasRenderingContext2D,
+  opts: { logo: Img | null; shelterName: string; contact: string; event: EndEvent | null; theme: string },
+): EndLayout {
+  ctx.clearRect(0, 0, CARD_W, CARD_H)
+  const { band, color: onBand, contrast } = bandColors(opts.theme)
+  // 便箋：紙の色の上に、テーマ色の細い枠
+  ctx.fillStyle = PAPER
+  ctx.fillRect(0, 0, CARD_W, CARD_H)
+  ctx.strokeStyle = band
+  ctx.lineWidth = 10
+  ctx.strokeRect(SAFE.left - 24, SAFE.top - 40, CARD_W - (SAFE.left - 24) * 2, CARD_H - SAFE.top - SAFE.bottom + 80)
+
+  const contactLines = opts.contact
+    .split('\n')
+    .map((l) => l.trim())
+    .filter(Boolean)
+  // 中身を上から並べる。入らなければ全体を小さくする（書き換えない・切らない）
+  type Row = { text: string; px: number; weight: number; color: string; gapBefore: number; pill?: boolean }
+  const build = (k: number): Row[] => {
+    const rows: Row[] = []
+    if (opts.event) {
+      rows.push({ text: '次の譲渡会', px: 52 * k, weight: 800, color: onBand, gapBefore: 0, pill: true })
+      rows.push({ text: eventDateText(opts.event), px: 76 * k, weight: 800, color: INK, gapBefore: 34 * k })
+      const time = eventTimeText(opts.event)
+      if (time) rows.push({ text: time, px: 64 * k, weight: 800, color: INK, gapBefore: 6 * k })
+      if (opts.event.venue) rows.push({ text: opts.event.venue, px: 60 * k, weight: 700, color: INK, gapBefore: 14 * k })
+    }
+    rows.push({ text: opts.shelterName, px: 84 * k, weight: 800, color: INK, gapBefore: opts.event ? 90 * k : 0 })
+    contactLines.forEach((t, i) => rows.push({ text: t, px: 46 * k, weight: 600, color: INK, gapBefore: (i === 0 ? 34 : 8) * k }))
+    return rows
+  }
+  const LOGO = opts.logo ? 300 : 0
+  const LH = 1.35
+  const areaTop = SAFE.top + 40
+  const areaBottom = CARD_H - SAFE.bottom - 40
+  let k = 1
+  let laid: { lines: string[]; row: Row; y: number }[] = []
+  let total = 0
+  for (const s of [1, 0.92, 0.84, 0.76, 0.68, 0.6]) {
+    k = s
+    const rows = build(k)
+    laid = []
+    // 下へ行くほど、右下のボタンを避けて狭く（左右どちらも空けて真ん中に）
+    let y = 0
+    for (const row of rows) {
+      ctx.font = `${row.weight} ${Math.round(row.px)}px ${FONT}`
+      y += row.gapBefore
+      const lines = wrap(ctx, row.text, CARD_W - SAFE.cornerRight * 2 - (row.pill ? 80 : 0))
+      laid.push({ lines, row, y })
+      y += lines.length * row.px * LH + (row.pill ? 24 : 0)
+    }
+    total = (LOGO ? LOGO * k + 60 * k : 0) + y
+    if (areaTop + total <= areaBottom) break
+  }
+  const fits = areaTop + total <= areaBottom
+  // 全体を、使える高さの真ん中に置く
+  const y0 = areaTop + Math.max(0, (areaBottom - areaTop - total) / 2)
+  if (opts.logo) {
+    const size = LOGO * k
+    const s = size / Math.max(opts.logo.width, opts.logo.height)
+    ctx.drawImage(opts.logo, CARD_W / 2 - (opts.logo.width * s) / 2, y0 + (size - opts.logo.height * s) / 2, opts.logo.width * s, opts.logo.height * s)
+  }
+  const base = y0 + (LOGO ? LOGO * k + 60 * k : 0)
+  ctx.textBaseline = 'top'
+  ctx.textAlign = 'center'
+  for (const { lines, row, y } of laid) {
+    ctx.font = `${row.weight} ${Math.round(row.px)}px ${FONT}`
+    let yy = base + y
+    if (row.pill) {
+      const w = Math.max(...lines.map((l) => ctx.measureText(l).width)) + 80
+      const h = lines.length * row.px * LH + 24
+      ctx.fillStyle = band
+      ctx.beginPath()
+      ctx.roundRect(CARD_W / 2 - w / 2, yy, w, h, h / 2)
+      ctx.fill()
+      yy += 12
+    }
+    ctx.fillStyle = row.color
+    for (const l of lines) {
+      ctx.fillText(l, CARD_W / 2, yy + row.px * 0.1)
+      yy += row.px * LH
+    }
+  }
+  // 飾りのクローバー（文字のない所に小さく）
+  drawClover(ctx, CARD_W - SAFE.right - 70, SAFE.top + 40, 34, band)
+  drawClover(ctx, SAFE.left + 60, CARD_H - SAFE.bottom - 10, 28, band)
+  return { fits, scale: k, hasEvent: !!opts.event, contrast: round1(contrast) }
 }
