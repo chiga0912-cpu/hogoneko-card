@@ -54,8 +54,9 @@ const newCanvas = () => {
   return cv
 }
 
-// 縦の動画は画面いっぱい、横の動画は上下に帯を付けて全体を見せる（テストDと同じ）
-const isTall = (w: number, h: number) => h >= w
+// 縦の動画は画面いっぱい、横・正方形の動画は上下に帯を付けて全体を見せる（テストDと同じ）
+// 縦＝縦が横より1割以上長いとき（カードの案A・案Bの分け方とそろえる）
+const isTall = (w: number, h: number) => h >= w * 1.1
 
 // ① 1コマずつ
 async function makeByFrames(segs: Segment[], onProgress: Progress): Promise<Blob> {

@@ -4,7 +4,15 @@ import { CHECK_MODE } from '../lib/checkMode'
 import { useBlobUrl } from '../lib/useBlobUrls'
 import type { Made, Method } from '../lib/video'
 
-type Props = { cat: Cat; shelter: Shelter; event: AdoptionEvent | null; post: string; onHome: () => void; onRoster: () => void }
+type Props = {
+  cat: Cat
+  shelter: Shelter
+  event: AdoptionEvent | null
+  post: string
+  onHome: () => void
+  onRoster: () => void
+  onBackToPreview: () => void
+}
 
 // 確認モードのときだけ、作り方を選んで試せる（?method=record など。②③をパソコンで確かめるため）
 const forcedMethod = (): Method | undefined => {
@@ -13,7 +21,7 @@ const forcedMethod = (): Method | undefined => {
 }
 
 // 保存（SPEC 2.5）。動画を作って見せ、大きいボタン1つで、投稿文をコピーしてから共有の画面（Instagramへ）を開く
-export default function Save({ cat, shelter, event, post, onHome, onRoster }: Props) {
+export default function Save({ cat, shelter, event, post, onHome, onRoster, onBackToPreview }: Props) {
   const [progress, setProgress] = useState(0)
   const [made, setMade] = useState<Made | null>(null)
   const [makeError, setMakeError] = useState(false)
@@ -69,7 +77,12 @@ export default function Save({ cat, shelter, event, post, onHome, onRoster }: Pr
   // コピーは待たずに始める（共有の画面は、押した直後でないと開けないため）
   const copyAndShare = async () => {
     setShareNote('')
-    const copying = copyText(post)
+    // コピーの結果は、共有の画面を閉じるのを待たずに出す（失敗したまま気づかずにInstagramへ行かないように）
+    const copying = copyText(post).then((ok) => {
+      setCopied(ok)
+      setCopyFailed(!ok)
+      return ok
+    })
     const fs = files()
     let shared: 'done' | 'cancel' | 'cannot' | 'error' = 'cannot'
     if (typeof navigator.share === 'function' && (navigator.canShare?.({ files: fs }) ?? true)) {
@@ -80,9 +93,7 @@ export default function Save({ cat, shelter, event, post, onHome, onRoster }: Pr
         shared = (e as Error).name === 'AbortError' ? 'cancel' : 'error'
       }
     }
-    const ok = await copying
-    setCopied(ok)
-    setCopyFailed(!ok)
+    await copying
     if (shared === 'cannot' || shared === 'error')
       setShareNote(
         made?.kind === 'video'
@@ -113,7 +124,14 @@ export default function Save({ cat, shelter, event, post, onHome, onRoster }: Pr
             <progress max={1} value={progress} aria-label="動画を作っている進み具合" />
           </div>
         )}
-        {makeError && <p className="alert">動画もカードの画像も作れませんでした。確認画面に戻って、もう一度押してください。</p>}
+        {makeError && (
+          <>
+            <p className="alert">動画もカードの画像も作れませんでした。確認画面に戻って、もう一度押してください。</p>
+            <button className="btn btn-big" onClick={onBackToPreview}>
+              確認画面に戻る
+            </button>
+          </>
+        )}
         {made?.kind === 'video' && url && (
           <>
             <video className="reel-video" src={url} controls playsInline loop muted autoPlay data-sec={made.sec} data-method={made.method} />
@@ -134,8 +152,14 @@ export default function Save({ cat, shelter, event, post, onHome, onRoster }: Pr
       </section>
 
       {geo === 'あり' && (
-        <p className="alert">できた{made?.kind === 'image' ? '画像' : '動画'}に位置情報が入っていたので、保存をやめました。確認画面に戻って、もう一度作ってください。</p>
+        <>
+          <p className="alert">できた{made?.kind === 'image' ? '画像' : '動画'}に位置情報が入っていたので、保存をやめました。確認画面に戻って、もう一度作ってください。</p>
+          <button className="btn btn-big" onClick={onBackToPreview}>
+            確認画面に戻る
+          </button>
+        </>
       )}
+      {geo === '調べられない' && <p className="notice">位置情報が入っていないかを、確かめられませんでした。</p>}
 
       <section className="share-box">
         <button className="btn btn-primary btn-big btn-share" disabled={!ready} onClick={() => void copyAndShare()}>

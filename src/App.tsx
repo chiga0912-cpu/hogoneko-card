@@ -57,12 +57,16 @@ export default function App() {
   const [unreadableCats, setUnreadableCats] = useState(0) // 名簿の中で、読めなかった子の数（消さずに残している）
   const [draftUnreadable, setDraftUnreadable] = useState(false) // 入力の途中が読めなかった
   const [postEdited, setPostEdited] = useState(false) // 投稿文を手で直したか
-  const [autosaveFailed, setAutosaveFailed] = useState(false) // 入力の途中を残せなかった
+  // 入力の途中を残せなかった（文字・写真・動画で分けて持つ。1つが成功しても、ほかの失敗の知らせを消さないため）
+  const [saveFail, setSaveFail] = useState({ text: false, photos: false, clip: false })
+  const setFail = (k: 'text' | 'photos' | 'clip', v: boolean) => setSaveFail((f) => (f[k] === v ? f : { ...f, [k]: v }))
+  const autosaveFailed = saveFail.text || saveFail.photos || saveFail.clip
   const [blocked, setBlocked] = useState(false) // 古い版のタブが開いていて、保存場所を開けない
   const [pickError, setPickError] = useState(false) // 名簿から選んだ子の写真が読めなかった
   const [loadMs, setLoadMs] = useState<number | null>(null) // 名簿を読むのにかかった時間（確認モードで出す）
   const [migrateFailed, setMigrateFailed] = useState(0) // 移し替えられなかった子の数（確認モードで出す）
   const migrating = useRef(false)
+  const [clipLost, setClipLost] = useState(false) // 途中の動画を残せていなかった
   const [reelEvent, setReelEvent] = useState<AdoptionEvent | null>(null) // 最後の1枚に入れる譲渡会（確認画面で選んだもの）
 
   const go = (next: Screen) => {
@@ -122,8 +126,13 @@ export default function App() {
               const full = await db.loadCat(restored.id)
               restored = {
                 ...restored,
-                // 途中に動画が残っていれば、それを使う（外した動画が戻らないように）
-                clip: saved.clipMissing ? full.clip : restored.clip,
+                // 途中に動画が残っていれば、それを使う（外した・替えた動画が戻らないように）
+                clip:
+                  saved.clipStatus === 'old'
+                    ? full.clip
+                    : saved.clipStatus === 'roster' && full.clip
+                      ? { ...full.clip, ...saved.clipRange }
+                      : restored.clip,
                 photos: saved.photosMissing ? full.photos : restored.photos,
               }
             } catch {
@@ -134,6 +143,8 @@ export default function App() {
               return
             }
           }
+          // 選び直した動画を書き終える前にページが終わったときは、黙って名簿の動画に戻さず、知らせる
+          if (saved.clipStatus === 'lost') setClipLost(true)
           setCat(restored)
           setFromRoster(saved.draft.fromRoster)
           setPost(saved.draft.post)
@@ -158,8 +169,8 @@ export default function App() {
     if (!latest.current) return
     setHasDraft(true)
     db.saveDraft(latest.current).then(
-        () => setAutosaveFailed(false),
-        () => setAutosaveFailed(true),
+        () => setFail('text', false),
+        () => setFail('text', true),
       )
   }, [])
 
@@ -177,8 +188,8 @@ export default function App() {
   useEffect(() => {
     if (worthKeeping)
       db.saveDraftPhotos(cat.photos).then(
-        () => setAutosaveFailed(false),
-        () => setAutosaveFailed(true),
+        () => setFail('photos', false),
+        () => setFail('photos', true),
       )
   }, [cat.photos, worthKeeping])
 
@@ -187,8 +198,8 @@ export default function App() {
   useEffect(() => {
     if (worthKeeping)
       db.saveDraftClip(clipBlob).then(
-        () => setAutosaveFailed(false),
-        () => setAutosaveFailed(true),
+        () => setFail('clip', false),
+        () => setFail('clip', true),
       )
   }, [clipBlob, worthKeeping])
 
@@ -379,6 +390,7 @@ export default function App() {
             go('preview')
           }}
           autosaveFailed={autosaveFailed}
+          clipLost={clipLost && !cat.clip} // 選び直したら知らせを消す
         />
       )}
       {screen === 'preview' && shelter && (
@@ -396,7 +408,19 @@ export default function App() {
         />
       )}
       {screen === 'save' && shelter && (
-        <Save cat={cat} shelter={shelter} event={reelEvent} post={post} onHome={() => go('home')} onRoster={() => go('roster')} />
+        <Save
+          cat={cat}
+          shelter={shelter}
+          event={reelEvent}
+          post={post}
+          onHome={() => go('home')}
+          onRoster={() => go('roster')}
+          // 作れなかったとき・位置情報があったときは、入力も投稿文もそのままで確認画面に戻る（もう一度書かせないため）
+          onBackToPreview={() => {
+            setFromRoster(true) // 名簿に保存したあとなので、名簿の子として開き直す
+            go('preview')
+          }}
+        />
       )}
     </div>
   )

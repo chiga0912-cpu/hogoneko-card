@@ -327,6 +327,7 @@ export async function loadCat(id: string): Promise<Cat> {
     cat = normalizeCat(raw)
   }
   if (!cat) throw new MediaError('名簿の記録が読めません')
+  if (cat.clip) rosterClips.add(cat.clip.blob) // 名簿から読んだままの動画（途中を開き直すときに、名簿の動画を使ってよい）
   return cat
 }
 
@@ -403,10 +404,15 @@ export type Draft = {
 }
 // 入力の途中を読む。読めないときは 'unreadable'（途中は消さない。新しく始めたときに上書きされる）
 // photosMissing：途中の写真がまだ書かれていなかった（文字は書けたが、写真を書く前にページが終わったときなど）
-// clipMissing：途中の動画が読めなかった（動画を残す前の版で書かれた途中、または動画を書く前にページが終わった）。
-//   名簿の子なら、名簿の動画を使う。動画を外したときは clipMissing にならない（外したまま開く）
+// clipStatus：途中の動画の読め方（11/5 見直しの重い1・2）
+//   'ok'     途中の動画が、途中の記録と同じ動画として読めた
+//   'none'   動画は入っていなかった（外したなら外したまま開く）
+//   'old'    動画を残す前の版で書かれた途中。名簿の子なら、名簿の動画を使う
+//   'roster' 途中の動画は書けていなかったが、それは名簿の動画のままだった。名簿の動画を使う
+//   'lost'   選び直した動画を書き終える前にページが終わった。名簿の動画には戻さず、知らせる
+export type ClipStatus = 'ok' | 'none' | 'old' | 'roster' | 'lost'
 export const loadDraft = async (): Promise<
-  { cat: Cat; draft: Draft; photosMissing: boolean; clipMissing: boolean } | null | 'unreadable'
+  { cat: Cat; draft: Draft; photosMissing: boolean; clipStatus: ClipStatus; clipRange: { start: number; length: number } | null } | null | 'unreadable'
 > => {
   try {
     const raw = await run<unknown>('drafts', 'readonly', (s) => s.get('main'))
@@ -414,18 +420,23 @@ export const loadDraft = async (): Promise<
     if (!isObj(raw)) return 'unreadable'
     const rawPhotos = await run<unknown>('drafts', 'readonly', (s) => s.get('photos'))
     const photos = blobs(rawPhotos)
-    // 動画は、使う所（start・length）を途中の記録に、中身を 'clip' に分けて残す
+    // 動画は、使う所（start・length）と動画の番号を途中の記録に、中身と番号を 'clip' に分けて残す。
+    // 番号が合うときだけ使う（別の動画の中身に、今の始まりと長さを付けないため）
     const meta = isObj(raw.cat) ? raw.cat.clip : null
     const rawClip = isObj(meta) ? await run<unknown>('drafts', 'readonly', (s) => s.get('clip')) : undefined
-    const clipBlob = rawClip === undefined ? null : blobOrNull(rawClip)
-    const clip = isObj(meta) && clipBlob ? { blob: rawClip, start: meta.start, length: meta.length } : null
+    const sameClip = isObj(meta) && isObj(rawClip) && typeof meta.clipId === 'string' && rawClip.id === meta.clipId
+    const clipBlob = sameClip ? blobOrNull((rawClip as Record<string, unknown>).blob) : null
+    const clip = isObj(meta) && clipBlob ? { blob: clipBlob, start: meta.start, length: meta.length } : null
+    const clipStatus: ClipStatus =
+      raw.clipSaved !== true ? 'old' : !isObj(meta) ? 'none' : clip ? 'ok' : meta.roster === true ? 'roster' : 'lost'
     const cat = normalizeCat(raw.cat, { photos, clip })
     if (!cat) return 'unreadable'
     const { photos: _p, ...rest } = cat
     return {
       cat,
       photosMissing: rawPhotos === undefined,
-      clipMissing: raw.clipSaved !== true || (isObj(meta) && !clipBlob),
+      clipStatus,
+      clipRange: isObj(meta) ? { start: num(meta.start, 0), length: num(meta.length, 5) } : null,
       draft: {
         cat: rest,
         fromRoster: raw.fromRoster === true,
@@ -439,28 +450,53 @@ export const loadDraft = async (): Promise<
     return 'unreadable'
   }
 }
+
+// 動画ごとの番号（この画面を開いている間だけ覚える）と、名簿から読んだままの動画か
+const clipIds = new WeakMap<Blob, string>()
+const rosterClips = new WeakSet<Blob>()
+const clipIdOf = (b: Blob) => {
+  let id = clipIds.get(b)
+  if (!id) clipIds.set(b, (id = `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`))
+  return id
+}
+
 // 途中の記録には、動画の中身は入れない（大きいので、変わったときだけ saveDraftClip で書く）
 export const saveDraft = (draft: Draft) =>
   run<void>('drafts', 'readwrite', (s) =>
     s.put(
       {
         ...draft,
-        cat: { ...draft.cat, clip: draft.cat.clip && { start: draft.cat.clip.start, length: draft.cat.clip.length } },
+        cat: {
+          ...draft.cat,
+          clip: draft.cat.clip && {
+            start: draft.cat.clip.start,
+            length: draft.cat.clip.length,
+            clipId: clipIdOf(draft.cat.clip.blob),
+            roster: rosterClips.has(draft.cat.clip.blob),
+          },
+        },
         clipSaved: true, // 動画を残す版で書いた印（前の版の途中と見分けるため）
         schemaVersion: SCHEMA_VERSION,
       },
       'main',
     ),
   )
+// 書き込みは、あとから呼ばれたものだけを残す（大きい動画の書き込みが、あとの小さい動画より遅く終わっても上書きしない）
+let clipSeq = 0
 export async function saveDraftClip(clip: Blob | null) {
-  const stored = clip ? await pack(clip) : null
+  const seq = ++clipSeq
+  const stored = clip ? { id: clipIdOf(clip), blob: await pack(clip) } : null
+  if (seq !== clipSeq) return
   await run<void>('drafts', 'readwrite', (s) => (stored ? s.put(stored, 'clip') : s.delete('clip')))
 }
 export async function saveDraftPhotos(photos: Blob[]) {
   const stored = await Promise.all(photos.map(pack))
   await run<void>('drafts', 'readwrite', (s) => s.put(stored, 'photos'))
 }
-export const clearDraft = () => run<void>('drafts', 'readwrite', (s) => s.clear())
+export const clearDraft = () => {
+  clipSeq++ // 消したあとに、前の動画の書き込みが入らないように
+  return run<void>('drafts', 'readwrite', (s) => s.clear())
+}
 
 // 「消えにくくしてほしい」とお願いする。通るかはブラウザが決める
 export async function requestPersist(): Promise<boolean | null> {

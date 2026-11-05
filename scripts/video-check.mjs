@@ -130,6 +130,69 @@ ok((await p.getByText('5秒より短い動画なので、全部使います').is
   ok((await p2.getByTestId('location').textContent()).includes('なし'), '位置情報の入った動画を使っても、できた動画は「なし」')
   await ctx2.close()
 }
+// 動画を替えた直後にページが閉じたとき（11/5 見直しの重い1・2）。中身の書き込みを、わざと遅くして試す
+{
+  const ctx3 = await b.newContext({ ...phone })
+  const p3 = await ctx3.newPage()
+  p3.on('dialog', (d) => d.accept())
+  // __slowAbove より大きいファイルの中身を読むのを4秒遅らせる（iPhoneで大きい動画を書くのに時間がかかる場面の代わり）
+  await p3.addInitScript(() => {
+    const orig = Blob.prototype.arrayBuffer
+    Blob.prototype.arrayBuffer = async function () {
+      if (window.__slowAbove && this.size > window.__slowAbove) await new Promise((r) => setTimeout(r, 4000))
+      return orig.call(this)
+    }
+  })
+  const slow = (bytes) => p3.evaluate((b) => (window.__slowAbove = b), bytes)
+  const reopen = async () => {
+    await p3.reload()
+    await p3.getByLabel('名前').waitFor()
+    await p3.waitForTimeout(1200)
+  }
+  const shown = async () => ((await p3.locator('.clip-time').isVisible()) ? await p3.locator('.clip-time').getAttribute('data-length') : null)
+  await p3.goto(url + '/?sizes=1')
+  await p3.getByText('はじめに').waitFor()
+  await p3.getByRole('button', { name: '追加せずに、このまま使う' }).click()
+  await p3.getByLabel('団体名').fill('テスト保護猫の会')
+  await p3.getByRole('button', { name: '登録して始める' }).click()
+  await p3.getByRole('button', { name: '新しい子を紹介' }).click()
+  await p3.getByLabel('名前').fill('テスト')
+  // (a) 短い動画を残したあと、長い動画に替え、その中身を書き終える前に読み込み直す
+  await p3.locator('input[type=file][accept="video/*"]').setInputFiles(join(FAKE, 'wide3.mp4'))
+  await p3.locator('.clip-time').waitFor()
+  await p3.waitForTimeout(1500)
+  await slow(3_000_000)
+  await p3.getByRole('button', { name: '動画を外す' }).click()
+  await p3.locator('input[type=file][accept="video/*"]').setInputFiles(join(FAKE, 'tall12.mp4'))
+  await p3.locator('.clip-time').waitFor({ timeout: 15000 })
+  await p3.waitForTimeout(800)
+  await reopen()
+  ok((await shown()) === null && (await p3.getByText('選んだ動画を残せていませんでした').isVisible()), '替えた動画を書き終える前に閉じても、前の動画に黙って戻らず、知らせる')
+  // (b) 長い動画の書き込みが、あとで選んだ短い動画より遅く終わっても、短い動画が残る
+  await slow(3_000_000)
+  await p3.locator('input[type=file][accept="video/*"]').setInputFiles(join(FAKE, 'tall12.mp4'))
+  await p3.locator('.clip-time').waitFor({ timeout: 15000 })
+  await p3.getByRole('button', { name: '動画を外す' }).click()
+  await p3.locator('input[type=file][accept="video/*"]').setInputFiles(join(FAKE, 'wide3.mp4'))
+  await p3.locator('.clip-time').waitFor()
+  await p3.waitForTimeout(6000) // 長い動画の遅い書き込みも終わるまで待つ
+  await slow(0)
+  await reopen()
+  ok(Number(await shown()) <= 3.01 && (await p3.locator('.clip-video').evaluate((v) => v.videoWidth > v.videoHeight)), 'あとで選んだ動画（横・3秒）が、その長さのまま残る（前の動画の中身と入れ違わない）')
+  // (c) 名簿の子を開いてすぐ閉じた（名簿の動画をまだ途中に書き終えていない）ときは、名簿の動画をそのまま使う
+  await p3.getByRole('button', { name: '次へ' }).click()
+  await p3.getByRole('button', { name: '動画を作る' }).click()
+  await p3.getByText('名簿に保存しました').waitFor()
+  await p3.getByRole('button', { name: '名簿を見る' }).click()
+  await slow(1_000_000)
+  await p3.getByText('テスト').first().click()
+  await p3.locator('.clip-time').waitFor({ timeout: 15000 })
+  await p3.waitForTimeout(600)
+  await slow(0)
+  await reopen()
+  ok(Number(await shown()) > 2.9 && !(await p3.getByText('選んだ動画を残せていませんでした').isVisible()), '名簿の子を開いてすぐ閉じたときは、名簿の動画をそのまま使う')
+  await ctx3.close()
+}
 await b.close()
 console.log(failures ? `確認NG が ${failures} こ` : '動画の確認：全部OK')
 process.exit(failures ? 1 : 0)

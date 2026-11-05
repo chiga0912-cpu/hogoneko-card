@@ -121,11 +121,20 @@ export default function Preview({ shelter, cat, onCatChange, post, onPostChange,
   const [full, setFull] = useState<'cover' | 'cat' | 'end' | null>(null)
   const [layout, setLayout] = useState<CardLayout | null>(null)
   const [event, setEvent] = useState<AdoptionEvent | null>(null)
+  const [eventsRead, setEventsRead] = useState(false) // 譲渡会を読み終えるまで［動画を作る］を押せなくする（読み終える前だと譲渡会なしで作られるため）
+  const [coverFits, setCoverFits] = useState(true)
+  const [endFits, setEndFits] = useState(true)
   const [showEvent, setShowEvent] = useState(true) // 最後の1枚に譲渡会を入れるか（確認画面で外せる）
   useEffect(() => {
     db.loadEvents().then(
-      (list) => setEvent(nextEvent(list)),
-      () => setEvent(null), // 読めなくても、連絡先だけで作れる
+      (list) => {
+        setEvent(nextEvent(list))
+        setEventsRead(true)
+      },
+      () => {
+        setEvent(null) // 読めなくても、連絡先だけで作れる
+        setEventsRead(true)
+      },
     )
   }, [])
   const photo1 = cat.photos[0] ?? null
@@ -150,12 +159,14 @@ export default function Preview({ shelter, cat, onCatChange, post, onPostChange,
       shelter.logo ? loadImage(shelter.logo).catch(() => null) : null,
     ])
     const l = drawCoverCard(ctx, { photo: photo ?? (clipBlob ? still : null), logo, name: cat.name, theme: shelter.themeColor })
+    setCoverFits(l.fits)
     return { fits: l.fits, design: l.design, contrast: l.contrast }
   }
   const usedEvent = showEvent ? event : null
   const paintEnd: Painter = async (ctx) => {
     const logo = shelter.logo ? await loadImage(shelter.logo).catch(() => null) : null
     const l = drawEndCard(ctx, { logo, shelterName: shelter.name, contact: shelter.contact, event: usedEvent, theme: shelter.themeColor })
+    setEndFits(l.fits)
     return { fits: l.fits, scale: l.scale, event: l.hasEvent }
   }
   const coverDeps = [photo1, still, clipBlob, shelter.logo, shelter.themeColor, cat.name]
@@ -195,6 +206,8 @@ export default function Preview({ shelter, cat, onCatChange, post, onPostChange,
           <p className="notice">いいところが長いので、カードの文字を少し小さくしました。</p>
         )}
         {layout && !layout.fits && <p className="alert">名前が長くて、カードに入りきりません。</p>}
+        {!coverFits && <p className="alert">名前が長くて、表紙に入りきりません。</p>}
+        {!endFits && <p className="alert">連絡先や団体名が長くて、最後の1枚に入りきりません。シェルター情報で短くしてください。</p>}
 
         {layout?.design === 'B' && (
           <p className="muted center">横長・正方形の写真なので、文字は上下の色の帯に入ります。縦長の写真なら、写真の上に文字が載ります</p>
@@ -258,7 +271,7 @@ export default function Preview({ shelter, cat, onCatChange, post, onPostChange,
         {saveFailed && <p className="alert bar-alert">名簿に保存できませんでした。もう一度押してください。</p>}
         <button
           className="btn btn-primary btn-big"
-          disabled={saving || tooMany}
+          disabled={saving || tooMany || !eventsRead}
           onClick={async () => {
             setSaving(true)
             setSaveFailed(false)
