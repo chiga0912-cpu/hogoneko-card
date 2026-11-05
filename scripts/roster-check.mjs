@@ -321,10 +321,8 @@ const browser = await engine.launch()
   // 読めない写真の子（broken）の表紙は出ないので、それ以外の子の表紙が、画像として読めているか
   const shown = imgs.filter(([w]) => w > 0)
   console.log(`  一覧の表紙の大きさ：${imgs.map((x) => x.join('×')).join(' ')}`)
-  // 手元の確認用サーバー（npm run dev）では、表紙が壊れて見える（見直し A15。本番と同じ作りでは出る）。
-  // そのため、本番と同じ作り（npm run build のあと vite preview）で動かしたときだけ判定する
-  if (url.includes(':5173')) console.log('  （表紙が画像として出ているかは、手元の確認用サーバーでは判定しない。A15。vite preview のアドレスで動かすと判定する）')
-  else check(shown.length === imgs.length - 1 && shown.every(([w, h]) => Math.max(w, h) <= COVER_MAX), `一覧の表紙が画像として出ていて、小さな表紙（長い辺${COVER_MAX}px以下）を使っている（${shown.length}匹）`)
+  // 手元の確認用サーバーで表紙が壊れて見えていた件（見直し A15）は、11/5夜に直した（lib/useBlobUrls.ts）。どちらのサーバーでも判定する
+  check(shown.length === imgs.length - 1 && shown.every(([w, h]) => Math.max(w, h) <= COVER_MAX), `一覧の表紙が画像として出ていて、小さな表紙（長い辺${COVER_MAX}px以下）を使っている（${shown.length}匹）`)
   check(!(await p.evaluate(() => window.__reads)).includes('catMedia'), 'ホームと一覧を出すまでに、写真の置き場所を読んでいない')
   await p.screenshot({ path: join(outDir, '3c_移し替え後_名簿.png'), fullPage: true })
 

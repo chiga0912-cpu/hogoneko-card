@@ -178,7 +178,9 @@ ok((await p.getByText('5秒より短い動画なので、全部使います').is
   await p3.waitForTimeout(6000) // 長い動画の遅い書き込みも終わるまで待つ
   await slow(0)
   await reopen()
-  ok(Number(await shown()) <= 3.01 && (await p3.locator('.clip-video').evaluate((v) => v.videoWidth > v.videoHeight)), 'あとで選んだ動画（横・3秒）が、その長さのまま残る（前の動画の中身と入れ違わない）')
+  await p3.locator('.clip-video').evaluate((v) => (v.videoWidth ? 0 : new Promise((r) => v.addEventListener('loadedmetadata', r, { once: true })))).catch(() => {})
+  const dims = await p3.locator('.clip-video').evaluate((v) => [v.videoWidth, v.videoHeight]).catch(() => [0, 0])
+  ok(Number(await shown()) <= 3.01 && dims[0] > dims[1], `あとで選んだ動画（横・3秒）が、その長さのまま残る（前の動画の中身と入れ違わない。${await shown()}秒・${dims.join('×')}）`)
   // (c) 名簿の子を開いてすぐ閉じた（名簿の動画をまだ途中に書き終えていない）ときは、名簿の動画をそのまま使う
   await p3.getByRole('button', { name: '次へ' }).click()
   await p3.getByRole('button', { name: '動画を作る' }).click()

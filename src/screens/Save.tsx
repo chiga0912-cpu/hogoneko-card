@@ -36,7 +36,7 @@ export default function Save({ cat, shelter, event, post, onHome, onRoster, onBa
   // 知らせは、押したボタンのすぐ下に出し、見える所まで動かす
   useEffect(() => {
     if (copyFailed) failRef.current?.scrollIntoView({ block: 'nearest' })
-  }, [copyFailed])
+  }, [copyFailed, shareNote])
 
   useEffect(() => {
     if (started.current) return
@@ -166,13 +166,13 @@ export default function Save({ cat, shelter, event, post, onHome, onRoster, onBa
           {copied ? 'コピーしました ✓' : '投稿文をコピーしてInstagramへ'}
         </button>
         {copied && <p className="muted center">もう一度押すと、もう一度コピーして開きます</p>}
-        {shareNote && <p className="alert">{shareNote}</p>}
         {copyFailed && (
           <>
             <p className="alert" ref={failRef}>投稿文をコピーできませんでした。下の投稿文を長押しして、コピーしてください。</p>
             <textarea className="copy-fallback" rows={8} readOnly value={post} onFocus={(e) => e.target.select()} />
           </>
         )}
+        {shareNote && <p className="alert">{shareNote}</p>}
         <ol className="share-steps">
           <li>出てきた画面で「Instagram」を選ぶ</li>
           <li>「リール」を選ぶ</li>
