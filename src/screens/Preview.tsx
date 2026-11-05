@@ -111,7 +111,7 @@ type Props = {
   post: string
   onPostChange: (s: string) => void
   onBack: () => void
-  onSave: () => Promise<void>
+  onSave: (event: AdoptionEvent | null) => Promise<void>
 }
 
 // 確認（仮）。カードと根拠の印は11/5〜11/6に作る。今は決まった形の投稿文だけ
@@ -246,14 +246,14 @@ export default function Preview({ shelter, cat, onCatChange, post, onPostChange,
             setSaving(true)
             setSaveFailed(false)
             try {
-              await onSave()
+              await onSave(usedEvent)
             } catch {
               setSaveFailed(true)
               setSaving(false)
             }
           }}
         >
-          名簿に保存する
+          動画を作る
         </button>
       </div>
     </main>

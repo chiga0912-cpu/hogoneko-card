@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { APP_VERSION, CHECK_MODE } from './lib/checkMode'
-import { newCat, type Cat, type Shelter } from './types'
+import { newCat, type AdoptionEvent, type Cat, type Shelter } from './types'
 import * as db from './db'
 import { detectBrowser, isStandalone } from './lib/browser'
 import { makeFixedPost } from './lib/post'
@@ -63,6 +63,7 @@ export default function App() {
   const [loadMs, setLoadMs] = useState<number | null>(null) // 名簿を読むのにかかった時間（確認モードで出す）
   const [migrateFailed, setMigrateFailed] = useState(0) // 移し替えられなかった子の数（確認モードで出す）
   const migrating = useRef(false)
+  const [reelEvent, setReelEvent] = useState<AdoptionEvent | null>(null) // 最後の1枚に入れる譲渡会（確認画面で選んだもの）
 
   const go = (next: Screen) => {
     setScreen(next)
@@ -235,7 +236,9 @@ export default function App() {
     go('home')
   }
 
-  const saveToRoster = async () => {
+  // ［動画を作る］：名簿を新しくしてから、保存の画面で動画を作る（SPEC 2.5「保存したら、名簿の内容も新しくする」）
+  const saveToRoster = async (event: AdoptionEvent | null) => {
+    setReelEvent(event)
     const saved = { ...cat, updatedAt: Date.now() }
     // 一覧の小さな表紙を、1枚目の写真から作る（保存する写真そのものは小さくしない）
     await db.saveCat(saved, await makeCover(saved.photos[0]))
@@ -377,8 +380,8 @@ export default function App() {
           onSave={saveToRoster}
         />
       )}
-      {screen === 'save' && (
-        <Save cat={cat} post={post} onHome={() => go('home')} onRoster={() => go('roster')} />
+      {screen === 'save' && shelter && (
+        <Save cat={cat} shelter={shelter} event={reelEvent} post={post} onHome={() => go('home')} onRoster={() => go('roster')} />
       )}
     </div>
   )

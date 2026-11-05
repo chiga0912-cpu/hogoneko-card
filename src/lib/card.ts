@@ -56,7 +56,7 @@ type Img = CanvasImageSource & { width: number; height: number }
 const NO_START = '、。，．,.）」』】〕！？!?ーぁぃぅぇぉっゃゅょァィゥェォッャュョ'
 function wrap(ctx: CanvasRenderingContext2D, text: string, width: number): string[] {
   // 英数字のつながり（電話番号・時刻・メールアドレスなど）は、途中で折らない（入りきらないほど長いときだけ折る）
-  const units = text.match(/[A-Za-z0-9@.:/_~+\-]+|./gsu) ?? []
+  const units = text.match(/[A-Za-z0-9@.:/_~+-]+|./gsu) ?? []
   const lines: string[] = []
   let cur = ''
   const pushChars = (u: string) => {
@@ -573,4 +573,23 @@ export function drawEndCard(
   drawClover(ctx, CARD_W - SAFE.right - 70, SAFE.top + 40, 34, band)
   drawClover(ctx, SAFE.left + 60, CARD_H - SAFE.bottom - 10, 28, band)
   return { fits, scale: k, hasEvent: !!opts.event, contrast: round1(contrast) }
+}
+
+// ── 撮った動画に重ねる名前（SPEC 3.2 の2番目）──
+// 表紙と同じ置き方（下。右下のボタンの高さより上、真ん中にそろえる）で、少し小さく（11/5 作る人の決定）
+export function drawClipName(ctx: CanvasRenderingContext2D, name: string) {
+  if (!name.trim()) return
+  const { size, lines } = planName(ctx, name, 0.8, WIDE_W)
+  const h = lines.length * size * NAME_LH
+  const top = CORNER_TOP - 10 - h
+  const pad = 160
+  const grad = ctx.createLinearGradient(0, top - pad, 0, top + h + pad)
+  grad.addColorStop(0, 'rgba(0,0,0,0)')
+  grad.addColorStop(0.4, 'rgba(0,0,0,0.35)')
+  grad.addColorStop(0.6, 'rgba(0,0,0,0.35)')
+  grad.addColorStop(1, 'rgba(0,0,0,0)')
+  ctx.fillStyle = grad
+  ctx.fillRect(0, top - pad, CARD_W, h + pad * 2)
+  const p: Planned = { nameLines: lines, body: [], nameSize: size, lineSize: 0, h }
+  drawText(ctx, p, CARD_W / 2, top, WHITE, 'center', true, 'name')
 }
