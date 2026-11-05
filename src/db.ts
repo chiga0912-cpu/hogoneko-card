@@ -321,6 +321,9 @@ export async function loadCat(id: string): Promise<Cat> {
     if (!isObj(media)) throw new MediaError('写真の記録が見つかりません')
     cat = normalizeCat(raw, { photos: media.photos, clip: media.clip })
   } else {
+    // 古い形なのに、新しい置き場所にも写真がある子（古い版に戻して保存し直したあとなど）。
+    // どちらが正しいか分からないので開かない（開いて保存すると、もう片方を上書きしてしまうため）
+    if (media !== undefined) throw new MediaError('写真が2か所にあります')
     cat = normalizeCat(raw)
   }
   if (!cat) throw new MediaError('名簿の記録が読めません')

@@ -121,12 +121,11 @@ export default function App() {
               const full = await db.loadCat(restored.id)
               restored = { ...restored, clip: full.clip, photos: saved.photosMissing ? full.photos : restored.photos }
             } catch {
-              // 写真のないまま開くと、保存したときに名簿の写真が消える。開かずに、ホームで知らせる（途中は消さない）
-              if (saved.photosMissing) {
-                setDraftUnreadable(true)
-                setScreen('home')
-                return
-              }
+              // 名簿の写真・動画が読めないまま開くと、保存したときに名簿の写真や動画が消える。
+              // 途中の写真があってもなくても開かずに、ホームで知らせる（途中は消さない）
+              setDraftUnreadable(true)
+              setScreen('home')
+              return
             }
           }
           setCat(restored)

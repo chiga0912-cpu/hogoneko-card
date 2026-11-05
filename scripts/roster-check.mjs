@@ -499,6 +499,14 @@ for (const [key, label] of [
   check(before && same(d.media['big-1']?.photos, seed.prints['big-1'].photos), '古い版で保存し直された子：別の置き場所の写真3枚を上書きしない')
   check(same(d.cats['big-1']?.inlinePhotos, [seed.prints['big-1'].photos[0]]) && d.cats['big-1'].schemaVersion === 1, '古い版で保存し直された子：名簿の記録も古い形のまま残す')
   check(/移せなかった1匹/.test(await shapeLine(p)), '古い版で保存し直された子は、確認モードで「移せなかった1匹」に数える')
+  // 選んでも開かない（開いて保存すると、片方の写真を上書きするため）
+  await p.getByRole('button', { name: /名簿から選ぶ/ }).click()
+  await p.locator('.roster-main', { hasText: 'おおきな子1' }).click()
+  await p.getByText('写真を読み込めませんでした。名簿は消していません。').waitFor({ timeout: 5000 }).catch(() => {})
+  check(await p.getByText('写真を読み込めませんでした。名簿は消していません。').isVisible(), '古い版で保存し直された子を選ぶと、開かずに「写真を読み込めませんでした」と出る')
+  check(!(await p.getByLabel('名前').isVisible().catch(() => false)), '古い版で保存し直された子は、入力画面を開かない')
+  const d2 = await dump(p)
+  check(same(d2.media['big-1']?.photos, seed.prints['big-1'].photos) && same(d2.cats['big-1']?.inlinePhotos, [seed.prints['big-1'].photos[0]]), '古い版で保存し直された子を選んだあとも、2か所の写真は前と同じ')
   await ctx.close()
 }
 
@@ -550,7 +558,17 @@ for (const [key, label] of [
   await p.reload()
   await p.locator('.photo img').nth(1).waitFor({ timeout: 5000 }).catch(() => {})
   check((await p.locator('.photo img').count()) === 2, '途中の写真が書かれていなくても、名簿の子は名簿の写真で開き直す')
-  // そのうえ名簿の写真も読めない：開かずにホームで知らせる
+  // 途中の写真はあるが、名簿の写真・動画が読めない：開かずにホームで知らせる（動画なしで開いて保存させない）
+  await clearDraft(p)
+  await pick('おおきな子1')
+  await flag(p, '__break_media_get', true)
+  await p.reload()
+  const note1 = p.getByText('入力の途中の内容が読めなかったので、ホームから始めます。')
+  await note1.waitFor({ timeout: 5000 }).catch(() => {})
+  check(await note1.isVisible(), '途中の写真はあっても、名簿の写真・動画が読めないときは、開かずにホームで知らせる')
+  await flag(p, '__break_media_get', false)
+  check((await dump(p)).media['big-1']?.clip === seed.prints['big-1'].clip, 'そのときも、名簿の動画は前と同じ')
+  // そのうえ途中の写真もない：開かずにホームで知らせる
   await clearDraft(p)
   await pick('おおきな子3')
   await dropDraftPhotos()
