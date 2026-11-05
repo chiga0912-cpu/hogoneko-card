@@ -8,6 +8,7 @@ type Props = {
   cat: Cat
   shelter: Shelter
   event: AdoptionEvent | null
+  words: string | null // ひとことカードに載せる文（なければ null）
   post: string
   onHome: () => void
   onRoster: () => void
@@ -21,7 +22,7 @@ const forcedMethod = (): Method | undefined => {
 }
 
 // 保存（SPEC 2.5）。動画を作って見せ、大きいボタン1つで、投稿文をコピーしてから共有の画面（Instagramへ）を開く
-export default function Save({ cat, shelter, event, post, onHome, onRoster, onBackToPreview }: Props) {
+export default function Save({ cat, shelter, event, words, post, onHome, onRoster, onBackToPreview }: Props) {
   const [progress, setProgress] = useState(0)
   const [made, setMade] = useState<Made | null>(null)
   const [makeError, setMakeError] = useState(false)
@@ -45,7 +46,7 @@ export default function Save({ cat, shelter, event, post, onHome, onRoster, onBa
       try {
         // 動画の部品は大きいので、ここで初めて読み込む（最初に開くときを軽くするため）
         const [{ buildSegments }, v] = await Promise.all([import('../lib/reel'), import('../lib/video')])
-        const segs = await buildSegments(cat, shelter, event)
+        const segs = await buildSegments(cat, shelter, event, words)
         const m = await v.makeReel(segs, setProgress, forcedMethod())
         setMade(m)
         if (m.kind === 'video') setUrl(URL.createObjectURL(m.blob))
@@ -56,7 +57,7 @@ export default function Save({ cat, shelter, event, post, onHome, onRoster, onBa
         setMakeError(true)
       }
     })()
-  }, [cat, shelter, event])
+  }, [cat, shelter, event, words])
   useEffect(
     () => () => {
       if (url) URL.revokeObjectURL(url)

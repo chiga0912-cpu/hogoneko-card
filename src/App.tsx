@@ -83,6 +83,7 @@ export default function App() {
   const [migrateFailed, setMigrateFailed] = useState(0) // 移し替えられなかった子の数（確認モードで出す）
   const migrating = useRef(false)
   const [clipLost, setClipLost] = useState(false) // 途中の動画を残せていなかった
+  const [reelWords, setReelWords] = useState<string | null>(null) // ひとことカードに載せる文（確認画面で決めたもの）
   const [reelEvent, setReelEvent] = useState<AdoptionEvent | null>(null) // 最後の1枚に入れる譲渡会（確認画面で選んだもの）
 
   const go = (next: Screen) => {
@@ -283,8 +284,9 @@ export default function App() {
   }
 
   // ［動画を作る］：名簿を新しくしてから、保存の画面で動画を作る（SPEC 2.5「保存したら、名簿の内容も新しくする」）
-  const saveToRoster = async (event: AdoptionEvent | null) => {
+  const saveToRoster = async (event: AdoptionEvent | null, words: string | null) => {
     setReelEvent(event)
+    setReelWords(words)
     const saved = { ...cat, updatedAt: Date.now() }
     // 一覧の小さな表紙を、1枚目の写真から作る（保存する写真そのものは小さくしない）
     await db.saveCat(saved, await makeCover(saved.photos[0]))
@@ -436,6 +438,7 @@ export default function App() {
           cat={cat}
           shelter={shelter}
           event={reelEvent}
+          words={reelWords}
           post={post}
           onHome={() => go('home')}
           onRoster={() => go('roster')}

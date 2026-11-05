@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { MAX_HASHTAGS, type AdoptionEvent, type Cat, type Shelter } from '../types'
 import { countHashtags } from '../lib/hashtags'
 import {
@@ -7,7 +7,9 @@ import {
   drawCatCard,
   drawCoverCard,
   drawEndCard,
+  drawWordsCard,
   loadImage,
+  splitSentences,
   type CardLayout,
   type TextPosition,
 } from '../lib/card'
@@ -113,12 +115,12 @@ type Props = {
   post: string
   onPostChange: (s: string) => void
   onBack: () => void
-  onSave: (event: AdoptionEvent | null) => Promise<void>
+  onSave: (event: AdoptionEvent | null, words: string | null) => Promise<void>
 }
 
 // 確認（仮）。カードと根拠の印は11/5〜11/6に作る。今は決まった形の投稿文だけ
 export default function Preview({ shelter, cat, onCatChange, post, onPostChange, onBack, onSave }: Props) {
-  const [full, setFull] = useState<'cover' | 'cat' | 'end' | null>(null)
+  const [full, setFull] = useState<'cover' | 'cat' | 'words' | 'end' | null>(null)
   const [layout, setLayout] = useState<CardLayout | null>(null)
   const [event, setEvent] = useState<AdoptionEvent | null>(null)
   const [eventsRead, setEventsRead] = useState(false) // 譲渡会を読み終えるまで［動画を作る］を押せなくする（読み終える前だと譲渡会なしで作られるため）
@@ -171,6 +173,40 @@ export default function Preview({ shelter, cat, onCatChange, post, onPostChange,
   }
   const coverDeps = [photo1, still, clipBlob, shelter.logo, shelter.themeColor, cat.name]
   const endDeps = [shelter.logo, shelter.name, shelter.contact, shelter.themeColor, usedEvent]
+
+  // ひとことカード（#28）。書き換えずに載せる。入りきらないときは知らせて、投稿文にだけ載せるか、載せる文を選んでもらう（SPEC 3.2）。
+  // 選んだ文は名簿に残さない（作る人の決定。11/5夜）
+  const words = cat.carerWords.trim()
+  const sentences = useMemo(() => splitSentences(words), [words])
+  const [picked, setPicked] = useState<number[] | null>(null) // null＝全部
+  const [pickFor, setPickFor] = useState(words) // ひとことが変わったら、選び直す
+  if (pickFor !== words) {
+    setPickFor(words)
+    setPicked(null)
+  }
+  const pickedText = (idx: number[]) =>
+    idx
+      .slice()
+      .sort((a, b) => a - b)
+      .map((i) => sentences[i].replace(/\n$/, ''))
+      .reduce((acc, s, k, arr) => (k === 0 ? s : acc + (/[。！？!?」』）)]$/.test(arr[k - 1]) ? '' : '\n') + s), '')
+  const fitsText = (t: string) => {
+    const c = document.createElement('canvas')
+    c.width = CARD_W
+    c.height = CARD_H
+    const ctx = c.getContext('2d')
+    return ctx ? drawWordsCard(ctx, { text: t, logo: null, theme: shelter.themeColor }).fits : true
+  }
+  const wholeFits = useMemo(() => (words ? fitsText(words) : true), [words, shelter.themeColor]) // eslint-disable-line react-hooks/exhaustive-deps
+  const wordsText = !words ? null : picked === null ? (wholeFits ? words : null) : picked.length ? pickedText(picked) : null
+  const pickedFits = useMemo(() => (wordsText && picked !== null ? fitsText(wordsText) : true), [wordsText, picked]) // eslint-disable-line react-hooks/exhaustive-deps
+  const wordsOnCard = wordsText !== null && pickedFits ? wordsText : null
+  const paintWords: Painter = async (ctx) => {
+    const logo = shelter.logo ? await loadImage(shelter.logo).catch(() => null) : null
+    const l = drawWordsCard(ctx, { text: wordsOnCard ?? '', logo, theme: shelter.themeColor })
+    return { fits: l.fits, sec: l.sec }
+  }
+  const wordsDeps = [wordsOnCard, shelter.logo, shelter.themeColor]
   const [saving, setSaving] = useState(false)
   const [saveFailed, setSaveFailed] = useState(false)
   const tagCount = countHashtags(post)
@@ -178,7 +214,7 @@ export default function Preview({ shelter, cat, onCatChange, post, onPostChange,
   return (
     <main className="screen">
       <TopBar title="確認（仮）" onBack={onBack} />
-      <p className="note">表紙・猫カード・最後の1枚です。撮った動画は、表紙と猫カードのあいだに入ります。ひとことカードは、これから作ります。</p>
+      <p className="note">表紙・猫カード・ひとこと・最後の1枚です。撮った動画は、表紙と猫カードのあいだに入ります。</p>
 
       <section className="card-preview">
         {/* 横にめくって全部見られる（SPEC 2.4） */}
@@ -191,12 +227,45 @@ export default function Preview({ shelter, cat, onCatChange, post, onPostChange,
             <CatCard cat={cat} shelter={shelter} still={clipBlob ? still : null} className="card-canvas" onLayout={setLayout} onClick={() => setFull('cat')} />
             <figcaption>2 猫カード</figcaption>
           </figure>
+          {wordsOnCard && (
+            <figure className="card-slot">
+              <PaintedCard paint={paintWords} deps={wordsDeps} className="card-thumb card-words" label="ひとことカード（押すと画面いっぱいに出ます）" onClick={() => setFull('words')} />
+              <figcaption>3 ひとこと</figcaption>
+            </figure>
+          )}
           <figure className="card-slot">
             <PaintedCard paint={paintEnd} deps={endDeps} className="card-thumb card-end" label="最後の1枚（押すと画面いっぱいに出ます）" onClick={() => setFull('end')} />
-            <figcaption>3 最後の1枚</figcaption>
+            <figcaption>{wordsOnCard ? 4 : 3} 最後の1枚</figcaption>
           </figure>
         </div>
         <p className="muted center">横にめくると、ほかのカードが見られます。カードを押すと、画面いっぱいに出ます</p>
+        {words && !wholeFits && (
+          <div className="notice words-pick" data-picked={picked?.length ?? 0}>
+            <p>
+              ひとことが長くて、カードに入りきりません（書き換えはしません）。
+              {wordsOnCard ? '選んだ文をカードに載せます。' : '今は、投稿文にだけ載せます。'}
+              カードにも載せるときは、載せる文を選んでください（文の途中では切りません）。
+            </p>
+            {sentences.map((t, i) =>
+              t.trim() ? (
+                <label key={i} className="check-row words-row">
+                  <input
+                    type="checkbox"
+                    checked={picked?.includes(i) ?? false}
+                    onChange={(e) => setPicked((p) => (e.target.checked ? [...(p ?? []), i] : (p ?? []).filter((x) => x !== i)))}
+                  />
+                  <span>{t.trim()}</span>
+                </label>
+              ) : null,
+            )}
+            {picked !== null && picked.length > 0 && !pickedFits && <p className="alert">選んだ文も、まだ入りきりません。もう少し減らしてください。</p>}
+            {picked !== null && picked.length > 0 && (
+              <button className="btn btn-small" onClick={() => setPicked(null)}>
+                投稿文にだけ載せる
+              </button>
+            )}
+          </div>
+        )}
         {layout && layout.linesShown < layout.linesTotal && (
           <p className="notice">
             いいところが長くて入りきらないので、最初の{layout.linesShown}行だけ載せました（行の途中では切っていません）。
@@ -240,6 +309,7 @@ export default function Preview({ shelter, cat, onCatChange, post, onPostChange,
         <div className="card-full" role="dialog" aria-label="カードを画面いっぱいに表示" onClick={() => setFull(null)}>
           {full === 'cat' && <CatCard cat={cat} shelter={shelter} still={clipBlob ? still : null} className="card-full-canvas" onClick={() => setFull(null)} />}
           {full === 'cover' && <PaintedCard paint={paintCover} deps={coverDeps} className="card-full-canvas" label="表紙" onClick={() => setFull(null)} />}
+          {full === 'words' && wordsOnCard && <PaintedCard paint={paintWords} deps={wordsDeps} className="card-full-canvas" label="ひとこと" onClick={() => setFull(null)} />}
           {full === 'end' && <PaintedCard paint={paintEnd} deps={endDeps} className="card-full-canvas" label="最後の1枚" onClick={() => setFull(null)} />}
           <button className="card-close" onClick={() => setFull(null)}>
             × 閉じる
@@ -276,7 +346,7 @@ export default function Preview({ shelter, cat, onCatChange, post, onPostChange,
             setSaving(true)
             setSaveFailed(false)
             try {
-              await onSave(usedEvent)
+              await onSave(usedEvent, wordsOnCard)
             } catch {
               setSaveFailed(true)
               setSaving(false)

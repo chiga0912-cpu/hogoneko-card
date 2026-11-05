@@ -764,3 +764,11 @@ input[type='color'] {
   border-color: #b3261e;
   color: #fff;
 }
+.words-pick .words-row {
+  align-items: flex-start;
+  margin: 6px 0;
+}
+.words-pick .words-row input {
+  flex: 0 0 22px;
+  margin-top: 2px;
+}

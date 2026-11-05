@@ -702,3 +702,78 @@ export function drawClipName(ctx: CanvasRenderingContext2D, name: string) {
   const p: Planned = { nameLines: lines, body: [], nameSize: size, lineSize: 0, h }
   drawText(ctx, p, CARD_W / 2, top, WHITE, 'center', true, 'name')
 }
+
+// ── ひとことカード（SPEC 3.2 の4番目。issue #28）──
+// 便箋に、預かりさん・スタッフさんのひとことを、書き換えずにそのまま載せる（「 」で囲むだけ）。
+// 「預かりさんより」は付けない（スタッフさんの言葉のこともあり、入力にない事実になるため）
+export type WordsLayout = { fits: boolean; scale: number; sec: number }
+const WORDS_PX = 60
+
+// 長さで3〜5秒（SPEC 3.2）⚙：30字まで3秒、60字まで4秒、それより長いと5秒
+export const wordsSec = (text: string) => {
+  const n = [...text.replace(/\s/g, '')].length
+  return n <= 30 ? 3 : n <= 60 ? 4 : 5
+}
+
+// 文に分ける（「。」「！」「？」・改行のところ。文の途中では切らない）。つなげると元の文に戻る
+export function splitSentences(text: string): string[] {
+  return text.match(/[^。！？!?\n]*(?:[。！？!?]+[」』）)]*|\n|$)/g)?.filter((s) => s !== '') ?? [text]
+}
+
+export function drawWordsCard(
+  ctx: CanvasRenderingContext2D,
+  opts: { text: string; logo: Img | null; theme: string },
+): WordsLayout {
+  ctx.clearRect(0, 0, CARD_W, CARD_H)
+  const { band, color: onBand } = bandColors(opts.theme)
+  ctx.fillStyle = PAPER
+  ctx.fillRect(0, 0, CARD_W, CARD_H)
+  ctx.strokeStyle = band
+  ctx.lineWidth = 10
+  ctx.strokeRect(SAFE.left - 24, SAFE.top - 40, CARD_W - (SAFE.left - 24) * 2, CARD_H - SAFE.top - SAFE.bottom + 80)
+  drawLogo(ctx, opts.logo, SAFE.left, SAFE.top)
+
+  const quoted = `「${opts.text.trim()}」`
+  const areaTop = SAFE.top + 150
+  const areaBottom = CORNER_TOP - 30 // 右下のボタンの高さより上に収める（横幅を広く使うため）
+  const width = WIDE_W - 60
+  const LH = 1.6
+  let k = 1
+  let lines: string[] = []
+  for (const s of [1, 0.92, 0.84, 0.76, 0.68, 0.6]) {
+    k = s
+    ctx.font = `700 ${Math.round(WORDS_PX * k)}px ${FONT}`
+    lines = quoted.split('\n').flatMap((para) => (para ? wrap(ctx, para, width) : ['']))
+    if (lines.length * WORDS_PX * k * LH + 110 <= areaBottom - areaTop) break
+  }
+  const size = Math.round(WORDS_PX * k)
+  const blockH = lines.length * size * LH
+  const fits = blockH + 110 <= areaBottom - areaTop
+  // 見出し「ひとこと」（テーマ色の丸い札）
+  const headY = areaTop + Math.max(0, (areaBottom - areaTop - blockH - 110) / 2)
+  ctx.font = `800 46px ${FONT}`
+  const hw = ctx.measureText('ひとこと').width + 64
+  ctx.fillStyle = band
+  ctx.beginPath()
+  ctx.roundRect(CARD_W / 2 - hw / 2, headY, hw, 70, 35)
+  ctx.fill()
+  ctx.fillStyle = onBand
+  ctx.textAlign = 'center'
+  ctx.textBaseline = 'top'
+  ctx.fillText('ひとこと', CARD_W / 2, headY + 12)
+  // 本文（左にそろえ、かたまりを真ん中に置く）
+  ctx.font = `700 ${size}px ${FONT}`
+  const widest = Math.max(...lines.map((l) => ctx.measureText(l).width))
+  const x0 = CARD_W / 2 - widest / 2
+  ctx.textAlign = 'left'
+  ctx.fillStyle = INK
+  let y = headY + 110
+  for (const l of lines) {
+    if (y + size > areaBottom + 1) break // 入りきらない行は描かない（fits=false で知らせる）
+    ctx.fillText(l, x0, y)
+    y += size * LH
+  }
+  drawClover(ctx, CARD_W - SAFE.right - 70, SAFE.top + 40, 34, { fill: band })
+  drawClover(ctx, SAFE.left + 60, CARD_H - SAFE.bottom - 10, 28, { fill: band })
+  return { fits, scale: k, sec: wordsSec(opts.text) }
+}
