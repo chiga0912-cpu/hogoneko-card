@@ -29,6 +29,8 @@ type HealthKey = 'vaccine' | 'neuter' | 'virusTest'
 
 // 写真の大きさの数字（?sizes=1 で開いたときだけ。写真の名前は出さない）
 const SHOW_SIZES = CHECK_MODE
+// 数字は写真1枚ずつにひもづける（外した写真の数字が残らないように。11/5 iPhoneで前の分が残って2行になったため）
+const sizeOf = new WeakMap<Blob, ShrinkInfo>()
 const mb = (n: number) => `${(n / 1024 / 1024).toFixed(1)}MB`
 const sizeText = (z: ShrinkInfo) =>
   z.result === 'kept-unreadable'
@@ -41,7 +43,6 @@ export default function CatForm({ cat, fromRoster, onChange, onBack, onNext, aut
   const [photoNote, setPhotoNote] = useState('')
   const set = <K extends keyof Cat>(key: K, value: Cat[K]) => onChange((c) => ({ ...c, [key]: value }))
   const photoUrls = useBlobUrls(cat.photos)
-  const [sizes, setSizes] = useState<ShrinkInfo[]>([]) // ?sizes=1 で開いたときだけ出す（iPhoneで大きさを測るため）
 
   const addPhotos = async (files: FileList | null) => {
     if (!files) return
@@ -53,14 +54,12 @@ export default function CatForm({ cat, fromRoster, onChange, onBack, onNext, aut
       setPhotoNote('写真を読み込んでいます…')
       // 1枚ずつ小さくする（何枚も同時に広げると、iPhoneが重さで止まるおそれがあるため）
       const copies: Blob[] = []
-      const infos: ShrinkInfo[] = []
       for (const f of picked) {
         const r = await shrinkPhoto(f)
         copies.push(r.blob)
-        infos.push(r.info)
+        sizeOf.set(r.blob, r.info)
       }
       onChange((c) => ({ ...c, photos: [...c.photos, ...copies].slice(0, MAX_PHOTOS) }))
-      setSizes(infos)
       setPhotoNote(
         total > room ? `写真は${MAX_PHOTOS}枚までです。選んだうちの最初の${picked.length}枚を入れました。` : '',
       )
@@ -143,14 +142,19 @@ export default function CatForm({ cat, fromRoster, onChange, onBack, onNext, aut
           )}
         </div>
         {photoNote && <p className="notice">{photoNote}</p>}
-        {SHOW_SIZES && sizes.length > 0 && (
+        {SHOW_SIZES && cat.photos.some((b) => sizeOf.has(b)) && (
           <p className="muted" data-testid="photo-sizes">
-            {sizes.map((z, i) => (
-              <span key={i}>
-                {sizeText(z)}
-                <br />
-              </span>
-            ))}
+            {cat.photos.map((b, i) => {
+              const z = sizeOf.get(b)
+              return (
+                z && (
+                  <span key={i}>
+                    写真{i + 1}：{sizeText(z)}
+                    <br />
+                  </span>
+                )
+              )
+            })}
           </p>
         )}
         <small className="muted">1枚目が表紙になります。動画は近日中に選べるようになります</small>

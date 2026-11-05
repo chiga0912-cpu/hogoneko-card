@@ -629,6 +629,8 @@ console.log('表示:', await page.locator('.status-line').innerText())
   await p.locator('input[type=file]').setInputFiles(files.壊れ)
   await p.waitForTimeout(1200)
   const got2 = await stored()
+  const lines = (await p.getByTestId('photo-sizes').innerText()).split('\n').filter(Boolean)
+  check(lines.length === 3 && lines[0].startsWith('写真1：') && lines[2].startsWith('写真3：読めなかった'), `写真を外して選び直しても、数字の行は今ある写真の分だけ（${lines.length}行）`)
   check(got2.length === 3 && got2[2].bytes === files.壊れ.buffer.length && got2[2].type === 'image/jpeg', '読めない写真は、小さくせずに元のまま残る')
   await ctx.close()
   // ?sizes=1 を付けずに開いたときは、数字を出さない
