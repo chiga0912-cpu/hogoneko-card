@@ -28,6 +28,20 @@ function guideSkipped(): boolean {
 // 初めて開いた人に、ホーム画面に追加する案内を出すか
 const needsGuide = () => detectBrowser() !== 'not-ios' && !isStandalone() && !guideSkipped()
 
+// 名簿から開いたときと同じか（写真・動画は同じものか、文字や選んだボタンは同じか）。issue #42
+const sameCat = (a: Cat, b: Cat) => {
+  const { photos: pa, clip: ca, updatedAt: _ua, ...ra } = a
+  const { photos: pb, clip: cb, updatedAt: _ub, ...rb } = b
+  return (
+    pa.length === pb.length &&
+    pa.every((p, i) => p === pb[i]) &&
+    (ca?.blob ?? null) === (cb?.blob ?? null) &&
+    (ca?.start ?? 0) === (cb?.start ?? 0) &&
+    (ca?.length ?? 0) === (cb?.length ?? 0) &&
+    JSON.stringify(ra) === JSON.stringify(rb)
+  )
+}
+
 // 何か1つでも入れたか（開いてすぐ戻っただけなら「入力の途中」にしない）
 const hasContent = (c: Cat) => {
   const blank = '未確認'
@@ -53,6 +67,7 @@ export default function App() {
   const [cats, setCats] = useState<db.CatSummary[]>([]) // 一覧用（写真は持たない。選んだときに loadCat で読む）
   const [cat, setCat] = useState<Cat>(newCat)
   const [fromRoster, setFromRoster] = useState(false)
+  const [openedAs, setOpenedAs] = useState<Cat | null>(null) // 名簿から開いたときの内容（何か変えたかを見るため。#42）
   const [post, setPost] = useState('')
   const [hasDraft, setHasDraft] = useState(false)
   const [unreadableCats, setUnreadableCats] = useState(0) // 名簿の中で、読めなかった子の数（消さずに残している）
@@ -175,8 +190,11 @@ export default function App() {
       )
   }, [])
 
-  // 名簿から選んだ子か、何か1つでも入れたときだけ「入力の途中」として残す
-  const worthKeeping = editing && (fromRoster || hasContent(cat))
+  // 何か1つでも入れたときだけ「入力の途中」として残す。
+  // 名簿から選んだ子は、開いたあとに何か1つでも変えたときだけ（何も変えずに戻ったら、「入力の続き」も確認も出さない。SPEC 2.7・#42）。
+  // 入力の途中から開き直した名簿の子（openedAs がない）は、もう変えてあるので残す
+  const rosterChanged = fromRoster && (openedAs === null || postEdited || !sameCat(cat, openedAs))
+  const worthKeeping = editing && (fromRoster ? rosterChanged : hasContent(cat))
   useEffect(() => {
     if (!worthKeeping) return
     const { photos: _photos, ...rest } = cat
@@ -249,6 +267,7 @@ export default function App() {
     setPickError(false)
     await discardDraft()
     setCat(full)
+    setOpenedAs(full)
     setFromRoster(true)
     setPost('')
     setPostEdited(false)
@@ -423,6 +442,7 @@ export default function App() {
           // 作れなかったとき・位置情報があったときは、入力も投稿文もそのままで確認画面に戻る（もう一度書かせないため）
           onBackToPreview={() => {
             setFromRoster(true) // 名簿に保存したあとなので、名簿の子として開き直す
+            setOpenedAs(null) // 作る途中なので、入力の途中として残す
             go('preview')
           }}
         />

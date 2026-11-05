@@ -558,11 +558,14 @@ for (const [key, label] of [
           }
         }),
     )
+  let edits = 0
   const pick = async (name) => {
     await p.goto(`${url}/?sizes=1`)
     await p.getByRole('button', { name: /名簿から選ぶ/ }).click()
     await p.locator('.roster-main', { hasText: name }).click()
     await p.locator('.photo img').nth(1).waitFor()
+    // 何も変えないと入力の途中にならない（#42）。メモを1行足して、入力の途中にする
+    await p.getByLabel('預かりさんからのメッセージ・メモ').fill(`（架空）追記${++edits}`) // 毎回ちがう文にする（同じ文だと「変えていない」になる）
     await p.waitForTimeout(1000) // 入力の途中が書かれるのを待つ
   }
   // 動画のある子：読み込み直してから保存しても、動画が残る

@@ -206,7 +206,8 @@ ok((await p.getByText('5秒より短い動画なので、全部使います').is
   await p3.locator('.clip-video').evaluate((v) => (v.videoWidth ? 0 : new Promise((r) => v.addEventListener('loadedmetadata', r, { once: true })))).catch(() => {})
   const dims = await p3.locator('.clip-video').evaluate((v) => [v.videoWidth, v.videoHeight]).catch(() => [0, 0])
   ok(Number(await shown()) <= 3.01 && dims[0] > dims[1], `あとで選んだ動画（横・3秒）が、その長さのまま残る（前の動画の中身と入れ違わない。${await shown()}秒・${dims.join('×')}）`)
-  // (c) 名簿の子を開いてすぐ閉じた（名簿の動画をまだ途中に書き終えていない）ときは、名簿の動画をそのまま使う
+  // (c) 名簿の子を開いてメモを1行足し、すぐ閉じた（名簿の動画をまだ途中に書き終えていない）ときは、名簿の動画をそのまま使う
+  //     （何も変えずに閉じたときは、入力の途中にならずホームに戻る。#42）
   await p3.getByRole('button', { name: '次へ' }).click()
   await p3.getByRole('button', { name: '動画を作る' }).click()
   await p3.getByText('名簿に保存しました').waitFor()
@@ -214,6 +215,7 @@ ok((await p.getByText('5秒より短い動画なので、全部使います').is
   await slow(1_000_000)
   await p3.getByText('テスト').first().click()
   await p3.locator('.clip-time').waitFor({ timeout: 15000 })
+  await p3.getByLabel('預かりさんからのメッセージ・メモ').fill('（架空）追記')
   await p3.waitForTimeout(600)
   await slow(0)
   await reopen()
