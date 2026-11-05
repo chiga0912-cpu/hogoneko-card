@@ -250,6 +250,15 @@ const seenWithoutScroll = async (p, loc) => {
     await p.waitForTimeout(300)
     check((await a('data-fits')) === '1', `文字の大きさ「${size}」でも、長い文字がはみ出さない（${Math.round(Number(await a('data-scale')) * 100)}%・${await a('data-lines-shown')}/${await a('data-lines-total')}行）`)
   }
+  // 案B（見比べ用。決まったら外す）：明るいテーマ色の帯でも読めるか、長い文字がはみ出さないか
+  await p.getByRole('group', { name: 'カードの案（見比べ用）' }).getByRole('button', { name: /案B/ }).click()
+  await p.locator('.card-canvas[data-design="B"]').waitFor()
+  await p.waitForTimeout(300)
+  check((await a('data-fits')) === '1', `案Bでも、長い文字がはみ出さない（${Math.round(Number(await a('data-scale')) * 100)}%・${await a('data-lines-shown')}/${await a('data-lines-total')}行）`)
+  check(Number(await a('data-contrast')) >= 4.5, `案B：明るいテーマ色の帯でも、文字が読みやすい（見やすさ ${await a('data-contrast')}）`)
+  await p.screenshot({ path: join(outDir, '5h_猫カード_案B_長い文字_明るい色.png'), fullPage: true })
+  await p.getByRole('group', { name: 'カードの案（見比べ用）' }).getByRole('button', { name: /案A/ }).click()
+  await p.locator('.card-canvas[data-design="A"]').waitFor()
   // 「いいところ」が空のとき
   await p.getByRole('button', { name: '戻る' }).click()
   await p.getByLabel('名前').fill('テスト')
