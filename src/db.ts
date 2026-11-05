@@ -15,6 +15,7 @@ import {
   type AdoptionEvent,
   type Age,
   type Cat,
+  type Clip,
   type Health,
   type Shelter,
 } from './types'
@@ -328,7 +329,7 @@ export async function loadCat(id: string): Promise<Cat> {
   }
   if (!cat) throw new MediaError('名簿の記録が読めません')
   if (cat.clip) rosterClips.add(cat.clip.blob) // 名簿から読んだままの動画（途中を開き直すときに、名簿の動画を使ってよい）
-  for (const p of cat.photos) rosterPhotos.add(p) // 名簿から読んだままの写真（#44）
+  cat.photos.forEach((p, i) => rosterIndex.set(p, i)) // 名簿から読んだままの写真と、その並び（#44）
   return cat
 }
 
@@ -403,7 +404,7 @@ export type Draft = {
   post: string
   postEdited: boolean // 投稿文を手で直したか（直していたら、作り直す前に聞く）
   photosKey?: string // 写真の組の番号（写真の中身と同じ組かを見分けるため。#44）
-  photosRoster?: boolean // 写真が全部、名簿から読んだままか
+  photosRosterIdx?: number[] | null // 写真が全部、名簿から読んだ写真のときの、名簿の何枚目か（並び順のまま）
 }
 // 入力の途中を読む。読めないときは 'unreadable'（途中は消さない。新しく始めたときに上書きされる）
 // photosMissing：途中の写真がまだ書かれていなかった（文字は書けたが、写真を書く前にページが終わったときなど）
@@ -422,7 +423,7 @@ export type Draft = {
 export type ClipStatus = 'ok' | 'none' | 'old' | 'roster' | 'lost'
 export type PhotosStatus = 'ok' | 'old' | 'missing' | 'roster' | 'stale'
 export const loadDraft = async (): Promise<
-  { cat: Cat; draft: Draft; photosMissing: boolean; photosStatus: PhotosStatus; clipStatus: ClipStatus; clipRange: { start: number; length: number } | null } | null | 'unreadable'
+  { cat: Cat; draft: Draft; photosMissing: boolean; photosStatus: PhotosStatus; photosRosterIdx: number[] | null; clipStatus: ClipStatus; clipRange: { start: number; length: number } | null } | null | 'unreadable'
 > => {
   try {
     const raw = await run<unknown>('drafts', 'readonly', (s) => s.get('main'))
@@ -432,25 +433,57 @@ export const loadDraft = async (): Promise<
     // 写真は {key, photos} の形（#44 から）。前の版は写真の並びだけ
     const keyed = isObj(rawPhotos) && Array.isArray(rawPhotos.photos)
     const photos = blobs(keyed ? (rawPhotos as Record<string, unknown>).photos : rawPhotos)
+    // どちらの記録が新しいかを、書いた時刻で見分ける（写真は変えた直後に、文字は少しあとに書くため。見直し③の重い1）
+    const savedAt = num(raw.savedAt, 0)
+    const rp = keyed ? (rawPhotos as Record<string, unknown>) : null
+    const photosAt = rp ? num(rp.at, 0) : 0
+    const rosterIdx = Array.isArray(raw.photosRosterIdx) && raw.photosRosterIdx.every((i) => Number.isInteger(i) && i >= 0) ? (raw.photosRosterIdx as number[]) : null
+    const wantKey = typeof raw.photosKey === 'string' ? raw.photosKey : null
     const photosStatus: PhotosStatus =
       rawPhotos === undefined
-        ? 'missing'
-        : !keyed || typeof raw.photosKey !== 'string'
+        ? wantKey === null || wantKey === '' || raw.fromRoster === true
+          ? 'missing'
+          : rosterIdx
+            ? 'roster'
+            : 'stale' // 新しい子で、最初の写真を書き終える前にページが終わった（見直し③の中6）
+        : !keyed || wantKey === null
           ? 'old'
-          : (rawPhotos as Record<string, unknown>).key === raw.photosKey
+          : rp!.key === wantKey || photosAt >= savedAt // 写真の記録のほうが新しければ、それを使う
             ? 'ok'
-            : raw.photosRoster === true
+            : rosterIdx
               ? 'roster'
               : 'stale'
+    // 読み戻した写真に、保存してあった番号を付け直す（開き直すたびに新しい番号になり、何も変えていないのに
+    // 書き直しや知らせが出るのを防ぐ。見直し③の重い3・中4）
+    if (rp && typeof rp.key === 'string') {
+      const ids = rp.key ? rp.key.split(',') : []
+      if (ids.length === photos.length) photos.forEach((b, i) => clipIds.set(b, ids[i]))
+      if (photosStatus === 'ok' && rp.key === wantKey) {
+        lastPhotosKey = rp.key
+        if (rosterIdx && rosterIdx.length === photos.length) photos.forEach((b, i) => rosterIndex.set(b, rosterIdx[i]))
+      }
+    }
     // 動画は、使う所（start・length）と動画の番号を途中の記録に、中身と番号を 'clip' に分けて残す。
     // 番号が合うときだけ使う（別の動画の中身に、今の始まりと長さを付けないため）
     const meta = isObj(raw.cat) ? raw.cat.clip : null
     const rawClip = isObj(meta) ? await run<unknown>('drafts', 'readonly', (s) => s.get('clip')) : undefined
-    const sameClip = isObj(meta) && isObj(rawClip) && typeof meta.clipId === 'string' && rawClip.id === meta.clipId
-    const clipBlob = sameClip ? blobOrNull((rawClip as Record<string, unknown>).blob) : null
-    const clip = isObj(meta) && clipBlob ? { blob: clipBlob, start: meta.start, length: meta.length } : null
+    // 動画の記録が文字の記録より新しいとき（動画を選び直した直後に閉じた）は、動画の記録を使う。始まり・長さも動画の記録から
+    const rc = isObj(rawClip) ? rawClip : null
+    const clipNewer = !!rc && typeof rc.id === 'string' && num(rc.at, 0) >= savedAt && savedAt > 0
+    const sameClip = isObj(meta) && !!rc && typeof meta.clipId === 'string' && rc.id === meta.clipId
+    const clipBlob = sameClip || clipNewer ? blobOrNull(rc!.blob) : null
+    const clip = clipBlob
+      ? sameClip
+        ? { blob: clipBlob, start: (meta as Record<string, unknown>).start, length: (meta as Record<string, unknown>).length }
+        : { blob: clipBlob, start: num(rc!.start, 0), length: num(rc!.length, 5) }
+      : null
+    if (clipBlob && rc && typeof rc.id === 'string') {
+      clipIds.set(clipBlob, rc.id) // 番号を付け直す（開き直すたびに大きな動画を書き直さないため）
+      lastClipId = rc.id
+      if (sameClip && isObj(meta) && meta.roster === true) rosterClips.add(clipBlob)
+    }
     const clipStatus: ClipStatus =
-      raw.clipSaved !== true ? 'old' : !isObj(meta) ? 'none' : clip ? 'ok' : meta.roster === true ? 'roster' : 'lost'
+      raw.clipSaved !== true ? 'old' : clip ? 'ok' : !isObj(meta) ? 'none' : meta.roster === true ? 'roster' : 'lost'
     const cat = normalizeCat(raw.cat, { photos, clip })
     if (!cat) return 'unreadable'
     const { photos: _p, ...rest } = cat
@@ -458,6 +491,7 @@ export const loadDraft = async (): Promise<
       cat,
       photosMissing: rawPhotos === undefined,
       photosStatus,
+      photosRosterIdx: rosterIdx,
       clipStatus,
       clipRange: isObj(meta) ? { start: num(meta.start, 0), length: num(meta.length, 5) } : null,
       draft: {
@@ -478,9 +512,13 @@ export const loadDraft = async (): Promise<
 const clipIds = new WeakMap<Blob, string>()
 const rosterClips = new WeakSet<Blob>()
 // 写真の組の番号（写真1枚ずつの番号をつなげたもの）と、全部が名簿から読んだままの写真か（#44）
-const rosterPhotos = new WeakSet<Blob>()
+// 名簿から読んだ写真が、名簿の何枚目か（外したり並べ替えたりしても、名簿の写真から同じ組と並びを作り直せるように。見直し③の重い2）
+const rosterIndex = new WeakMap<Blob, number>()
 export const photosKeyOf = (photos: Blob[]) => photos.map(clipIdOf).join(',')
-export const photosFromRoster = (photos: Blob[]) => photos.length > 0 && photos.every((p) => rosterPhotos.has(p))
+export const photosRosterIdxOf = (photos: Blob[]): number[] | null =>
+  photos.length > 0 && photos.every((p) => rosterIndex.has(p)) ? photos.map((p) => rosterIndex.get(p)!) : null
+let lastPhotosKey: string | null = null // 保存場所にある写真の組の番号（同じ組を書き直さないため）
+let lastClipId: string | null = null
 const clipIdOf = (b: Blob) => {
   let id = clipIds.get(b)
   if (!id) clipIds.set(b, (id = `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`))
@@ -503,6 +541,7 @@ export const saveDraft = (draft: Draft) =>
           },
         },
         clipSaved: true, // 動画を残す版で書いた印（前の版の途中と見分けるため）
+        savedAt: Date.now(), // 写真・動画の記録とどちらが新しいかを見分けるため
         schemaVersion: SCHEMA_VERSION,
       },
       'main',
@@ -510,23 +549,33 @@ export const saveDraft = (draft: Draft) =>
   )
 // 書き込みは、あとから呼ばれたものだけを残す（大きい動画の書き込みが、あとの小さい動画より遅く終わっても上書きしない）
 let clipSeq = 0
-export async function saveDraftClip(clip: Blob | null) {
+export async function saveDraftClip(clip: Clip | null) {
   const seq = ++clipSeq
-  const stored = clip ? { id: clipIdOf(clip), blob: await pack(clip) } : null
+  const at = Date.now()
+  const id = clip ? clipIdOf(clip.blob) : null
+  if (id !== null && id === lastClipId) return // 同じ動画がもう保存場所にある（開き直しただけ）
+  const stored = clip && id ? { id, blob: await pack(clip.blob), start: clip.start, length: clip.length, at } : null
   if (seq !== clipSeq) return
   await run<void>('drafts', 'readwrite', (s) => (stored ? s.put(stored, 'clip') : s.delete('clip')))
+  lastClipId = id
 }
 // 書き込みは、あとから呼ばれたものだけを残す（大きい写真の書き込みが、あとの書き込みより遅く終わっても上書きしない。#44）
 let photosSeq = 0
 export async function saveDraftPhotos(photos: Blob[]) {
   const seq = ++photosSeq
-  const stored = { key: photosKeyOf(photos), photos: await Promise.all(photos.map(pack)) }
+  const at = Date.now()
+  const key = photosKeyOf(photos)
+  if (key === lastPhotosKey) return // 同じ組がもう保存場所にある（開き直しただけ）
+  const stored = { key, at, photos: await Promise.all(photos.map(pack)) }
   if (seq !== photosSeq) return
   await run<void>('drafts', 'readwrite', (s) => s.put(stored, 'photos'))
+  lastPhotosKey = key
 }
 export const clearDraft = () => {
   clipSeq++ // 消したあとに、前の動画・写真の書き込みが入らないように
   photosSeq++
+  lastPhotosKey = null
+  lastClipId = null
   return run<void>('drafts', 'readwrite', (s) => s.clear())
 }
 

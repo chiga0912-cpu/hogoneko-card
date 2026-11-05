@@ -151,7 +151,13 @@ export default function App() {
                     : saved.clipStatus === 'roster' && full.clip
                       ? { ...full.clip, ...saved.clipRange }
                       : restored.clip,
-                photos: saved.photosStatus === 'missing' || saved.photosStatus === 'roster' ? full.photos : restored.photos,
+                // 名簿の写真から作り直すときは、名簿の何枚目をどの順で使っていたかを使う（外した・並べ替えたまま。見直し③の重い2）
+                photos:
+                  saved.photosStatus === 'missing' || saved.photosStatus === 'roster'
+                    ? saved.photosRosterIdx
+                      ? saved.photosRosterIdx.map((i) => full.photos[i]).filter((b): b is Blob => !!b)
+                      : full.photos
+                    : restored.photos,
               }
             } catch {
               // 名簿の写真・動画が読めないまま開くと、保存したときに名簿の写真や動画が消える。
@@ -209,7 +215,7 @@ export default function App() {
       post,
       postEdited,
       photosKey: db.photosKeyOf(cat.photos),
-      photosRoster: db.photosFromRoster(cat.photos),
+      photosRosterIdx: db.photosRosterIdxOf(cat.photos),
     }
     window.clearTimeout(timer.current)
     timer.current = window.setTimeout(flush, 300)
@@ -228,10 +234,12 @@ export default function App() {
   const clipBlob = cat.clip?.blob ?? null
   useEffect(() => {
     if (worthKeeping)
-      db.saveDraftClip(clipBlob).then(
+      // 動画の中身は、動画が変わったときだけ書く（始まり・長さは文字の記録に入る。ここで渡すのは、選び直した直後に閉じたときのため）
+      db.saveDraftClip(cat.clip).then(
         () => setFail('clip', false),
         () => setFail('clip', true),
       )
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [clipBlob, worthKeeping])
 
   // LINEなどに移る瞬間に、待たずに書く
@@ -435,6 +443,14 @@ export default function App() {
         <Preview
           shelter={shelter}
           cat={cat}
+          // 確認画面で開き直したときも、写真・動画が前のものに戻ったかもしれないことを知らせる（見直し③の中5）
+          restoreNotice={
+            stalePhotos !== null && cat.photos === stalePhotos
+              ? '写真が、前に選んだものに戻っているかもしれません。［戻る］で写真を確かめてください。'
+              : clipLost && !cat.clip
+                ? '選んだ動画を残せていませんでした。［戻る］で、もう一度、動画を選んでください。'
+                : null
+          }
           onCatChange={setCat}
           post={post}
           onPostChange={(p) => {

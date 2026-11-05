@@ -17,6 +17,7 @@ export default function ClipPicker({ clip, onChange }: { clip: Clip | null; onCh
   const ref = useRef<HTMLVideoElement>(null)
   const [duration, setDuration] = useState<number | null>(null)
   const [note, setNote] = useState('')
+  const [busy, setBusy] = useState(false) // 読み込み中は、もう1本選べないようにする（見直し③の軽い9）
 
   const pick = async (file: File | undefined) => {
     if (!file) return
@@ -26,20 +27,23 @@ export default function ClipPicker({ clip, onChange }: { clip: Clip | null; onCh
       return
     }
     setNote('動画を読み込んでいます…')
+    setBusy(true)
     try {
-      const fileSec = await durationOf(file).catch(() => null)
-      if (fileSec !== null && fileSec > MAX_CLIP_SEC) {
+      // iPhoneでは選んだファイルが一時的な場所にあるので、すぐに中身を写す（大きさは上で確かめたので、写しても重すぎない）
+      const blob = new Blob([await file.arrayBuffer()], { type: file.type || 'video/mp4' })
+      // 長さを確かめる。いつまでも分からないときは、待ちすぎずに読めなかったことにする（見直し③の中7）
+      const d = await withTimeout(durationOf(blob), 8000)
+      if (d > MAX_CLIP_SEC) {
         setNote(`この動画は長すぎるため選べません（${MAX_CLIP_SEC / 60}分まで）。写真アプリで短く切ってから、選んでください。`)
         return
       }
-      // iPhoneでは選んだファイルが一時的な場所にあるので、すぐに中身を写す
-      const blob = new Blob([await file.arrayBuffer()], { type: file.type || 'video/mp4' })
-      const d = fileSec ?? (await durationOf(blob))
       onChange({ blob, start: 0, length: Math.min(CLIP_SEC, d) })
       setDuration(d)
       setNote('')
     } catch {
       setNote('動画を読み込めませんでした。別の動画を選んでください。')
+    } finally {
+      setBusy(false)
     }
   }
 
@@ -72,7 +76,7 @@ export default function ClipPicker({ clip, onChange }: { clip: Clip | null; onCh
   return (
     <div className="field clip-field">
       <span>動画（1本まで・使うのは5秒）</span>
-      {!clip && (
+      {!clip && !busy && (
         <label className="btn btn-big clip-add">
           ＋ 動画を選ぶ
           <input
@@ -116,6 +120,22 @@ export default function ClipPicker({ clip, onChange }: { clip: Clip | null; onCh
       {note && <p className="notice">{note}</p>}
     </div>
   )
+}
+
+function withTimeout<T>(p: Promise<T>, ms: number): Promise<T> {
+  return new Promise((ok, ng) => {
+    const t = setTimeout(() => ng(new Error('時間切れ')), ms)
+    p.then(
+      (v) => {
+        clearTimeout(t)
+        ok(v)
+      },
+      (e) => {
+        clearTimeout(t)
+        ng(e)
+      },
+    )
+  })
 }
 
 function durationOf(blob: Blob): Promise<number> {

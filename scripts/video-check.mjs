@@ -221,6 +221,13 @@ ok((await p.getByText('5秒より短い動画なので、全部使います').is
   await p3.locator('.clip-video').evaluate((v) => (v.videoWidth ? 0 : new Promise((r) => v.addEventListener('loadedmetadata', r, { once: true })))).catch(() => {})
   const dims = await p3.locator('.clip-video').evaluate((v) => [v.videoWidth, v.videoHeight]).catch(() => [0, 0])
   ok(Number(await shown()) <= 3.01 && dims[0] > dims[1], `あとで選んだ動画（横・3秒）が、その長さのまま残る（前の動画の中身と入れ違わない。${await shown()}秒・${dims.join('×')}）`)
+  // 見直し③の重い3：動画を選んである途中を、何も変えずに開き直すだけで動画が外れない（大きな動画の書き直しが遅くても）
+  await slow(1_000_000)
+  await reopen()
+  await p3.waitForTimeout(800)
+  await reopen()
+  await slow(0)
+  ok((await shown()) !== null && !(await p3.getByText('選んだ動画を残せていませんでした').isVisible()), '動画のある途中を、何も変えずに続けて開き直しても、動画が外れない（見直し③の重い3）')
   // (c) 名簿の子を開いてメモを1行足し、すぐ閉じた（名簿の動画をまだ途中に書き終えていない）ときは、名簿の動画をそのまま使う
   //     （何も変えずに閉じたときは、入力の途中にならずホームに戻る。#42）
   await p3.getByRole('button', { name: '次へ' }).click()

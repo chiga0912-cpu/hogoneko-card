@@ -741,7 +741,9 @@ console.log('表示:', await page.locator('.status-line').innerText())
             const r = req.result.transaction('drafts').objectStore('drafts').get('photos')
             r.onsuccess = async () => {
               const out = []
-              for (const s of r.result ?? []) {
+              // 入力の途中の写真は {key, photos} の形（#44 から）。前の形（並びだけ）も読む
+              const list = Array.isArray(r.result) ? r.result : (r.result?.photos ?? [])
+              for (const s of list) {
                 const blob = new Blob([s.data], { type: s.type })
                 let w = 0
                 let h = 0
@@ -963,6 +965,106 @@ console.log('表示:', await page.locator('.status-line').innerText())
   await reopen()
   check((await p8.locator('.photo img').count()) === 1 && !(await p8.getByText('写真が、前に選んだものに戻っているかもしれません').isVisible()), 'あとで選んだ写真の組が残る（遅い書き込みが、あとの書き込みを上書きしない。#44）')
   await ctx8.close()
+}
+
+// 見直し③（#44 の直しの見直し）で見つかった場面。写真の中身を読むのを遅くしたり、文字の記録を書けなくしたりして、ページが落ちた代わりにする
+{
+  const ctx9 = await browser.newContext({ ...phone })
+  const p9 = await ctx9.newPage()
+  await p9.addInitScript(() => {
+    const orig = Blob.prototype.arrayBuffer
+    Blob.prototype.arrayBuffer = async function () {
+      if (window.__slowPhotos && this.type.startsWith('image/')) await new Promise((r) => setTimeout(r, 4000))
+      return orig.call(this)
+    }
+    const put = IDBObjectStore.prototype.put
+    IDBObjectStore.prototype.put = function (v, key) {
+      if (window.__blockMain && this.name === 'drafts' && key === 'main') throw new DOMException('文字の記録を書く前にページが落ちた代わり', 'AbortError')
+      return put.call(this, v, key)
+    }
+  })
+  const set = (k, v) => p9.evaluate(([k, v]) => (window[k] = v), [k, v])
+  const widths = () => p9.locator('.photo img').evaluateAll((els) => els.map((e) => e.naturalWidth))
+  const notice = () => p9.getByText('写真が、前に選んだものに戻っているかもしれません').isVisible()
+  const reopen = async () => {
+    await set('__blockMain', false)
+    await p9.reload()
+    await p9.waitForTimeout(1200)
+  }
+  await p9.goto(url + '/?sizes=1')
+  await p9.getByText('はじめに').waitFor()
+  await p9.getByRole('button', { name: '追加せずに、このまま使う' }).click()
+  await p9.getByLabel('団体名').fill('テスト保護猫の会')
+  await p9.getByRole('button', { name: '登録して始める' }).click()
+  // 中6：新しい子で、最初の写真を書き終える前に閉じたら、写真なしで黙って開かず、知らせる
+  await p9.getByRole('button', { name: '新しい子を紹介' }).click()
+  await p9.getByLabel('名前').fill('みなおし')
+  await p9.waitForTimeout(600)
+  await set('__slowPhotos', true)
+  await p9.locator('input[type=file][accept="image/*"]').setInputFiles(dummy('#c9b8a6', '写真1', 601, 800))
+  await p9.locator('.photo img').first().waitFor()
+  await p9.waitForTimeout(800)
+  await set('__slowPhotos', false)
+  await reopen()
+  check(await notice(), '新しい子で最初の写真を書き終える前に閉じたら、知らせる（見直し③の中6）')
+  // 名簿の子を作る（写真3枚。幅で見分ける）
+  for (const [w, c] of [[602, '#9fb3a0'], [603, '#b3a0c9']]) {
+    await p9.locator('input[type=file][accept="image/*"]').setInputFiles(dummy(c, `写真${w}`, w, 800))
+    await p9.waitForTimeout(300)
+  }
+  await p9.locator('input[type=file][accept="image/*"]').setInputFiles(dummy('#c9b8a6', '写真601', 601, 800))
+  await p9.waitForTimeout(500)
+  const ws = await widths()
+  await p9.getByRole('button', { name: '次へ' }).click()
+  await p9.getByRole('button', { name: '動画を作る' }).click()
+  await p9.getByText('名簿に保存しました').waitFor()
+  await p9.getByRole('button', { name: 'ホームへ' }).click()
+  const openRoster = async () => {
+    await p9.getByRole('button', { name: /名簿から選ぶ/ }).click()
+    await p9.getByText('みなおし').first().click()
+    await p9.locator('.photo img').nth(ws.length - 1).waitFor()
+    await p9.waitForTimeout(800)
+  }
+  // 重い1：名簿の子で写真を外し、写真は書き終わったが、文字の記録を書く前に落ちた → 外したまま開く
+  await openRoster()
+  await p9.getByLabel('名前').fill('みなおしA')
+  await p9.waitForTimeout(800)
+  await set('__blockMain', true)
+  await p9.getByRole('button', { name: '写真2を外す' }).click()
+  await p9.waitForTimeout(800)
+  await reopen()
+  check((await widths()).length === ws.length - 1 && !(await notice()), `名簿の子で写真を外した直後に落ちても、外したまま開く（見直し③の重い1。${(await widths()).join(',')}）`)
+  // 重い2：名簿の子で「表紙にする」の書き込みを終える前に閉じた → 並べ替えたまま（名簿の写真から作り直す）
+  await p9.getByRole('button', { name: '戻る' }).click()
+  await openRoster().catch(() => {})
+  await p9.getByLabel('名前').fill('みなおしB')
+  await p9.waitForTimeout(800)
+  const before = await widths()
+  await set('__slowPhotos', true)
+  await p9.getByRole('button', { name: '表紙にする' }).last().click()
+  await p9.waitForTimeout(800)
+  await set('__slowPhotos', false)
+  await reopen()
+  const after = await widths()
+  check(after[0] === before[before.length - 1] && after.length === before.length, `名簿の子で「表紙にする」の直後に閉じても、並べ替えたまま開く（見直し③の重い2。${before.join(',')} → ${after.join(',')}）`)
+  // 中4：何も変えずに、すぐ開き直しても、知らせは出ない
+  await p9.waitForTimeout(4500)
+  await reopen()
+  await reopen()
+  check(!(await notice()), '何も変えずに開き直しても、「前に選んだものに戻っているかも」は出ない（見直し③の中4）')
+  // 中5：名簿にない写真を足し、書き終える前に確認画面で閉じた → 確認画面でも知らせる
+  //    （名簿の写真を外しただけなら、名簿の写真から作り直せるので知らせない）
+  await p9.getByRole('button', { name: '写真1を外す' }).click()
+  await p9.waitForTimeout(1200)
+  await set('__slowPhotos', true)
+  await p9.locator('input[type=file][accept="image/*"]').setInputFiles(dummy('#e8826b', '写真604', 604, 800))
+  await p9.locator('.photo img').nth(2).waitFor()
+  await p9.getByRole('button', { name: '次へ' }).click()
+  await p9.waitForTimeout(800)
+  await set('__slowPhotos', false)
+  await reopen()
+  check(await p9.getByText('写真が、前に選んだものに戻っているかもしれません。［戻る］で写真を確かめてください。').isVisible(), '確認画面で開き直したときも、知らせる（見直し③の中5）')
+  await ctx9.close()
 }
 
 // 確認モードの合図は、日本語のキーボードで打った全角（？sizes＝１）でも読む（11/5夜 iPhoneで見つけた）

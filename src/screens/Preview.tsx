@@ -117,10 +117,11 @@ type Props = {
   onPostChange: (s: string) => void
   onBack: () => void
   onSave: (event: AdoptionEvent | null, words: string | null) => Promise<void>
+  restoreNotice?: string | null
 }
 
 // 確認（仮）。カードと根拠の印は11/5〜11/6に作る。今は決まった形の投稿文だけ
-export default function Preview({ shelter, cat, onCatChange, post, onPostChange, onBack, onSave }: Props) {
+export default function Preview({ shelter, cat, onCatChange, post, onPostChange, onBack, onSave, restoreNotice }: Props) {
   const [full, setFull] = useState<'cover' | 'cat' | 'words' | 'end' | null>(null)
   const [layout, setLayout] = useState<CardLayout | null>(null)
   const [event, setEvent] = useState<AdoptionEvent | null>(null)
@@ -228,6 +229,7 @@ export default function Preview({ shelter, cat, onCatChange, post, onPostChange,
   return (
     <main className="screen">
       <TopBar title="確認（仮）" onBack={onBack} />
+      {restoreNotice && <p className="alert">{restoreNotice}</p>}
       <p className="note">表紙・猫カード・ひとこと・最後の1枚です。撮った動画は、表紙と猫カードのあいだに入ります。</p>
 
       <section className="card-preview">
