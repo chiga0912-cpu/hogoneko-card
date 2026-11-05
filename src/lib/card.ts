@@ -1,15 +1,20 @@
 // カードをスマホの中で描く（AIは使わない。SPEC 3章）
-// 今は「猫カード」（SPEC 3.2 の3番目）。案A・案Bを見比べる（11/5。作る人が選んだら、使わない案を外す）
-//   案A：写真を全面に。下のほうを暗くして、影を付けた白い大きな文字を写真の上に直接置く
-//   案B：上下にテーマ色の帯。帯の中に大きな文字。写真は切らずに真ん中に置く
+// 今は「猫カード」（SPEC 3.2 の3番目）。写真の向きで2つの作りを自動で選ぶ（作る人の決定。11/5）
+//   縦の写真 → 案A：写真を全面に。下のほうを暗くして、影を付けた白い大きな文字を写真の上に直接置く
+//   横・正方形の写真 → 案B：上下にテーマ色の帯。帯の中に大きな文字。写真は切らずに真ん中に置く
 // 写真はこの中で描くだけ。外には送らない
 
 export const CARD_W = 1080
 export const CARD_H = 1920
 
-export type CardSize = 'small' | 'normal' | 'large' // 文字の大きさ（試し用。決まったら外す）
 export type TextPosition = 'up' | 'normal' | 'down'
-export type CardDesign = 'A' | 'B' // 見比べ用。決まったら外す
+export type CardDesign = 'A' | 'B'
+
+// 縦の写真（縦が横より1割以上長い）は案A。横と正方形は案B ⚙
+// 正方形を案Bにする理由：案Aで全面に広げると、左右が4割ほど切れて顔が切れやすく、文字も写真の下半分に重なる。
+// 案Bなら写真を切らずに全体を見せ、文字は帯の中なので顔に重ならない
+export const designFor = (photo: { width: number; height: number } | null): CardDesign =>
+  photo && photo.height < photo.width * 1.1 ? 'B' : 'A'
 
 // Instagramのリールで、ボタンや説明文が重なる所・切れる所（端からの距離）
 // 11/5 作る人が iPhone 15 Plus で、自分の投稿を再生した画面1回分で測った目安から決めた（DEVLOG 11/5）。
@@ -22,10 +27,9 @@ const INK = '#3a2e26'
 const WHITE = '#ffffff'
 const FONT = '"Hiragino Maru Gothic ProN", "Hiragino Sans", "Noto Sans JP", sans-serif'
 
-// 文字の大きさ（1080×1920の中の大きさ）。横幅の6〜7割を使う、短い見出しくらい（DEVLOG 11/4夜）
+// 文字の大きさ（1080×1920の中の大きさ）。作る人がiPhoneで見て「ちょうどいい」と決めた（11/5。見比べのときの「中」）
 const NAME_PX = 132
 const LINE_PX = 64
-const SIZE_K: Record<CardSize, number> = { small: 0.85, normal: 1, large: 1.15 }
 const SCALES = [1, 0.92, 0.84, 0.76] // 長いときは、この順に小さくする（0.76 まで）
 const NAME_SCALES = [1, 0.9, 0.8, 0.7, 0.6, 0.5] // 名前は本文とは別に、2行に収まるまで（0.5倍まで）
 
@@ -225,14 +229,12 @@ type Opts = {
   lines: string[] // カードの言葉（「いいところ」の行をそのまま）
   theme: string
   position: TextPosition
-  size: CardSize
-  design: CardDesign
 }
 
 export function drawCatCard(ctx: CanvasRenderingContext2D, opts: Opts): CardLayout {
   const lines = opts.lines.map((l) => l.trim()).filter(Boolean).slice(0, 3)
   ctx.clearRect(0, 0, CARD_W, CARD_H)
-  return opts.design === 'B' ? drawB(ctx, opts, lines) : drawA(ctx, opts, lines)
+  return designFor(opts.photo) === 'B' ? drawB(ctx, opts, lines) : drawA(ctx, opts, lines)
 }
 
 // 案A：写真を全面に。下のほうを暗くして、白い大きな文字
@@ -246,7 +248,7 @@ function drawA(ctx: CanvasRenderingContext2D, opts: Opts, lines: string[]): Card
 
   const bottom = CARD_H - SAFE.bottom - A_LIFT[opts.position]
   const w = widthFor(bottom)
-  const { p, scale, fits } = choose(ctx, opts.name, lines, SIZE_K[opts.size], { name: w, body: w }, (p) => p.h <= A_MAX_H)
+  const { p, scale, fits } = choose(ctx, opts.name, lines, 1, { name: w, body: w }, (p) => p.h <= A_MAX_H)
   const top = bottom - p.h
 
   // 暗くする強さ：文字の後ろの明るい所でも、白い文字が読める（見やすさ4.5以上）まで。最低0.35、最大0.85
@@ -300,7 +302,7 @@ function drawB(ctx: CanvasRenderingContext2D, opts: Opts, lines: string[]): Card
   }
   // 名前は上の帯（広い横幅）。いいところは下の帯で、右下のボタンの高さにかかるので狭い横幅
   const bodyW = widthFor(CARD_H - SAFE.bottom)
-  const { p, scale, fits } = choose(ctx, opts.name, lines, SIZE_K[opts.size], { name: WIDE_W, body: bodyW }, (p) => {
+  const { p, scale, fits } = choose(ctx, opts.name, lines, 1, { name: WIDE_W, body: bodyW }, (p) => {
     const { topH, botH } = bands(p)
     return CARD_H - topH - botH >= B_MIN_PHOTO
   })

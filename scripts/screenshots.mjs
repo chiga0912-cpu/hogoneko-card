@@ -12,11 +12,11 @@ const url = process.argv[3] ?? 'http://localhost:5173'
 const engine = process.env.ENGINE === 'webkit' ? webkit : chromium
 mkdirSync(outDir, { recursive: true })
 
-const dummy = (color, label) => ({
+const dummy = (color, label, w = 600, h = 800) => ({
   name: `${label}.svg`,
   mimeType: 'image/svg+xml',
   buffer: Buffer.from(
-    `<svg xmlns="http://www.w3.org/2000/svg" width="600" height="800"><rect width="600" height="800" fill="${color}"/><text x="300" y="420" font-size="60" text-anchor="middle" fill="#fff">${label}</text></svg>`,
+    `<svg xmlns="http://www.w3.org/2000/svg" width="${w}" height="${h}"><rect width="${w}" height="${h}" fill="${color}"/><text x="${w / 2}" y="${h / 2 + 20}" font-size="60" text-anchor="middle" fill="#fff">${label}</text></svg>`,
   ),
 })
 
@@ -245,20 +245,23 @@ const seenWithoutScroll = async (p, loc) => {
   )
   check(Number(await a('data-contrast')) >= 4.5, `明るいテーマ色でも、カードの文字が読みやすい（見やすさ ${await a('data-contrast')}）`)
   await p.screenshot({ path: join(outDir, '5f_猫カード_長い名前と長いいいところ_明るい色.png'), fullPage: true })
-  for (const size of ['大', '小']) {
-    await p.getByRole('group', { name: '文字の大きさ（試し用）' }).getByRole('button', { name: size }).click()
+  check((await a('data-design')) === 'A', '縦の写真は、案A（写真の上に白い文字）になる')
+  check(!(await p.getByRole('group', { name: 'カードの案（見比べ用）' }).isVisible()) && !(await p.getByRole('group', { name: '文字の大きさ（試し用）' }).isVisible()), '見比べ用・試し用のボタンは出ない')
+  // 横の写真・正方形の写真は案B（明るいテーマ色の帯でも読めるか、長い文字がはみ出さないか）
+  for (const [label, w, h] of [['横', 800, 600], ['正方形', 700, 700]]) {
+    await p.getByRole('button', { name: '戻る' }).click()
+    await p.getByRole('button', { name: '写真1を外す' }).click()
+    await p.locator('input[type=file]').setInputFiles(dummy('#8fa9a3', label, w, h))
+    await p.locator('.photo img').first().waitFor()
+    await p.getByRole('button', { name: '次へ' }).click()
+    await p.locator('.card-canvas[data-design="B"][data-drawn="1"]').waitFor({ timeout: 3000 }).catch(() => {})
     await p.waitForTimeout(300)
-    check((await a('data-fits')) === '1', `文字の大きさ「${size}」でも、長い文字がはみ出さない（${Math.round(Number(await a('data-scale')) * 100)}%・${await a('data-lines-shown')}/${await a('data-lines-total')}行）`)
+    check((await a('data-design')) === 'B', `${label}の写真は、案B（上下に色の帯）になる`)
+    check((await a('data-fits')) === '1', `${label}の写真（案B）でも、長い文字がはみ出さない（${Math.round(Number(await a('data-scale')) * 100)}%・${await a('data-lines-shown')}/${await a('data-lines-total')}行）`)
+    check(Number(await a('data-contrast')) >= 4.5, `${label}の写真（案B）：明るいテーマ色の帯でも、文字が読みやすい（見やすさ ${await a('data-contrast')}）`)
+    check(!(await p.getByRole('group', { name: '文字の位置' }).isVisible()) && (await p.getByText('文字は上下の色の帯に入ります').isVisible()), `${label}の写真（案B）では、文字の位置のボタンを出さず、そのわけを出す`)
+    await p.screenshot({ path: join(outDir, `5h_猫カード_${label}_案B_長い文字_明るい色.png`), fullPage: true })
   }
-  // 案B（見比べ用。決まったら外す）：明るいテーマ色の帯でも読めるか、長い文字がはみ出さないか
-  await p.getByRole('group', { name: 'カードの案（見比べ用）' }).getByRole('button', { name: /案B/ }).click()
-  await p.locator('.card-canvas[data-design="B"]').waitFor()
-  await p.waitForTimeout(300)
-  check((await a('data-fits')) === '1', `案Bでも、長い文字がはみ出さない（${Math.round(Number(await a('data-scale')) * 100)}%・${await a('data-lines-shown')}/${await a('data-lines-total')}行）`)
-  check(Number(await a('data-contrast')) >= 4.5, `案B：明るいテーマ色の帯でも、文字が読みやすい（見やすさ ${await a('data-contrast')}）`)
-  await p.screenshot({ path: join(outDir, '5h_猫カード_案B_長い文字_明るい色.png'), fullPage: true })
-  await p.getByRole('group', { name: 'カードの案（見比べ用）' }).getByRole('button', { name: /案A/ }).click()
-  await p.locator('.card-canvas[data-design="A"]').waitFor()
   // 「いいところ」が空のとき
   await p.getByRole('button', { name: '戻る' }).click()
   await p.getByLabel('名前').fill('テスト')
@@ -363,13 +366,12 @@ await shot('5_確認_仮')
   check((await card.getAttribute('data-fits')) === '1', '猫カードが描かれ、名前とカードの言葉が収まっている')
   check(Number(await card.getAttribute('data-contrast')) >= 4.5, `カードの文字が読みやすい色（見やすさ ${await card.getAttribute('data-contrast')}。4.5以上）`)
   await page.getByRole('group', { name: '文字の位置' }).getByRole('button', { name: '少し上' }).click()
-  await page.getByRole('group', { name: '文字の大きさ（試し用）' }).getByRole('button', { name: '大' }).click()
   await page.waitForTimeout(300)
   check(
     (await page.getByRole('group', { name: '文字の位置' }).getByRole('button', { name: '少し上' }).getAttribute('class')).includes('chip-on'),
     '文字の位置を「少し上」に変えられる',
   )
-  await shot('5d_猫カード_少し上_大', true)
+  await shot('5d_猫カード_少し上', true)
   await card.click()
   const fullCanvas = page.locator('.card-full-canvas')
   await fullCanvas.waitFor()
@@ -384,7 +386,6 @@ await shot('5_確認_仮')
   await page.getByRole('button', { name: '× 閉じる' }).click()
   check(!(await fullCanvas.isVisible()), '「× 閉じる」で元の画面に戻る')
   await page.getByRole('group', { name: '文字の位置' }).getByRole('button', { name: 'ふつう' }).click()
-  await page.getByRole('group', { name: '文字の大きさ（試し用）' }).getByRole('button', { name: '中' }).click()
 }
 const post = await page.getByLabel('投稿文（その場で直せます）').inputValue()
 check((post.match(/#/g) ?? []).length === 5, `ハッシュタグを7こ登録しても、投稿文は5つまで（${(post.match(/#/g) ?? []).length}こ）`)

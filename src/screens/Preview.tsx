@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { MAX_HASHTAGS, type Cat, type Shelter } from '../types'
 import { countHashtags } from '../lib/hashtags'
-import { CARD_H, CARD_W, drawCatCard, loadImage, type CardDesign, type CardLayout, type CardSize, type TextPosition } from '../lib/card'
+import { CARD_H, CARD_W, drawCatCard, loadImage, type CardLayout, type TextPosition } from '../lib/card'
 import { TopBar } from './ShelterForm'
 
 const POSITIONS: [TextPosition, string][] = [
@@ -9,30 +9,17 @@ const POSITIONS: [TextPosition, string][] = [
   ['normal', 'ふつう'],
   ['down', '少し下'],
 ]
-const DESIGNS: [CardDesign, string][] = [
-  ['A', '案A（写真の上に白い文字）'],
-  ['B', '案B（上下に色の帯）'],
-]
-const SIZES: [CardSize, string][] = [
-  ['small', '小'],
-  ['normal', '中'],
-  ['large', '大'],
-]
 
 // 猫カード（SPEC 3.2 の3番目）。写真はスマホの中で描くだけ
 function CatCard({
   cat,
   shelter,
-  size,
-  design,
   className,
   onLayout,
   onClick,
 }: {
   cat: Cat
   shelter: Shelter
-  size: CardSize
-  design: CardDesign
   className: string
   onLayout?: (l: CardLayout) => void
   onClick: () => void
@@ -57,8 +44,6 @@ function CatCard({
         lines: cat.goodPoints,
         theme: shelter.themeColor,
         position: cat.textPosition,
-        size,
-        design,
       })
       setLayout(l)
       onLayout?.(l)
@@ -66,7 +51,7 @@ function CatCard({
     return () => {
       stop = true
     }
-  }, [photoBlob, shelter.logo, shelter.themeColor, cat.name, cat.goodPoints, cat.textPosition, size, design, onLayout])
+  }, [photoBlob, shelter.logo, shelter.themeColor, cat.name, cat.goodPoints, cat.textPosition, onLayout])
   return (
     <canvas
       ref={ref}
@@ -99,8 +84,6 @@ type Props = {
 
 // 確認（仮）。カードと根拠の印は11/5〜11/6に作る。今は決まった形の投稿文だけ
 export default function Preview({ shelter, cat, onCatChange, post, onPostChange, onBack, onSave }: Props) {
-  const [size, setSize] = useState<CardSize>('normal') // 試し用。決まったら外す
-  const [design, setDesign] = useState<CardDesign>('A') // 見比べ用。決まったら外す
   const [full, setFull] = useState(false)
   const [layout, setLayout] = useState<CardLayout | null>(null)
   const [saving, setSaving] = useState(false)
@@ -113,7 +96,7 @@ export default function Preview({ shelter, cat, onCatChange, post, onPostChange,
       <p className="note">猫カードを1枚だけ作りました。ほかのカードと動画は、これから作ります。</p>
 
       <section className="card-preview">
-        <CatCard cat={cat} shelter={shelter} size={size} design={design} className="card-canvas" onLayout={setLayout} onClick={() => setFull(true)} />
+        <CatCard cat={cat} shelter={shelter} className="card-canvas" onLayout={setLayout} onClick={() => setFull(true)} />
         <p className="muted center">カードを押すと、画面いっぱいに出ます</p>
         {layout && layout.linesShown < layout.linesTotal && (
           <p className="notice">
@@ -125,15 +108,9 @@ export default function Preview({ shelter, cat, onCatChange, post, onPostChange,
         )}
         {layout && !layout.fits && <p className="alert">名前が長くて、カードに入りきりません。</p>}
 
-        <div className="choices" role="group" aria-label="カードの案（見比べ用）">
-          {DESIGNS.map(([v, label]) => (
-            <button key={v} className={`chip ${design === v ? 'chip-on' : ''}`} onClick={() => setDesign(v)}>
-              {label}
-            </button>
-          ))}
-        </div>
-        {design === 'B' && <p className="muted center">案Bでは、文字は帯の中に入るので、位置は変わりません</p>}
-        <div className="choices" role="group" aria-label="文字の位置" hidden={design === 'B'}>
+        {layout?.design === 'B' && <p className="muted center">横長・正方形の写真なので、文字は上下の色の帯に入ります</p>}
+        {layout?.design !== 'B' && (
+        <div className="choices" role="group" aria-label="文字の位置">
           {POSITIONS.map(([v, label]) => (
             <button
               key={v}
@@ -144,19 +121,12 @@ export default function Preview({ shelter, cat, onCatChange, post, onPostChange,
             </button>
           ))}
         </div>
-        <div className="choices" role="group" aria-label="文字の大きさ（試し用）">
-          <span className="muted">文字の大きさ（試し用）</span>
-          {SIZES.map(([v, label]) => (
-            <button key={v} className={`chip ${size === v ? 'chip-on' : ''}`} onClick={() => setSize(v)}>
-              {label}
-            </button>
-          ))}
-        </div>
+        )}
       </section>
 
       {full && (
         <div className="card-full" role="dialog" aria-label="猫カードを画面いっぱいに表示" onClick={() => setFull(false)}>
-          <CatCard cat={cat} shelter={shelter} size={size} design={design} className="card-full-canvas" onClick={() => setFull(false)} />
+          <CatCard cat={cat} shelter={shelter} className="card-full-canvas" onClick={() => setFull(false)} />
           <button className="card-close" onClick={() => setFull(false)}>
             × 閉じる
           </button>
