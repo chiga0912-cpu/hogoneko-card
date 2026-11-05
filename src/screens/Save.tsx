@@ -2,8 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import type { AdoptionEvent, Cat, Shelter } from '../types'
 import { CHECK_MODE } from '../lib/checkMode'
 import { useBlobUrl } from '../lib/useBlobUrls'
-import { buildSegments } from '../lib/reel'
-import { makeReel, type Made, type Method } from '../lib/video'
+import type { Made, Method } from '../lib/video'
 
 type Props = { cat: Cat; shelter: Shelter; event: AdoptionEvent | null; post: string; onHome: () => void; onRoster: () => void }
 
@@ -28,6 +27,8 @@ export default function Save({ cat, shelter, event, post, onHome, onRoster }: Pr
     started.current = true
     ;(async () => {
       try {
+        // 動画の部品は大きいので、ここで初めて読み込む（最初に開くときを軽くするため）
+        const [{ buildSegments }, { makeReel }] = await Promise.all([import('../lib/reel'), import('../lib/video')])
         const segs = await buildSegments(cat, shelter, event)
         const m = await makeReel(segs, setProgress, forcedMethod())
         setMade(m)

@@ -353,7 +353,7 @@ const browser = await engine.launch()
   await p.goto(`${url}/?sizes=1`)
   await p.getByRole('button', { name: '新しい子を紹介' }).click()
   const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="1600"><rect width="1200" height="1600" fill="#5a8"/></svg>`
-  await p.locator('input[type=file]').setInputFiles({ name: 'a.svg', mimeType: 'image/svg+xml', buffer: Buffer.from(svg) })
+  await p.locator('input[type=file][accept="image/*"]').setInputFiles({ name: 'a.svg', mimeType: 'image/svg+xml', buffer: Buffer.from(svg) })
   await p.locator('.photo img').first().waitFor()
   await p.getByLabel('名前').fill('新しい子')
   await p.getByRole('button', { name: '次へ' }).click()

@@ -120,7 +120,12 @@ export default function App() {
             // そのまま保存すると名簿の動画が消えるため。途中の写真がまだ書かれていなかったときは、写真も名簿から取る
             try {
               const full = await db.loadCat(restored.id)
-              restored = { ...restored, clip: full.clip, photos: saved.photosMissing ? full.photos : restored.photos }
+              restored = {
+                ...restored,
+                // 途中に動画が残っていれば、それを使う（外した動画が戻らないように）
+                clip: saved.clipMissing ? full.clip : restored.clip,
+                photos: saved.photosMissing ? full.photos : restored.photos,
+              }
             } catch {
               // 名簿の写真・動画が読めないまま開くと、保存したときに名簿の写真や動画が消える。
               // 途中の写真があってもなくても開かずに、ホームで知らせる（途中は消さない）
@@ -176,6 +181,16 @@ export default function App() {
         () => setAutosaveFailed(true),
       )
   }, [cat.photos, worthKeeping])
+
+  // 動画も大きいので、変わったときだけ書く
+  const clipBlob = cat.clip?.blob ?? null
+  useEffect(() => {
+    if (worthKeeping)
+      db.saveDraftClip(clipBlob).then(
+        () => setAutosaveFailed(false),
+        () => setAutosaveFailed(true),
+      )
+  }, [clipBlob, worthKeeping])
 
   // LINEなどに移る瞬間に、待たずに書く
   useEffect(() => {

@@ -15,6 +15,7 @@ import { CHECK_MODE } from '../lib/checkMode'
 import { ageText, fromMonthValue, jpDate, toMonthValue, todayString } from '../lib/age'
 import { useBlobUrls } from '../lib/useBlobUrls'
 import { TopBar } from './ShelterForm'
+import ClipPicker from './ClipPicker'
 
 type Props = {
   cat: Cat
@@ -86,7 +87,7 @@ export default function CatForm({ cat, fromRoster, onChange, onBack, onNext, aut
   const healthIsOld =
     fromRoster && healthKnown && cat.healthCheckedAt !== null && cat.healthCheckedAt !== todayString()
 
-  const missing = [cat.photos.length === 0 && '写真', !cat.name.trim() && '名前'].filter(Boolean) as string[]
+  const missing = [cat.photos.length === 0 && !cat.clip && '写真か動画', !cat.name.trim() && '名前'].filter(Boolean) as string[]
 
   const next = () => {
     if (missing.length) {
@@ -106,7 +107,7 @@ export default function CatForm({ cat, fromRoster, onChange, onBack, onNext, aut
       {/* 1. 写真 */}
       <div className="field">
         <span>
-          写真（{cat.photos.length}/{MAX_PHOTOS}枚） <em className="req">必須</em>
+          写真（{cat.photos.length}/{MAX_PHOTOS}枚） <em className="req">写真か動画が必須</em>
         </span>
         <div className="photo-grid">
           {cat.photos.map((_, i) => (
@@ -157,8 +158,11 @@ export default function CatForm({ cat, fromRoster, onChange, onBack, onNext, aut
             })}
           </p>
         )}
-        <small className="muted">1枚目が表紙になります。動画は近日中に選べるようになります</small>
+        <small className="muted">1枚目が表紙になります</small>
       </div>
+
+      {/* 1. 動画（1本。つまみで始まりを選び、5秒を使う） */}
+      <ClipPicker clip={cat.clip} onChange={(clip) => onChange((c) => ({ ...c, clip }))} />
 
       {/* 2. メッセージ欄 */}
       <label className="field">

@@ -403,19 +403,29 @@ export type Draft = {
 }
 // 入力の途中を読む。読めないときは 'unreadable'（途中は消さない。新しく始めたときに上書きされる）
 // photosMissing：途中の写真がまだ書かれていなかった（文字は書けたが、写真を書く前にページが終わったときなど）
-export const loadDraft = async (): Promise<{ cat: Cat; draft: Draft; photosMissing: boolean } | null | 'unreadable'> => {
+// clipMissing：途中の動画が読めなかった（動画を残す前の版で書かれた途中、または動画を書く前にページが終わった）。
+//   名簿の子なら、名簿の動画を使う。動画を外したときは clipMissing にならない（外したまま開く）
+export const loadDraft = async (): Promise<
+  { cat: Cat; draft: Draft; photosMissing: boolean; clipMissing: boolean } | null | 'unreadable'
+> => {
   try {
     const raw = await run<unknown>('drafts', 'readonly', (s) => s.get('main'))
     if (raw === undefined) return null
     if (!isObj(raw)) return 'unreadable'
     const rawPhotos = await run<unknown>('drafts', 'readonly', (s) => s.get('photos'))
     const photos = blobs(rawPhotos)
-    const cat = normalizeCat(raw.cat, { photos, clip: null })
+    // 動画は、使う所（start・length）を途中の記録に、中身を 'clip' に分けて残す
+    const meta = isObj(raw.cat) ? raw.cat.clip : null
+    const rawClip = isObj(meta) ? await run<unknown>('drafts', 'readonly', (s) => s.get('clip')) : undefined
+    const clipBlob = rawClip === undefined ? null : blobOrNull(rawClip)
+    const clip = isObj(meta) && clipBlob ? { blob: rawClip, start: meta.start, length: meta.length } : null
+    const cat = normalizeCat(raw.cat, { photos, clip })
     if (!cat) return 'unreadable'
     const { photos: _p, ...rest } = cat
     return {
       cat,
       photosMissing: rawPhotos === undefined,
+      clipMissing: raw.clipSaved !== true || (isObj(meta) && !clipBlob),
       draft: {
         cat: rest,
         fromRoster: raw.fromRoster === true,
@@ -429,11 +439,23 @@ export const loadDraft = async (): Promise<{ cat: Cat; draft: Draft; photosMissi
     return 'unreadable'
   }
 }
-// 途中の動画は11/5（つまみと一緒に）。今は文字だけ
+// 途中の記録には、動画の中身は入れない（大きいので、変わったときだけ saveDraftClip で書く）
 export const saveDraft = (draft: Draft) =>
   run<void>('drafts', 'readwrite', (s) =>
-    s.put({ ...draft, cat: { ...draft.cat, clip: null }, schemaVersion: SCHEMA_VERSION }, 'main'),
+    s.put(
+      {
+        ...draft,
+        cat: { ...draft.cat, clip: draft.cat.clip && { start: draft.cat.clip.start, length: draft.cat.clip.length } },
+        clipSaved: true, // 動画を残す版で書いた印（前の版の途中と見分けるため）
+        schemaVersion: SCHEMA_VERSION,
+      },
+      'main',
+    ),
   )
+export async function saveDraftClip(clip: Blob | null) {
+  const stored = clip ? await pack(clip) : null
+  await run<void>('drafts', 'readwrite', (s) => (stored ? s.put(stored, 'clip') : s.delete('clip')))
+}
 export async function saveDraftPhotos(photos: Blob[]) {
   const stored = await Promise.all(photos.map(pack))
   await run<void>('drafts', 'readwrite', (s) => s.put(stored, 'photos'))

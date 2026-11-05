@@ -28,12 +28,14 @@ function CatCard({
   className,
   onLayout,
   onClick,
+  still = null,
 }: {
   cat: Cat
   shelter: Shelter
   className: string
   onLayout?: (l: CardLayout) => void
   onClick: () => void
+  still?: HTMLCanvasElement | null // 写真がなく動画だけのときの、選んだ5秒の最初のコマ
 }) {
   const ref = useRef<HTMLCanvasElement>(null)
   const [layout, setLayout] = useState<CardLayout | null>(null)
@@ -49,7 +51,7 @@ function CatCard({
       const ctx = ref.current?.getContext('2d')
       if (stop || !ctx) return
       const l = drawCatCard(ctx, {
-        photo,
+        photo: photo ?? still,
         logo,
         name: cat.name,
         lines: cat.goodPoints,
@@ -62,7 +64,7 @@ function CatCard({
     return () => {
       stop = true
     }
-  }, [photoBlob, shelter.logo, shelter.themeColor, cat.name, cat.goodPoints, cat.textPosition, onLayout])
+  }, [photoBlob, still, shelter.logo, shelter.themeColor, cat.name, cat.goodPoints, cat.textPosition, onLayout])
   return (
     <canvas
       ref={ref}
@@ -127,12 +129,27 @@ export default function Preview({ shelter, cat, onCatChange, post, onPostChange,
     )
   }, [])
   const photo1 = cat.photos[0] ?? null
+  // 写真がなく動画だけのときは、表紙と猫カードに、選んだ5秒の最初のコマを使う（SPEC 3.2）
+  const [still, setStill] = useState<HTMLCanvasElement | null>(null)
+  const clipBlob = !photo1 ? (cat.clip?.blob ?? null) : null
+  const clipStart = cat.clip?.start ?? 0
+  useEffect(() => {
+    if (!clipBlob) return
+    let stop = false
+    // 動画の部品は大きいので、使うときだけ読み込む
+    import('../lib/video').then(({ clipFrame }) => clipFrame(clipBlob, clipStart)).then((c) => {
+      if (!stop) setStill(c)
+    })
+    return () => {
+      stop = true
+    }
+  }, [clipBlob, clipStart])
   const paintCover: Painter = async (ctx) => {
     const [photo, logo] = await Promise.all([
       photo1 ? loadImage(photo1).catch(() => null) : null,
       shelter.logo ? loadImage(shelter.logo).catch(() => null) : null,
     ])
-    const l = drawCoverCard(ctx, { photo, logo, name: cat.name, theme: shelter.themeColor })
+    const l = drawCoverCard(ctx, { photo: photo ?? (clipBlob ? still : null), logo, name: cat.name, theme: shelter.themeColor })
     return { fits: l.fits, design: l.design, contrast: l.contrast }
   }
   const usedEvent = showEvent ? event : null
@@ -141,7 +158,7 @@ export default function Preview({ shelter, cat, onCatChange, post, onPostChange,
     const l = drawEndCard(ctx, { logo, shelterName: shelter.name, contact: shelter.contact, event: usedEvent, theme: shelter.themeColor })
     return { fits: l.fits, scale: l.scale, event: l.hasEvent }
   }
-  const coverDeps = [photo1, shelter.logo, shelter.themeColor, cat.name]
+  const coverDeps = [photo1, still, clipBlob, shelter.logo, shelter.themeColor, cat.name]
   const endDeps = [shelter.logo, shelter.name, shelter.contact, shelter.themeColor, usedEvent]
   const [saving, setSaving] = useState(false)
   const [saveFailed, setSaveFailed] = useState(false)
@@ -150,7 +167,7 @@ export default function Preview({ shelter, cat, onCatChange, post, onPostChange,
   return (
     <main className="screen">
       <TopBar title="確認（仮）" onBack={onBack} />
-      <p className="note">表紙・猫カード・最後の1枚を作りました。撮った動画とひとことカードは、これから作ります。</p>
+      <p className="note">表紙・猫カード・最後の1枚です。撮った動画は、表紙と猫カードのあいだに入ります。ひとことカードは、これから作ります。</p>
 
       <section className="card-preview">
         {/* 横にめくって全部見られる（SPEC 2.4） */}
@@ -160,7 +177,7 @@ export default function Preview({ shelter, cat, onCatChange, post, onPostChange,
             <figcaption>1 表紙</figcaption>
           </figure>
           <figure className="card-slot">
-            <CatCard cat={cat} shelter={shelter} className="card-canvas" onLayout={setLayout} onClick={() => setFull('cat')} />
+            <CatCard cat={cat} shelter={shelter} still={clipBlob ? still : null} className="card-canvas" onLayout={setLayout} onClick={() => setFull('cat')} />
             <figcaption>2 猫カード</figcaption>
           </figure>
           <figure className="card-slot">
@@ -208,7 +225,7 @@ export default function Preview({ shelter, cat, onCatChange, post, onPostChange,
 
       {full && (
         <div className="card-full" role="dialog" aria-label="カードを画面いっぱいに表示" onClick={() => setFull(null)}>
-          {full === 'cat' && <CatCard cat={cat} shelter={shelter} className="card-full-canvas" onClick={() => setFull(null)} />}
+          {full === 'cat' && <CatCard cat={cat} shelter={shelter} still={clipBlob ? still : null} className="card-full-canvas" onClick={() => setFull(null)} />}
           {full === 'cover' && <PaintedCard paint={paintCover} deps={coverDeps} className="card-full-canvas" label="表紙" onClick={() => setFull(null)} />}
           {full === 'end' && <PaintedCard paint={paintEnd} deps={endDeps} className="card-full-canvas" label="最後の1枚" onClick={() => setFull(null)} />}
           <button className="card-close" onClick={() => setFull(null)}>
