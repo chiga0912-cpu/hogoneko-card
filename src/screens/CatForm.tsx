@@ -10,7 +10,7 @@ import {
   type Cat,
   type Health,
 } from '../types'
-import { copyBlob } from '../db'
+import { shrinkPhoto, type ShrinkInfo } from '../lib/shrink'
 import { ageText, fromMonthValue, jpDate, toMonthValue, todayString } from '../lib/age'
 import { useBlobUrls } from '../lib/useBlobUrls'
 import { TopBar } from './ShelterForm'
@@ -26,12 +26,21 @@ type Props = {
 
 type HealthKey = 'vaccine' | 'neuter' | 'virusTest'
 
+// 写真の大きさの数字（?sizes=1 で開いたときだけ。写真の名前は出さない）
+const SHOW_SIZES = typeof location !== 'undefined' && new URLSearchParams(location.search).get('sizes') === '1'
+const mb = (n: number) => `${(n / 1024 / 1024).toFixed(1)}MB`
+const sizeText = (z: ShrinkInfo) =>
+  z.result === 'kept-unreadable'
+    ? `読めなかったので元のまま（${mb(z.fromBytes)}）`
+    : `${z.fromW}×${z.fromH}・${mb(z.fromBytes)} → ${z.toW}×${z.toH}・${mb(z.toBytes)}・${(z.ms / 1000).toFixed(1)}秒${z.result === 'kept-small' ? '（元のまま）' : ''}`
+
 // 入力（1画面）。並びは SPEC 2.2 のとおり
 export default function CatForm({ cat, fromRoster, onChange, onBack, onNext, autosaveFailed }: Props) {
   const [showErrors, setShowErrors] = useState(false)
   const [photoNote, setPhotoNote] = useState('')
   const set = <K extends keyof Cat>(key: K, value: Cat[K]) => onChange((c) => ({ ...c, [key]: value }))
   const photoUrls = useBlobUrls(cat.photos)
+  const [sizes, setSizes] = useState<ShrinkInfo[]>([]) // ?sizes=1 で開いたときだけ出す（iPhoneで大きさを測るため）
 
   const addPhotos = async (files: FileList | null) => {
     if (!files) return
@@ -40,8 +49,17 @@ export default function CatForm({ cat, fromRoster, onChange, onBack, onNext, aut
     const room = MAX_PHOTOS - cat.photos.length
     const picked = Array.from(files).slice(0, room)
     try {
-      const copies = await Promise.all(picked.map(copyBlob))
+      setPhotoNote('写真を読み込んでいます…')
+      // 1枚ずつ小さくする（何枚も同時に広げると、iPhoneが重さで止まるおそれがあるため）
+      const copies: Blob[] = []
+      const infos: ShrinkInfo[] = []
+      for (const f of picked) {
+        const r = await shrinkPhoto(f)
+        copies.push(r.blob)
+        infos.push(r.info)
+      }
       onChange((c) => ({ ...c, photos: [...c.photos, ...copies].slice(0, MAX_PHOTOS) }))
+      setSizes(infos)
       setPhotoNote(
         total > room ? `写真は${MAX_PHOTOS}枚までです。選んだうちの最初の${picked.length}枚を入れました。` : '',
       )
@@ -124,6 +142,16 @@ export default function CatForm({ cat, fromRoster, onChange, onBack, onNext, aut
           )}
         </div>
         {photoNote && <p className="notice">{photoNote}</p>}
+        {SHOW_SIZES && sizes.length > 0 && (
+          <p className="muted" data-testid="photo-sizes">
+            {sizes.map((z, i) => (
+              <span key={i}>
+                {sizeText(z)}
+                <br />
+              </span>
+            ))}
+          </p>
+        )}
         <small className="muted">1枚目が表紙になります。動画は近日中に選べるようになります</small>
       </div>
 

@@ -515,6 +515,136 @@ await shot('10b_シェルター情報_保存の失敗')
 await fixStore(page)
 console.log('表示:', await page.locator('.status-line').innerText())
 
+// 写真を選んだときに小さくする（issue #2）。仮の画像だけ（細かいしま模様と文字）。ブラウザの中で作る
+{
+  // 仮の画像は、いつもChromium（大きな画像を作れる）で作る。WebKitで試すときも同じ画像を使う
+  const gen = engine === chromium ? browser : await chromium.launch()
+  const gp = await gen.newPage()
+  const makeJpeg = async (w, h) =>
+    Buffer.from(
+      await gp.evaluate(
+        async ([w, h]) => {
+          const c = document.createElement('canvas')
+          c.width = w
+          c.height = h
+          const x = c.getContext('2d')
+          x.fillStyle = '#c9a27e'
+          x.fillRect(0, 0, w, h)
+          x.fillStyle = '#3a2e26'
+          for (let i = 0; i < w; i += 8) x.fillRect(i, 0, 3, h)
+          x.font = `${Math.round(h / 10)}px sans-serif`
+          x.fillText('仮の画像', w / 10, h / 2)
+          // 写真のような細かいざらつき（単純な模様だけだと、元のファイルが本物の写真よりずっと軽くなるため）
+          const d = x.getImageData(0, 0, w, h)
+          let seed = 1
+          for (let i = 0; i < d.data.length; i += 4) {
+            seed = (seed * 1103515245 + 12345) & 0x7fffffff
+            const n = (seed % 41) - 20
+            d.data[i] += n
+            d.data[i + 1] += n
+            d.data[i + 2] += n
+          }
+          x.putImageData(d, 0, 0)
+          const b = await new Promise((r) => c.toBlob(r, 'image/jpeg', 0.9))
+          const u = new Uint8Array(await b.arrayBuffer())
+          let s = ''
+          for (let i = 0; i < u.length; i += 0x8000) s += String.fromCharCode(...u.subarray(i, i + 0x8000))
+          return btoa(s)
+        },
+        [w, h],
+      ),
+      'base64',
+    )
+  // JPEGの先頭に「90度回して見る」の印（EXIF Orientation=6）を入れる
+  const withRotate = (jpeg) => {
+    const tiff = Buffer.from([0x4d, 0x4d, 0, 0x2a, 0, 0, 0, 8, 0, 1, 0x01, 0x12, 0, 3, 0, 0, 0, 1, 0, 6, 0, 0, 0, 0, 0, 0])
+    const body = Buffer.concat([Buffer.from('Exif\0\0', 'binary'), tiff])
+    const len = Buffer.alloc(2)
+    len.writeUInt16BE(body.length + 2)
+    return Buffer.concat([jpeg.subarray(0, 2), Buffer.from([0xff, 0xe1]), len, body, jpeg.subarray(2)])
+  }
+  const files = {
+    縦: { name: 'a.jpg', mimeType: 'image/jpeg', buffer: await makeJpeg(3024, 4032) },
+    大: { name: 'b.jpg', mimeType: 'image/jpeg', buffer: await makeJpeg(8064, 6048) }, // 4800万画素
+    回転: { name: 'c.jpg', mimeType: 'image/jpeg', buffer: withRotate(await makeJpeg(3200, 2400)) },
+    壊れ: { name: 'd.jpg', mimeType: 'image/jpeg', buffer: Buffer.from('これは画像ではありません'.repeat(50)) },
+  }
+  await gp.close()
+  if (gen !== browser) await gen.close()
+
+  const ctx = await browser.newContext({ ...phone })
+  const p = await ctx.newPage()
+  p.on('dialog', (d) => d.accept())
+  await p.goto(url + '/?sizes=1')
+  await p.getByText('はじめに').waitFor()
+  await p.getByRole('button', { name: '追加せずに、このまま使う' }).click()
+  await p.getByLabel('団体名').fill('テスト保護猫の会')
+  await p.getByRole('button', { name: '登録して始める' }).click()
+  await p.getByRole('button', { name: '新しい子を紹介' }).click()
+  const t0 = Date.now()
+  await p.locator('input[type=file]').setInputFiles([files.縦, files.大, files.回転])
+  await p.locator('.photo img').nth(2).waitFor({ timeout: 20000 })
+  console.log(`  大きな仮の画像3枚を入れるまで：${((Date.now() - t0) / 1000).toFixed(1)}秒（パソコン）`)
+  await p.waitForTimeout(800) // 途中の保存を待つ
+  // 入力の途中として保存された写真を、保存場所から直接読んで、大きさと種類を見る
+  const stored = () =>
+    p.evaluate(
+      () =>
+        new Promise((resolve) => {
+          const req = indexedDB.open('hogoneko-card')
+          req.onsuccess = () => {
+            const r = req.result.transaction('drafts').objectStore('drafts').get('photos')
+            r.onsuccess = async () => {
+              const out = []
+              for (const s of r.result ?? []) {
+                const blob = new Blob([s.data], { type: s.type })
+                let w = 0
+                let h = 0
+                try {
+                  const bm = await createImageBitmap(blob)
+                  w = bm.width
+                  h = bm.height
+                } catch {}
+                out.push({ type: s.type, bytes: blob.size, w, h })
+              }
+              resolve(out)
+            }
+          }
+        }),
+    )
+  const got = await stored()
+  console.log('  元の仮の画像：' + ['縦', '大', '回転'].map((k) => `${(files[k].buffer.length / 1024 / 1024).toFixed(2)}MB`).join(' / '))
+  console.log('  保存された写真：' + got.map((g) => `${g.w}×${g.h}・${g.type}・${(g.bytes / 1024 / 1024).toFixed(2)}MB`).join(' / '))
+  const ok = (g, w, h) => g && g.type === 'image/jpeg' && g.w === w && g.h === h
+  check(ok(got[0], 1920, 2560), '大きな縦の写真（3024×4032）は、長い辺2560以下のJPEG（1920×2560）で保存される')
+  check(ok(got[1], 2560, 1920), '4800万画素の写真（8064×6048）も、長い辺2560以下のJPEG（2560×1920）で保存される')
+  check(ok(got[2], 1920, 2560), '「90度回して見る」の印がある写真は、回したあとの向き（縦1920×2560）で保存される')
+  check(got.every((g, i) => g.bytes < files[['縦', '大', '回転'][i]].buffer.length), '小さくした写真は、元のファイルより軽い')
+  check(await p.getByTestId('photo-sizes').isVisible(), '?sizes=1 で開いたときは、写真の大きさの数字が出る')
+  check(!(await p.getByTestId('photo-sizes').innerText()).match(/\.jpg|a\.|b\.|c\./), '大きさの数字に、写真の名前は出さない')
+  await p.screenshot({ path: join(outDir, '2s_写真を小さくした_数字.png'), fullPage: true })
+  // 読めない写真は、元のまま残す
+  await p.getByRole('button', { name: '写真3を外す' }).click()
+  await p.locator('input[type=file]').setInputFiles(files.壊れ)
+  await p.waitForTimeout(1200)
+  const got2 = await stored()
+  check(got2.length === 3 && got2[2].bytes === files.壊れ.buffer.length && got2[2].type === 'image/jpeg', '読めない写真は、小さくせずに元のまま残る')
+  await ctx.close()
+  // ?sizes=1 を付けずに開いたときは、数字を出さない
+  const ctx2 = await browser.newContext({ ...phone })
+  const p2 = await ctx2.newPage()
+  await p2.goto(url)
+  await p2.getByText('はじめに').waitFor()
+  await p2.getByRole('button', { name: '追加せずに、このまま使う' }).click()
+  await p2.getByLabel('団体名').fill('テスト保護猫の会')
+  await p2.getByRole('button', { name: '登録して始める' }).click()
+  await p2.getByRole('button', { name: '新しい子を紹介' }).click()
+  await p2.locator('input[type=file]').setInputFiles(files.縦)
+  await p2.locator('.photo img').first().waitFor({ timeout: 10000 })
+  check((await p2.getByTestId('photo-sizes').count()) === 0, '?sizes=1 を付けずに開いたときは、大きさの数字を出さない')
+  await ctx2.close()
+}
+
 await browser.close()
 console.log(failures ? `確認NGが${failures}こあります` : 'すべて確認OK')
 process.exit(failures ? 1 : 0)
