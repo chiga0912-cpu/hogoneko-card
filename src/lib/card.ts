@@ -54,9 +54,41 @@ type Img = CanvasImageSource & { width: number; height: number }
 
 // 日本語を、幅に収まるように折り返す（「、」「。」などで行を始めない）
 const NO_START = '、。，．,.）」』】〕！？!?ーぁぃぅぇぉっゃゅょァィゥェォッャュョ'
+// 言葉のまとまりに分ける（issue #10：「教えてく／れる」のように言葉の途中で折らないため）
+// ブラウザの言葉の区切り（Intl.Segmenter）は「教え|て|くれる」のように細かいので、
+// ひらがなで始まる部分（て・を・くれる など）・閉じかっこ・句読点・「〜」は前にくっつけ、開きかっこのあとは次にくっつける。
+// 数のあとの1文字（「10時」の「時」）も前にくっつける。使えないブラウザでは、英数字のつながりだけをまとめる
+const segmenter =
+  typeof Intl !== 'undefined' && 'Segmenter' in Intl ? new Intl.Segmenter('ja', { granularity: 'word' }) : null
+const ATTACH_BEFORE = /^[\p{Script=Hiragana}ー、。，．,.）」』】〕！？!?…〜~・：:]/u
+const OPEN = /[（「『【〔(〜~]$/
+export function wordUnits(text: string): string[] {
+  if (!segmenter) return text.match(/[A-Za-z0-9@.:/_~+-]+|./gsu) ?? []
+  const segs = [...segmenter.segment(text)].map((x) => x.segment)
+  const units: string[] = []
+  for (let i = 0; i < segs.length; i++) {
+    let segment = segs[i]
+    // 「お問い合わせ」「ご連絡」の「お」「ご」は、後ろの言葉にくっつける（前にはくっつけない）
+    const honor = (segment === 'お' || segment === 'ご') && /^\p{Script=Han}/u.test(segs[i + 1] ?? '')
+    if (honor) segment += segs[++i]
+    const prev = units[units.length - 1]
+    const afterStop = prev !== undefined && /[、。，．！？!?]$/.test(prev) && !/^[、。，．！？!?）」』】〕…]/.test(segment)
+    const glue =
+      prev !== undefined &&
+      prev !== '\n' &&
+      segment !== '\n' &&
+      !afterStop && // 「、」「。」のあとでは分ける
+      !honor &&
+      (ATTACH_BEFORE.test(segment) || OPEN.test(prev) || (/[0-9０-９]$/.test(prev) && [...segment].length === 1 && !/\s/.test(segment)))
+    if (glue) units[units.length - 1] = prev + segment
+    else units.push(segment)
+  }
+  return units
+}
+
 function wrap(ctx: CanvasRenderingContext2D, text: string, width: number): string[] {
-  // 英数字のつながり（電話番号・時刻・メールアドレスなど）は、途中で折らない（入りきらないほど長いときだけ折る）
-  const units = text.match(/[A-Za-z0-9@.:/_~+-]+|./gsu) ?? []
+  // 言葉のまとまりの途中では折らない（入りきらないほど長いまとまりだけ、文字で折る）
+  const units = wordUnits(text)
   const lines: string[] = []
   let cur = ''
   const pushChars = (u: string) => {
@@ -72,11 +104,11 @@ function wrap(ctx: CanvasRenderingContext2D, text: string, width: number): strin
     }
   }
   for (const u of units) {
-    if (u.length === 1 || ctx.measureText(cur + u).width <= width) {
-      pushChars(u)
-    } else if (ctx.measureText(u).width <= width) {
+    if (ctx.measureText(cur + u).width <= width) {
+      cur += u
+    } else if (ctx.measureText(u.trimStart()).width <= width) {
       if (cur) lines.push(cur)
-      cur = u
+      cur = u.trimStart()
     } else {
       pushChars(u)
     }
@@ -124,8 +156,10 @@ const rowsOf = (body: string[][]) => body.reduce((a, b) => a + b.length, 0)
 function nameH(p: Pick<Planned, 'nameLines' | 'nameSize'>) {
   return p.nameLines.length * p.nameSize * NAME_LH
 }
+// 「いいところ」の項目と項目のあいだは、少し空ける（折り返した行と、次の項目を見分けやすくするため。#10）⚙
+const ITEM_GAP = 0.35 // 行の高さに対する割合
 function bodyH(p: Pick<Planned, 'body' | 'lineSize'>) {
-  return rowsOf(p.body) * p.lineSize * LINE_LH
+  return rowsOf(p.body) * p.lineSize * LINE_LH + Math.max(0, p.body.length - 1) * p.lineSize * ITEM_GAP
 }
 function blockH(p: Omit<Planned, 'h'>) {
   const b = bodyH(p)
@@ -205,12 +239,14 @@ function drawText(
   }
   if (parts !== 'name') {
     ctx.font = `700 ${p.lineSize}px ${FONT}`
-    for (const rows of p.body)
+    p.body.forEach((rows, i) => {
+      if (i > 0) y += p.lineSize * ITEM_GAP
       for (const r of rows) {
         ctx.fillText(r, x, y + p.lineSize * 0.12)
         widest = Math.max(widest, ctx.measureText(r).width)
         y += p.lineSize * LINE_LH
       }
+    })
   }
   ctx.restore()
   return { widest, bottom: y }
@@ -318,6 +354,8 @@ function bandColors(theme: string): { band: string; color: string; contrast: num
 const B_PAD = 36 // 帯の中の、文字の上下の余白
 const B_LOGO = 90 // 案Bのロゴは少し小さく（帯を低くするため）
 const B_MIN_PHOTO = 700 // 写真に残す高さの下限 ⚙
+// 「いいところ」が2つ以上あるのに1つしか入らないときだけ、写真をここまで小さくしてよい（できるだけ2つ載せるため。#10）⚙
+const B_MIN_PHOTO_TWO = 560
 
 function drawB(ctx: CanvasRenderingContext2D, opts: Opts, lines: string[]): CardLayout {
   // 帯の文字は、白と濃い色のうち、テーマ色の上で読みやすいほう（見直し A13 と同じ考え）
@@ -335,10 +373,17 @@ function drawB(ctx: CanvasRenderingContext2D, opts: Opts, lines: string[]): Card
   // 名前は上の帯（広い横幅）。いいところは下の帯で、右下のボタンの高さにかかる。
   // 名前と中心をそろえるため、右のボタンを避ける幅を左右どちらも空けて、真ん中に置く（11/5 見直し①の5番。作る人の決定）
   const bodyW = widthFor(CARD_H - SAFE.bottom) === WIDE_W ? WIDE_W : CARD_W - SAFE.cornerRight * 2
-  const { p, scale, fits } = choose(ctx, opts.name, lines, 1, { name: WIDE_W, body: bodyW }, (p) => {
+  const roomFor = (minPhoto: number) => (p: Planned) => {
     const { topH, botH } = bands(p)
-    return CARD_H - topH - botH >= B_MIN_PHOTO
-  })
+    return CARD_H - topH - botH >= minPhoto
+  }
+  let chosen = choose(ctx, opts.name, lines, 1, { name: WIDE_W, body: bodyW }, roomFor(B_MIN_PHOTO))
+  // 2つ以上あるのに1つしか入らなかったときだけ、写真を少し小さくして2つ載せる
+  if (lines.length >= 2 && chosen.p.body.length < 2) {
+    const two = choose(ctx, opts.name, lines.slice(0, 2), 1, { name: WIDE_W, body: bodyW }, roomFor(B_MIN_PHOTO_TWO))
+    if (two.fits && two.p.body.length === 2) chosen = two
+  }
+  const { p, scale, fits } = chosen
   const { topH, botH } = bands(p)
 
   ctx.fillStyle = band

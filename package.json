@@ -8,7 +8,7 @@
     "build": "tsc -b && vite build",
     "lint": "oxlint",
     "preview": "vite preview",
-    "shots": "node scripts/screenshots.mjs screenshots && node scripts/roster-check.mjs screenshots && node scripts/video-check.mjs screenshots",
+    "shots": "node scripts/wrap-check.mjs && node scripts/screenshots.mjs screenshots && node scripts/roster-check.mjs screenshots && node scripts/video-check.mjs screenshots",
     "check-push": "node scripts/check-before-push.mjs"
   },
   "dependencies": {

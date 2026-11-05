@@ -283,6 +283,26 @@ const seenWithoutScroll = async (p, loc) => {
     await p.waitForTimeout(300)
     check((await a('data-design')) === 'B', `${label}の写真は、案B（上下に色の帯）になる`)
     check((await a('data-fits')) === '1', `${label}の写真（案B）でも、長い文字がはみ出さない（${Math.round(Number(await a('data-scale')) * 100)}%・${await a('data-lines-shown')}/${await a('data-lines-total')}行）`)
+    if (label === '横') {
+      // #10：ふつうの長さの名前なら、長い「いいところ」でも2つは載る（名前が41字もあると、上の帯で場所を使うので1つになることがある）
+      const two = await p.evaluate(async () => {
+        try {
+          const m = await import('/src/lib/card.ts')
+          const c = document.createElement('canvas')
+          c.width = 1080
+          c.height = 1920
+          const ph = document.createElement('canvas')
+          ph.width = 800
+          ph.height = 600
+          const lines = ['（架空）朝はいちばんに起きてきて、台所の前でごはんの時間を知らせてくれる、とても几帳面な子です', '（架空）ほかの猫とも仲よくでき、子猫が来たときは毛づくろいをしてあげる、面倒見のよいお兄さんです', '（架空）抱っこはまだ少し苦手ですが、ひざの上には自分から乗ってきて、そのまま一時間でも眠っています']
+          const l = m.drawCatCard(c.getContext('2d'), { photo: ph, logo: null, name: 'テスト', lines, theme: '#e8826b', position: 'normal' })
+          return `${l.linesShown}/${l.linesTotal}/${l.fits ? 1 : 0}`
+        } catch {
+          return null // 本番と同じ作りでは、部品を直接読めない
+        }
+      })
+      if (two) check(two.startsWith('2/3') || two.startsWith('3/3'), `案B：ふつうの長さの名前なら、長い「いいところ」でも2つは載る（#10。${two}）`)
+    }
     check(Number(await a('data-contrast')) >= 4.5, `${label}の写真（案B）：明るいテーマ色の帯でも、文字が読みやすい（見やすさ ${await a('data-contrast')}）`)
     check(!(await p.getByRole('group', { name: '文字の位置' }).isVisible()) && (await p.getByText('文字は上下の色の帯に入ります').isVisible()), `${label}の写真（案B）では、文字の位置のボタンを出さず、そのわけを出す`)
     await p.screenshot({ path: join(outDir, `5h_猫カード_${label}_案B_長い文字_明るい色.png`), fullPage: true })
