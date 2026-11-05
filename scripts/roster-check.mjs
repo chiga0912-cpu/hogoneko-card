@@ -462,6 +462,109 @@ for (const [key, label] of [
   await ctx.close()
 }
 
+// ---- 6. 古い版に戻して保存し直したあと、また新しい版で開く（見直しで見つかった道）----
+// catMedia にはもう3枚あり、名簿の記録は古い形（1枚）。どちらも消さずに残す
+{
+  const ctx = await newCtx()
+  const p = await ctx.newPage()
+  await p.goto(blank)
+  const seed = await seedV1(p, { bigCats: 1, perCat: 3, w: 0, h: 0 })
+  // 番号2の保存場所を作り、big-1 の写真3枚を catMedia に入れ、名簿の記録は1枚だけの古い形にする
+  const before = await p.evaluate(
+    () =>
+      new Promise((resolve, reject) => {
+        const r = indexedDB.open('hogoneko-card', 2)
+        r.onupgradeneeded = () => r.result.createObjectStore('catMedia')
+        r.onsuccess = () => {
+          const db = r.result
+          const tx = db.transaction(['cats', 'catMedia'], 'readwrite')
+          const g = tx.objectStore('cats').get('big-1')
+          g.onsuccess = () => {
+            const c = g.result
+            tx.objectStore('catMedia').put({ schemaVersion: 2, photos: c.photos, clip: c.clip }, 'big-1')
+            tx.objectStore('cats').put({ ...c, photos: [c.photos[0]], clip: null })
+          }
+          tx.oncomplete = () => {
+            db.close()
+            resolve(true)
+          }
+          tx.onerror = () => reject(tx.error)
+        }
+      }),
+  )
+  await p.goto(`${url}/?sizes=1`)
+  await p.getByRole('button', { name: '新しい子を紹介' }).waitFor()
+  await waitShape(p, /移せなかった1匹/, 20000)
+  const d = await dump(p)
+  check(before && same(d.media['big-1']?.photos, seed.prints['big-1'].photos), '古い版で保存し直された子：別の置き場所の写真3枚を上書きしない')
+  check(same(d.cats['big-1']?.inlinePhotos, [seed.prints['big-1'].photos[0]]) && d.cats['big-1'].schemaVersion === 1, '古い版で保存し直された子：名簿の記録も古い形のまま残す')
+  check(/移せなかった1匹/.test(await shapeLine(p)), '古い版で保存し直された子は、確認モードで「移せなかった1匹」に数える')
+  await ctx.close()
+}
+
+// ---- 7. 名簿の子を直している途中に、ページが読み込み直される（LINEに移ったときなど）----
+{
+  const ctx = await newCtx()
+  const p = await ctx.newPage()
+  p.on('dialog', (d) => d.accept())
+  await p.goto(blank)
+  const seed = await seedV1(p, { bigCats: 3, perCat: 2, w: 0, h: 0 }) // big-1 は動画あり
+  await p.goto(`${url}/?sizes=1`)
+  await p.getByRole('button', { name: '新しい子を紹介' }).waitFor()
+  await waitShape(p, /古い形0匹/, 20000)
+  const dropDraftPhotos = () =>
+    p.evaluate(
+      () =>
+        new Promise((res) => {
+          const r = indexedDB.open('hogoneko-card')
+          r.onsuccess = () => {
+            const tx = r.result.transaction('drafts', 'readwrite')
+            tx.objectStore('drafts').delete('photos')
+            tx.oncomplete = () => {
+              r.result.close()
+              res()
+            }
+          }
+        }),
+    )
+  const pick = async (name) => {
+    await p.goto(`${url}/?sizes=1`)
+    await p.getByRole('button', { name: /名簿から選ぶ/ }).click()
+    await p.locator('.roster-main', { hasText: name }).click()
+    await p.locator('.photo img').nth(1).waitFor()
+    await p.waitForTimeout(1000) // 入力の途中が書かれるのを待つ
+  }
+  // 動画のある子：読み込み直してから保存しても、動画が残る
+  await pick('おおきな子1')
+  await p.reload()
+  await p.locator('.photo img').nth(1).waitFor({ timeout: 5000 }).catch(() => {})
+  check((await p.locator('.photo img').count()) === 2, '名簿の子の途中で読み込み直すと、写真が2枚とも入った入力画面に戻る')
+  await p.getByRole('button', { name: '次へ' }).click()
+  await p.getByRole('button', { name: '名簿に保存する' }).click()
+  await p.waitForTimeout(1500)
+  let d = await dump(p)
+  check(d.media['big-1']?.clip === seed.prints['big-1'].clip && same(d.media['big-1'].photos, seed.prints['big-1'].photos), '読み込み直したあとに保存しても、名簿の動画と写真は消えない')
+  // 途中の写真が書かれる前にページが終わった：名簿の写真を使う
+  await pick('おおきな子2')
+  await dropDraftPhotos()
+  await p.reload()
+  await p.locator('.photo img').nth(1).waitFor({ timeout: 5000 }).catch(() => {})
+  check((await p.locator('.photo img').count()) === 2, '途中の写真が書かれていなくても、名簿の子は名簿の写真で開き直す')
+  // そのうえ名簿の写真も読めない：開かずにホームで知らせる
+  await clearDraft(p)
+  await pick('おおきな子3')
+  await dropDraftPhotos()
+  await flag(p, '__break_media_get', true)
+  await p.reload()
+  const note = p.getByText('入力の途中の内容が読めなかったので、ホームから始めます。')
+  await note.waitFor({ timeout: 5000 }).catch(() => {})
+  check(await note.isVisible(), '途中の写真も名簿の写真も読めないときは、写真なしで開かずに、ホームで知らせる')
+  await flag(p, '__break_media_get', false)
+  d = await dump(p)
+  check(same(d.media['big-3']?.photos, seed.prints['big-3'].photos), 'そのときも、名簿の写真は前と同じ')
+  await ctx.close()
+}
+
 await browser.close()
 console.log(failures ? `確認NGが${failures}こあります` : 'すべて確認OK')
 process.exit(failures ? 1 : 0)

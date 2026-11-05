@@ -362,15 +362,23 @@ export async function migrateCat(id: string, cover: Blob | null): Promise<'moved
     const cats = tx.objectStore('cats')
     then(cats.get(id), fail, (raw) => {
       if (!isObj(raw) || isSplit(raw)) return
-      const { photos, clip, ...text } = raw
-      const media: StoredMedia = { schemaVersion: SCHEMA_VERSION, photos: photos ?? [], clip: clip ?? null }
-      const putMedia = tx.objectStore('catMedia').put(media, id)
-      putMedia.onerror = () => fail(putMedia.error)
-      then(putMedia, fail, () => {
-        const putCat = cats.put({ ...text, cover: packedCover, schemaVersion: SCHEMA_VERSION })
-        putCat.onerror = () => fail(putCat.error)
-        then(putCat, fail, () => {
-          result = 'moved'
+      // この子の写真が、もう catMedia にあるときは上書きしない（古い版に戻して保存し直したあとなど）。
+      // どちらの写真が正しいか分からないので、両方そのまま残し、「移せなかった」に数える
+      then(tx.objectStore('catMedia').getKey(id), fail, (existing) => {
+        if (existing !== undefined) {
+          fail(new Error('この子の写真が、もう別の置き場所にあります'))
+          return
+        }
+        const { photos, clip, ...text } = raw
+        const media: StoredMedia = { schemaVersion: SCHEMA_VERSION, photos: photos ?? [], clip: clip ?? null }
+        const putMedia = tx.objectStore('catMedia').put(media, id)
+        putMedia.onerror = () => fail(putMedia.error)
+        then(putMedia, fail, () => {
+          const putCat = cats.put({ ...text, cover: packedCover, schemaVersion: SCHEMA_VERSION })
+          putCat.onerror = () => fail(putCat.error)
+          then(putCat, fail, () => {
+            result = 'moved'
+          })
         })
       })
     })
@@ -391,7 +399,8 @@ export type Draft = {
   postEdited: boolean // 投稿文を手で直したか（直していたら、作り直す前に聞く）
 }
 // 入力の途中を読む。読めないときは 'unreadable'（途中は消さない。新しく始めたときに上書きされる）
-export const loadDraft = async (): Promise<{ cat: Cat; draft: Draft } | null | 'unreadable'> => {
+// photosMissing：途中の写真がまだ書かれていなかった（文字は書けたが、写真を書く前にページが終わったときなど）
+export const loadDraft = async (): Promise<{ cat: Cat; draft: Draft; photosMissing: boolean } | null | 'unreadable'> => {
   try {
     const raw = await run<unknown>('drafts', 'readonly', (s) => s.get('main'))
     if (raw === undefined) return null
@@ -403,6 +412,7 @@ export const loadDraft = async (): Promise<{ cat: Cat; draft: Draft } | null | '
     const { photos: _p, ...rest } = cat
     return {
       cat,
+      photosMissing: rawPhotos === undefined,
       draft: {
         cat: rest,
         fromRoster: raw.fromRoster === true,

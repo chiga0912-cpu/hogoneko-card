@@ -113,7 +113,23 @@ export default function App() {
           setDraftUnreadable(true)
         } else if (saved) {
           // 入力の途中で読み込み直されたときは、その画面に戻す
-          setCat(saved.cat)
+          let restored = saved.cat
+          if (saved.draft.fromRoster) {
+            // 名簿から選んだ子は、名簿の元の写真と動画を読み直す。入力の途中には動画を残していないので、
+            // そのまま保存すると名簿の動画が消えるため。途中の写真がまだ書かれていなかったときは、写真も名簿から取る
+            try {
+              const full = await db.loadCat(restored.id)
+              restored = { ...restored, clip: full.clip, photos: saved.photosMissing ? full.photos : restored.photos }
+            } catch {
+              // 写真のないまま開くと、保存したときに名簿の写真が消える。開かずに、ホームで知らせる（途中は消さない）
+              if (saved.photosMissing) {
+                setDraftUnreadable(true)
+                setScreen('home')
+                return
+              }
+            }
+          }
+          setCat(restored)
           setFromRoster(saved.draft.fromRoster)
           setPost(saved.draft.post)
           setPostEdited(saved.draft.postEdited)
