@@ -914,6 +914,57 @@ console.log('表示:', await page.locator('.status-line').innerText())
   await ctx7.close()
 }
 
+// #44：入力の途中の写真の書き込み。写真の中身を読むのを、わざと4秒遅らせて試す
+{
+  const ctx8 = await browser.newContext({ ...phone })
+  const p8 = await ctx8.newPage()
+  await p8.addInitScript(() => {
+    const orig = Blob.prototype.arrayBuffer
+    Blob.prototype.arrayBuffer = async function () {
+      if (window.__slowPhotos && this.type.startsWith('image/')) await new Promise((r) => setTimeout(r, 4000))
+      return orig.call(this)
+    }
+  })
+  const slow = (on) => p8.evaluate((on) => (window.__slowPhotos = on), on)
+  await p8.goto(url + '/?sizes=1')
+  await p8.getByText('はじめに').waitFor()
+  await p8.getByRole('button', { name: '追加せずに、このまま使う' }).click()
+  await p8.getByLabel('団体名').fill('テスト保護猫の会')
+  await p8.getByRole('button', { name: '登録して始める' }).click()
+  await p8.getByRole('button', { name: '新しい子を紹介' }).click()
+  await p8.getByLabel('名前').fill('テスト')
+  const add = async (color, label, n) => {
+    await p8.locator('input[type=file][accept="image/*"]').setInputFiles(dummy(color, label))
+    await p8.locator('.photo img').nth(n - 1).waitFor()
+    await p8.waitForTimeout(100)
+  }
+  const reopen = async () => {
+    await p8.reload()
+    await p8.getByLabel('名前').waitFor()
+    await p8.waitForTimeout(1000)
+  }
+  await add('#c9b8a6', '写真A', 1)
+  await p8.waitForTimeout(1200) // 写真Aは書き終わる
+  // (a) 写真Bを足し、その書き込みが終わる前に閉じる
+  await slow(true)
+  await add('#9fb3a0', '写真B', 2)
+  await p8.waitForTimeout(800) // 文字の途中の記録は書かれる。写真の書き込みはまだ
+  await slow(false)
+  await reopen()
+  check((await p8.locator('.photo img').count()) === 1 && (await p8.getByText('写真が、前に選んだものに戻っているかもしれません').isVisible()), '写真を足した直後に閉じたときは、前の写真の組で開き、黙らずに知らせる（#44）')
+  await p8.screenshot({ path: join(outDir, '3h_写真が前の組に戻ったかもしれない.png') })
+  // (b) 遅い書き込み（写真2枚）のあとに、速い書き込み（写真1枚）が先に終わっても、あとの1枚が残る
+  await p8.waitForTimeout(4500)
+  await slow(true)
+  await add('#b3a0c9', '写真C', 2)
+  await slow(false)
+  await p8.getByRole('button', { name: '写真2を外す' }).click()
+  await p8.waitForTimeout(6000) // 遅い書き込みも終わるまで待つ
+  await reopen()
+  check((await p8.locator('.photo img').count()) === 1 && !(await p8.getByText('写真が、前に選んだものに戻っているかもしれません').isVisible()), 'あとで選んだ写真の組が残る（遅い書き込みが、あとの書き込みを上書きしない。#44）')
+  await ctx8.close()
+}
+
 // 確認モードの合図は、日本語のキーボードで打った全角（？sizes＝１）でも読む（11/5夜 iPhoneで見つけた）
 {
   const ctx5 = await browser.newContext({ ...phone })

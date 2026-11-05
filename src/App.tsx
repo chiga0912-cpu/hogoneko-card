@@ -83,6 +83,7 @@ export default function App() {
   const [migrateFailed, setMigrateFailed] = useState(0) // 移し替えられなかった子の数（確認モードで出す）
   const migrating = useRef(false)
   const [clipLost, setClipLost] = useState(false) // 途中の動画を残せていなかった
+  const [stalePhotos, setStalePhotos] = useState<Blob[] | null>(null) // 前の写真の組に戻っているかもしれないとき、その組（#44）
   const [reelWords, setReelWords] = useState<string | null>(null) // ひとことカードに載せる文（確認画面で決めたもの）
   const [reelEvent, setReelEvent] = useState<AdoptionEvent | null>(null) // 最後の1枚に入れる譲渡会（確認画面で選んだもの）
 
@@ -150,7 +151,7 @@ export default function App() {
                     : saved.clipStatus === 'roster' && full.clip
                       ? { ...full.clip, ...saved.clipRange }
                       : restored.clip,
-                photos: saved.photosMissing ? full.photos : restored.photos,
+                photos: saved.photosStatus === 'missing' || saved.photosStatus === 'roster' ? full.photos : restored.photos,
               }
             } catch {
               // 名簿の写真・動画が読めないまま開くと、保存したときに名簿の写真や動画が消える。
@@ -162,6 +163,8 @@ export default function App() {
           }
           // 選び直した動画を書き終える前にページが終わったときは、黙って名簿の動画に戻さず、知らせる
           if (saved.clipStatus === 'lost') setClipLost(true)
+          // 選び直した写真を書き終える前にページが終わったときは、前の写真のまま開き、黙らずに知らせる（#44）
+          if (saved.photosStatus === 'stale') setStalePhotos(restored.photos)
           setCat(restored)
           setFromRoster(saved.draft.fromRoster)
           setPost(saved.draft.post)
@@ -199,7 +202,15 @@ export default function App() {
   useEffect(() => {
     if (!worthKeeping) return
     const { photos: _photos, ...rest } = cat
-    latest.current = { cat: rest, fromRoster, screen: screen as 'cat' | 'preview', post, postEdited }
+    latest.current = {
+      cat: rest,
+      fromRoster,
+      screen: screen as 'cat' | 'preview',
+      post,
+      postEdited,
+      photosKey: db.photosKeyOf(cat.photos),
+      photosRoster: db.photosFromRoster(cat.photos),
+    }
     window.clearTimeout(timer.current)
     timer.current = window.setTimeout(flush, 300)
   }, [cat, fromRoster, screen, post, postEdited, worthKeeping, flush])
@@ -417,6 +428,7 @@ export default function App() {
           }}
           autosaveFailed={autosaveFailed}
           clipLost={clipLost && !cat.clip} // 選び直したら知らせを消す
+          photosStale={stalePhotos !== null && cat.photos === stalePhotos} // 写真を選び直したら知らせを消す
         />
       )}
       {screen === 'preview' && shelter && (

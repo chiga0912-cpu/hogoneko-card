@@ -25,6 +25,7 @@ type Props = {
   onNext: () => void
   autosaveFailed?: boolean // 入力の途中を残せなかった
   clipLost?: boolean // 選び直した動画を、途中に残せていなかった
+  photosStale?: boolean // 写真が、前に選んだ組に戻っているかもしれない（#44）
 }
 
 type HealthKey = 'vaccine' | 'neuter' | 'virusTest'
@@ -41,7 +42,7 @@ const sizeText = (z: ShrinkInfo) =>
     : `${z.fromW}×${z.fromH}・${mb(z.fromBytes)} → ${z.toW}×${z.toH}・${mb(z.toBytes)}・${(z.ms / 1000).toFixed(1)}秒${z.result === 'kept-small' ? '（元のまま）' : ''}`
 
 // 入力（1画面）。並びは SPEC 2.2 のとおり
-export default function CatForm({ cat, fromRoster, onChange, onBack, onNext, autosaveFailed, clipLost }: Props) {
+export default function CatForm({ cat, fromRoster, onChange, onBack, onNext, autosaveFailed, clipLost, photosStale }: Props) {
   const [showErrors, setShowErrors] = useState(false)
   const [photoNote, setPhotoNote] = useState('')
   const set = <K extends keyof Cat>(key: K, value: Cat[K]) => onChange((c) => ({ ...c, [key]: value }))
@@ -292,6 +293,7 @@ export default function CatForm({ cat, fromRoster, onChange, onBack, onNext, aut
 
       <div className="bottom-bar">
         {/* どこまでスクロールしていても見えるように、ボタンのすぐ上に出す */}
+        {photosStale && <p className="alert bar-alert">写真が、前に選んだものに戻っているかもしれません。写真を確かめてください。</p>}
         {clipLost && <p className="alert bar-alert">選んだ動画を残せていませんでした。もう一度、動画を選んでください。</p>}
         {autosaveFailed && (
           <p className="alert bar-alert">入力の途中を、スマホの中に残せませんでした。ほかのアプリに移ると、入力が消えることがあります。</p>

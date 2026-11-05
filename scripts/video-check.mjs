@@ -17,6 +17,9 @@ ff(['-f', 'lavfi', '-i', 'testsrc2=size=720x1280:rate=30:duration=12', '-c:v', '
 ff(['-f', 'lavfi', '-i', 'testsrc2=size=1280x720:rate=60:duration=3', '-c:v', 'libx264', '-pix_fmt', 'yuv420p', join(tmp, 'wide3.mp4')])
 // 架空の位置（緯度0・経度0）を入れた動画（位置情報の確認のため）
 ff(['-i', join(tmp, 'tall12.mp4'), '-c', 'copy', '-metadata', 'location=+00.0000+000.0000/', '-movflags', 'use_metadata_tags', join(tmp, 'tall12_loc.mov')])
+// #45 の確認用：3分10秒の動画（小さい画面で軽く）と、200MBを超える仮のファイル（中身は意味のないバイト）
+ff(['-f', 'lavfi', '-i', 'testsrc2=size=160x284:rate=10:duration=190', '-c:v', 'libx264', '-pix_fmt', 'yuv420p', join(tmp, 'long190.mp4')])
+execFileSync('dd', ['if=/dev/zero', `of=${join(tmp, 'big.mp4')}`, 'bs=1000000', 'count=201'], { stdio: 'ignore' })
 const FAKE = tmp
 
 const eng = process.env.ENGINE === 'webkit' ? webkit : chromium
@@ -186,6 +189,14 @@ ok((await p.getByText('5秒より短い動画なので、全部使います').is
   await p3.getByRole('button', { name: '登録して始める' }).click()
   await p3.getByRole('button', { name: '新しい子を紹介' }).click()
   await p3.getByLabel('名前').fill('テスト')
+  // #45：大きすぎる動画・長すぎる動画は、中身を写さずに知らせる
+  await p3.locator('input[type=file][accept="video/*"]').setInputFiles(join(FAKE, 'big.mp4'))
+  await p3.getByText('この動画は大きすぎるため選べません').waitFor({ timeout: 5000 }).catch(() => {})
+  ok((await p3.getByText('この動画は大きすぎるため選べません（200MBまで）').isVisible()) && !(await p3.locator('.clip-time').isVisible()), '200MBを超える動画は選べず、知らせる（#45）')
+  await p3.locator('input[type=file][accept="video/*"]').setInputFiles(join(FAKE, 'long190.mp4'))
+  await p3.getByText('この動画は長すぎるため選べません').waitFor({ timeout: 10000 }).catch(() => {})
+  ok((await p3.getByText('この動画は長すぎるため選べません（3分まで）').isVisible()) && !(await p3.locator('.clip-time').isVisible()), '3分を超える動画は選べず、知らせる（#45）')
+  await p3.screenshot({ path: join(outDir, '6e_動画が長すぎる.png'), fullPage: true })
   // (a) 短い動画を残したあと、長い動画に替え、その中身を書き終える前に読み込み直す
   await p3.locator('input[type=file][accept="video/*"]').setInputFiles(join(FAKE, 'wide3.mp4'))
   await p3.locator('.clip-time').waitFor()

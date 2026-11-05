@@ -328,6 +328,7 @@ export async function loadCat(id: string): Promise<Cat> {
   }
   if (!cat) throw new MediaError('名簿の記録が読めません')
   if (cat.clip) rosterClips.add(cat.clip.blob) // 名簿から読んだままの動画（途中を開き直すときに、名簿の動画を使ってよい）
+  for (const p of cat.photos) rosterPhotos.add(p) // 名簿から読んだままの写真（#44）
   return cat
 }
 
@@ -401,9 +402,17 @@ export type Draft = {
   screen: 'cat' | 'preview'
   post: string
   postEdited: boolean // 投稿文を手で直したか（直していたら、作り直す前に聞く）
+  photosKey?: string // 写真の組の番号（写真の中身と同じ組かを見分けるため。#44）
+  photosRoster?: boolean // 写真が全部、名簿から読んだままか
 }
 // 入力の途中を読む。読めないときは 'unreadable'（途中は消さない。新しく始めたときに上書きされる）
 // photosMissing：途中の写真がまだ書かれていなかった（文字は書けたが、写真を書く前にページが終わったときなど）
+// photosStatus：途中の写真の読め方（issue #44。動画の clipStatus と同じ考え）
+//   'ok'      途中の記録と同じ写真の組として読めた
+//   'old'     写真に番号を付ける前の版で書かれた途中（今までどおり、そのまま使う）
+//   'missing' 途中の写真がまだ書かれていなかった（名簿の子なら、名簿の写真を使う）
+//   'roster'  途中の写真は前の組のままだったが、新しい組は名簿の写真のままだった（名簿の写真を使う）
+//   'stale'   選び直した写真を書き終える前にページが終わった（前の組のまま開き、知らせる）
 // clipStatus：途中の動画の読め方（11/5 見直しの重い1・2）
 //   'ok'     途中の動画が、途中の記録と同じ動画として読めた
 //   'none'   動画は入っていなかった（外したなら外したまま開く）
@@ -411,15 +420,28 @@ export type Draft = {
 //   'roster' 途中の動画は書けていなかったが、それは名簿の動画のままだった。名簿の動画を使う
 //   'lost'   選び直した動画を書き終える前にページが終わった。名簿の動画には戻さず、知らせる
 export type ClipStatus = 'ok' | 'none' | 'old' | 'roster' | 'lost'
+export type PhotosStatus = 'ok' | 'old' | 'missing' | 'roster' | 'stale'
 export const loadDraft = async (): Promise<
-  { cat: Cat; draft: Draft; photosMissing: boolean; clipStatus: ClipStatus; clipRange: { start: number; length: number } | null } | null | 'unreadable'
+  { cat: Cat; draft: Draft; photosMissing: boolean; photosStatus: PhotosStatus; clipStatus: ClipStatus; clipRange: { start: number; length: number } | null } | null | 'unreadable'
 > => {
   try {
     const raw = await run<unknown>('drafts', 'readonly', (s) => s.get('main'))
     if (raw === undefined) return null
     if (!isObj(raw)) return 'unreadable'
     const rawPhotos = await run<unknown>('drafts', 'readonly', (s) => s.get('photos'))
-    const photos = blobs(rawPhotos)
+    // 写真は {key, photos} の形（#44 から）。前の版は写真の並びだけ
+    const keyed = isObj(rawPhotos) && Array.isArray(rawPhotos.photos)
+    const photos = blobs(keyed ? (rawPhotos as Record<string, unknown>).photos : rawPhotos)
+    const photosStatus: PhotosStatus =
+      rawPhotos === undefined
+        ? 'missing'
+        : !keyed || typeof raw.photosKey !== 'string'
+          ? 'old'
+          : (rawPhotos as Record<string, unknown>).key === raw.photosKey
+            ? 'ok'
+            : raw.photosRoster === true
+              ? 'roster'
+              : 'stale'
     // 動画は、使う所（start・length）と動画の番号を途中の記録に、中身と番号を 'clip' に分けて残す。
     // 番号が合うときだけ使う（別の動画の中身に、今の始まりと長さを付けないため）
     const meta = isObj(raw.cat) ? raw.cat.clip : null
@@ -435,6 +457,7 @@ export const loadDraft = async (): Promise<
     return {
       cat,
       photosMissing: rawPhotos === undefined,
+      photosStatus,
       clipStatus,
       clipRange: isObj(meta) ? { start: num(meta.start, 0), length: num(meta.length, 5) } : null,
       draft: {
@@ -454,6 +477,10 @@ export const loadDraft = async (): Promise<
 // 動画ごとの番号（この画面を開いている間だけ覚える）と、名簿から読んだままの動画か
 const clipIds = new WeakMap<Blob, string>()
 const rosterClips = new WeakSet<Blob>()
+// 写真の組の番号（写真1枚ずつの番号をつなげたもの）と、全部が名簿から読んだままの写真か（#44）
+const rosterPhotos = new WeakSet<Blob>()
+export const photosKeyOf = (photos: Blob[]) => photos.map(clipIdOf).join(',')
+export const photosFromRoster = (photos: Blob[]) => photos.length > 0 && photos.every((p) => rosterPhotos.has(p))
 const clipIdOf = (b: Blob) => {
   let id = clipIds.get(b)
   if (!id) clipIds.set(b, (id = `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`))
@@ -489,12 +516,17 @@ export async function saveDraftClip(clip: Blob | null) {
   if (seq !== clipSeq) return
   await run<void>('drafts', 'readwrite', (s) => (stored ? s.put(stored, 'clip') : s.delete('clip')))
 }
+// 書き込みは、あとから呼ばれたものだけを残す（大きい写真の書き込みが、あとの書き込みより遅く終わっても上書きしない。#44）
+let photosSeq = 0
 export async function saveDraftPhotos(photos: Blob[]) {
-  const stored = await Promise.all(photos.map(pack))
+  const seq = ++photosSeq
+  const stored = { key: photosKeyOf(photos), photos: await Promise.all(photos.map(pack)) }
+  if (seq !== photosSeq) return
   await run<void>('drafts', 'readwrite', (s) => s.put(stored, 'photos'))
 }
 export const clearDraft = () => {
-  clipSeq++ // 消したあとに、前の動画の書き込みが入らないように
+  clipSeq++ // 消したあとに、前の動画・写真の書き込みが入らないように
+  photosSeq++
   return run<void>('drafts', 'readwrite', (s) => s.clear())
 }
 
