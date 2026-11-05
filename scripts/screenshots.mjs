@@ -621,6 +621,7 @@ console.log('表示:', await page.locator('.status-line').innerText())
   check(ok(got[2], 1920, 2560), '「90度回して見る」の印がある写真は、回したあとの向き（縦1920×2560）で保存される')
   check(got.every((g, i) => g.bytes < files[['縦', '大', '回転'][i]].buffer.length), '小さくした写真は、元のファイルより軽い')
   check(await p.getByTestId('photo-sizes').isVisible(), '?sizes=1 で開いたときは、写真の大きさの数字が出る')
+  check(await p.getByText(/^確認モード・版 [0-9a-f]{7}$/).isVisible(), '?sizes=1 で開いたときは、画面の上に「確認モード」と版の番号が出る')
   check(!(await p.getByTestId('photo-sizes').innerText()).match(/\.jpg|a\.|b\.|c\./), '大きさの数字に、写真の名前は出さない')
   await p.screenshot({ path: join(outDir, '2s_写真を小さくした_数字.png'), fullPage: true })
   // 読めない写真は、元のまま残す
@@ -642,6 +643,7 @@ console.log('表示:', await page.locator('.status-line').innerText())
   await p2.locator('input[type=file]').setInputFiles(files.縦)
   await p2.locator('.photo img').first().waitFor({ timeout: 10000 })
   check((await p2.getByTestId('photo-sizes').count()) === 0, '?sizes=1 を付けずに開いたときは、大きさの数字を出さない')
+  check((await p2.getByText('確認モード').count()) === 0, '?sizes=1 を付けずに開いたときは、「確認モード」を出さない')
   await ctx2.close()
 }
 

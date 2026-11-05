@@ -11,6 +11,7 @@ import {
   type Health,
 } from '../types'
 import { shrinkPhoto, type ShrinkInfo } from '../lib/shrink'
+import { CHECK_MODE } from '../lib/checkMode'
 import { ageText, fromMonthValue, jpDate, toMonthValue, todayString } from '../lib/age'
 import { useBlobUrls } from '../lib/useBlobUrls'
 import { TopBar } from './ShelterForm'
@@ -27,7 +28,7 @@ type Props = {
 type HealthKey = 'vaccine' | 'neuter' | 'virusTest'
 
 // 写真の大きさの数字（?sizes=1 で開いたときだけ。写真の名前は出さない）
-const SHOW_SIZES = typeof location !== 'undefined' && new URLSearchParams(location.search).get('sizes') === '1'
+const SHOW_SIZES = CHECK_MODE
 const mb = (n: number) => `${(n / 1024 / 1024).toFixed(1)}MB`
 const sizeText = (z: ShrinkInfo) =>
   z.result === 'kept-unreadable'

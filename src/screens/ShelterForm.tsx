@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import { emptyShelter, MAX_HASHTAGS, type Shelter } from '../types'
 import { copyBlob, isPersisted } from '../db'
+import { APP_VERSION } from '../lib/checkMode'
 import { isStandalone, openedAs } from '../lib/browser'
 import { ICON_WARNING } from './InstallGuide'
 import { parseHashtags } from '../lib/hashtags'
@@ -182,7 +183,7 @@ function StorageStatus() {
   const label = persisted === undefined ? '…' : persisted === null ? '不明' : persisted ? '○' : '×'
   return (
     <p className="status-line">
-      開き方：{openedAs()} ／ 消えにくい設定：{label}
+      開き方：{openedAs()} ／ 消えにくい設定：{label} ／ 版：{APP_VERSION}
     </p>
   )
 }

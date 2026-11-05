@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
+import { APP_VERSION, CHECK_MODE } from './lib/checkMode'
 import { newCat, type Cat, type Shelter } from './types'
 import * as db from './db'
 import { detectBrowser, isStandalone } from './lib/browser'
@@ -221,6 +222,7 @@ export default function App() {
 
   return (
     <div className="app" style={{ ['--theme' as string]: themeColor }}>
+      {CHECK_MODE && <p className="check-mode">確認モード・版 {APP_VERSION}</p>}
       {screen === 'loading' && <p className="loading">読み込み中…</p>}
       {screen === 'guide' && (
         <InstallGuide
