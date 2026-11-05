@@ -79,7 +79,7 @@ export function wordUnits(text: string): string[] {
       segment !== '\n' &&
       !afterStop && // 「、」「。」のあとでは分ける
       !honor &&
-      (ATTACH_BEFORE.test(segment) || OPEN.test(prev) || (/[0-9０-９]$/.test(prev) && [...segment].length === 1 && !/\s/.test(segment)))
+      (ATTACH_BEFORE.test(segment) || OPEN.test(prev) || (/[0-9０-９]$/.test(prev) && [...segment].length === 1 && !/\s/.test(segment)) || (/[0-9０-９:：]$/.test(prev) && /^[0-9０-９]/.test(segment)))
     if (glue) units[units.length - 1] = prev + segment
     else units.push(segment)
   }
@@ -581,7 +581,7 @@ export function drawCoverCard(
 }
 
 // ── 最後の1枚（SPEC 3.2 の5番目）：次の譲渡会の日時・場所、団体名、ロゴ、連絡先 ──
-// 写真のないカード。真ん中あたりに置き、Instagramの表示が重なる所は避ける（SPEC 3.1）
+// 上に写真、下に便箋（SPEC 3.1。11/5夜 作る人の決定）
 export type EndEvent = { date: string; startTime: string; endTime: string; venue: string }
 export type EndLayout = { fits: boolean; scale: number; hasEvent: boolean; contrast: number }
 
@@ -594,95 +594,7 @@ export function eventDateText(e: EndEvent): string {
 export const eventTimeText = (e: EndEvent) => (e.startTime ? `${e.startTime}〜${e.endTime}` : '')
 const PAPER = '#fbf6ee'
 
-export function drawEndCard(
-  ctx: CanvasRenderingContext2D,
-  opts: { logo: Img | null; shelterName: string; contact: string; event: EndEvent | null; theme: string },
-): EndLayout {
-  ctx.clearRect(0, 0, CARD_W, CARD_H)
-  const { band, color: onBand, contrast } = bandColors(opts.theme)
-  // 便箋：紙の色の上に、テーマ色の細い枠
-  ctx.fillStyle = PAPER
-  ctx.fillRect(0, 0, CARD_W, CARD_H)
-  ctx.strokeStyle = band
-  ctx.lineWidth = 10
-  ctx.strokeRect(SAFE.left - 24, SAFE.top - 40, CARD_W - (SAFE.left - 24) * 2, CARD_H - SAFE.top - SAFE.bottom + 80)
-
-  const contactLines = opts.contact
-    .split('\n')
-    .map((l) => l.trim())
-    .filter(Boolean)
-  // 中身を上から並べる。入らなければ全体を小さくする（書き換えない・切らない）
-  type Row = { text: string; px: number; weight: number; color: string; gapBefore: number; pill?: boolean }
-  const build = (k: number): Row[] => {
-    const rows: Row[] = []
-    if (opts.event) {
-      rows.push({ text: '次の譲渡会', px: 52 * k, weight: 800, color: onBand, gapBefore: 0, pill: true })
-      rows.push({ text: eventDateText(opts.event), px: 76 * k, weight: 800, color: INK, gapBefore: 34 * k })
-      const time = eventTimeText(opts.event)
-      if (time) rows.push({ text: time, px: 64 * k, weight: 800, color: INK, gapBefore: 6 * k })
-      if (opts.event.venue) rows.push({ text: opts.event.venue, px: 60 * k, weight: 700, color: INK, gapBefore: 14 * k })
-    }
-    rows.push({ text: opts.shelterName, px: 84 * k, weight: 800, color: INK, gapBefore: opts.event ? 90 * k : 0 })
-    contactLines.forEach((t, i) => rows.push({ text: t, px: 46 * k, weight: 600, color: INK, gapBefore: (i === 0 ? 34 : 8) * k }))
-    return rows
-  }
-  const LOGO = opts.logo ? 300 : 0
-  const LH = 1.35
-  const areaTop = SAFE.top + 40
-  const areaBottom = CARD_H - SAFE.bottom - 40
-  let k = 1
-  let laid: { lines: string[]; row: Row; y: number }[] = []
-  let total = 0
-  for (const s of [1, 0.92, 0.84, 0.76, 0.68, 0.6]) {
-    k = s
-    const rows = build(k)
-    laid = []
-    // 下へ行くほど、右下のボタンを避けて狭く（左右どちらも空けて真ん中に）
-    let y = 0
-    for (const row of rows) {
-      ctx.font = `${row.weight} ${Math.round(row.px)}px ${FONT}`
-      y += row.gapBefore
-      const lines = wrap(ctx, row.text, CARD_W - SAFE.cornerRight * 2 - (row.pill ? 80 : 0))
-      laid.push({ lines, row, y })
-      y += lines.length * row.px * LH + (row.pill ? 24 : 0)
-    }
-    total = (LOGO ? LOGO * k + 60 * k : 0) + y
-    if (areaTop + total <= areaBottom) break
-  }
-  const fits = areaTop + total <= areaBottom
-  // 全体を、使える高さの真ん中に置く
-  const y0 = areaTop + Math.max(0, (areaBottom - areaTop - total) / 2)
-  if (opts.logo) {
-    const size = LOGO * k
-    const s = size / Math.max(opts.logo.width, opts.logo.height)
-    ctx.drawImage(opts.logo, CARD_W / 2 - (opts.logo.width * s) / 2, y0 + (size - opts.logo.height * s) / 2, opts.logo.width * s, opts.logo.height * s)
-  }
-  const base = y0 + (LOGO ? LOGO * k + 60 * k : 0)
-  ctx.textBaseline = 'top'
-  ctx.textAlign = 'center'
-  for (const { lines, row, y } of laid) {
-    ctx.font = `${row.weight} ${Math.round(row.px)}px ${FONT}`
-    let yy = base + y
-    if (row.pill) {
-      const w = Math.max(...lines.map((l) => ctx.measureText(l).width)) + 80
-      const h = lines.length * row.px * LH + 24
-      ctx.fillStyle = band
-      ctx.beginPath()
-      ctx.roundRect(CARD_W / 2 - w / 2, yy, w, h, h / 2)
-      ctx.fill()
-      yy += 12
-    }
-    ctx.fillStyle = row.color
-    for (const l of lines) {
-      ctx.fillText(l, CARD_W / 2, yy + row.px * 0.1)
-      yy += row.px * LH
-    }
-  }
-  // 飾りのクローバー（文字のない所に小さく）
-  drawClover(ctx, CARD_W - SAFE.right - 70, SAFE.top + 40, 34, { fill: band })
-  drawClover(ctx, SAFE.left + 60, CARD_H - SAFE.bottom - 10, 28, { fill: band })
-  return { fits, scale: k, hasEvent: !!opts.event, contrast: round1(contrast) }
-}
+// drawEndCard は、下の「便箋のカード」のところ
 
 // ── 撮った動画に重ねる名前（SPEC 3.2 の2番目）──
 // 表紙と同じ置き方（下。右下のボタンの高さより上、真ん中にそろえる）で、少し小さく（11/5 作る人の決定）
@@ -704,10 +616,9 @@ export function drawClipName(ctx: CanvasRenderingContext2D, name: string) {
 }
 
 // ── ひとことカード（SPEC 3.2 の4番目。issue #28）──
-// 便箋に、預かりさん・スタッフさんのひとことを、書き換えずにそのまま載せる（「 」で囲むだけ）。
+// 上に写真、下の便箋に、預かりさん・スタッフさんのひとことを、書き換えずにそのまま載せる（「 」で囲むだけ）。
 // 「預かりさんより」は付けない（スタッフさんの言葉のこともあり、入力にない事実になるため）
 export type WordsLayout = { fits: boolean; scale: number; sec: number }
-const WORDS_PX = 60
 
 // 長さで3〜5秒（SPEC 3.2）⚙：30字まで3秒、60字まで4秒、それより長いと5秒
 export const wordsSec = (text: string) => {
@@ -720,60 +631,265 @@ export function splitSentences(text: string): string[] {
   return text.match(/[^。！？!?\n]*(?:[。！？!?]+[」』）)]*|\n|$)/g)?.filter((s) => s !== '') ?? [text]
 }
 
+// ── 便箋のカード（ひとことカード・最後の1枚。SPEC 3.1・3.2。11/5夜 作る人の決定）──
+// 上に写真を大きく、下に便箋。便箋は上から1000〜1600（画面の約3分の1）。隠れる所を避け、文字は右下のボタンの線（右180）より左だけ
+export type Framing = { x: number; y: number; scale: number } // 写真の位置（#29。指で動かした分。scale は1以上）
+const NO_FRAMING: Framing = { x: 0, y: 0, scale: 1 }
+export const LETTER = { x: SAFE.left, y: 1000, w: CARD_W - SAFE.left * 2, h: 600 }
+const LETTER_TEXT = { x: SAFE.left + 48, right: CARD_W - SAFE.cornerRight - 16 }
+const LETTER_TOP_H = 1300 // 縦の写真を入れる高さ（便箋の後ろまで少し入れ、顔が便箋より上に来るように）
+const FACE_AT = 0.42 // 顔は写真の上から4割くらいにあると見る ⚙（Claudeは写真を見ない。合わないときは人が指で動かす）
+
+// 写真を、枠いっぱいに切って入れる。focusY：写真のどの高さを枠の真ん中に寄せるか。framing：人が指で動かした分
+export function drawFramed(ctx: CanvasRenderingContext2D, img: Img, x: number, y: number, w: number, h: number, focusY = 0.5, framing: Framing = NO_FRAMING) {
+  const k = Math.max(1, framing.scale)
+  const s = Math.max(w / img.width, h / img.height) * k
+  const dw = img.width * s
+  const dh = img.height * s
+  // 寄せたい高さが枠の真ん中に来るように。ただし枠からはみ出さない（すき間を作らない）
+  let dx = x + (w - dw) / 2 + framing.x
+  let dy = y + h / 2 - dh * focusY + framing.y
+  dx = Math.min(x, Math.max(x + w - dw, dx))
+  dy = Math.min(y, Math.max(y + h - dh, dy))
+  ctx.save()
+  ctx.beginPath()
+  ctx.rect(x, y, w, h)
+  ctx.clip()
+  ctx.drawImage(img, dx, dy, dw, dh)
+  ctx.restore()
+}
+
+// 上の写真。縦の写真は上に寄せて入れ、横の写真は切らずに全体を入れる。まわりはぼかした同じ写真で埋める
+function drawLetterPhoto(ctx: CanvasRenderingContext2D, photo: Img | null, framing: Framing) {
+  ctx.fillStyle = '#6b5f55'
+  ctx.fillRect(0, 0, CARD_W, CARD_H)
+  if (!photo) return
+  // まわり：ぼかした写真（ぼかせないブラウザでは、少し暗くするだけ）
+  ctx.save()
+  ctx.filter = 'blur(28px)'
+  drawFramed(ctx, photo, -40, -40, CARD_W + 80, CARD_H + 80)
+  ctx.restore()
+  ctx.fillStyle = 'rgba(0,0,0,0.22)'
+  ctx.fillRect(0, 0, CARD_W, CARD_H)
+  if (photo.height >= photo.width * 1.1) {
+    // 写真の下の端は、ぼかした写真にだんだん溶けこませる（境目が線に見えないように）
+    const t = document.createElement('canvas')
+    t.width = CARD_W
+    t.height = LETTER_TOP_H
+    const tc = t.getContext('2d')
+    if (tc) {
+      drawFramed(tc, photo, 0, 0, CARD_W, LETTER_TOP_H, FACE_AT, framing)
+      tc.globalCompositeOperation = 'destination-in'
+      const g = tc.createLinearGradient(0, LETTER_TOP_H - 220, 0, LETTER_TOP_H)
+      g.addColorStop(0, 'rgba(0,0,0,1)')
+      g.addColorStop(1, 'rgba(0,0,0,0)')
+      // 1回で全体に重ねる（分けて重ねると、重ねなかった所が消えるため）
+      tc.fillStyle = g
+      tc.fillRect(0, 0, CARD_W, LETTER_TOP_H)
+      ctx.drawImage(t, 0, 0)
+    } else drawFramed(ctx, photo, 0, 0, CARD_W, LETTER_TOP_H, FACE_AT, framing)
+  } else {
+    // 横・正方形の写真：横幅いっぱいに、切らずに。上の隠れる所の下から、便箋の上まで
+    const h = Math.min((CARD_W * photo.height) / photo.width, LETTER.y + 40 - SAFE.top)
+    drawFramed(ctx, photo, 0, SAFE.top, CARD_W, h, 0.5, framing)
+  }
+}
+
+// テーマ色を、紙の色の上で読める濃さまで暗くする（見出しの文字に使う）
+function inkOfTheme(theme: string): string {
+  const n = parseInt(theme.replace('#', '').padEnd(6, '0').slice(0, 6), 16)
+  let c = [(n >> 16) & 255, (n >> 8) & 255, n & 255]
+  const paper = hexLum(PAPER)
+  for (let t = 0; t < 1 && ratio(lum(c[0], c[1], c[2]), paper) < 4.5; t += 0.05) c = c.map((v) => Math.round(v * 0.95))
+  return '#' + c.map((v) => v.toString(16).padStart(2, '0')).join('')
+}
+
+// 切手（ぎざぎざの縁。中はテーマ色にクローバー）と、文字のない消印
+function drawStamp(ctx: CanvasRenderingContext2D, cx: number, cy: number, theme: string) {
+  const w = 120
+  const h = 142
+  ctx.save()
+  ctx.translate(cx, cy)
+  ctx.rotate(0.07)
+  ctx.shadowColor = 'rgba(0,0,0,0.25)'
+  ctx.shadowBlur = 8
+  ctx.shadowOffsetY = 2
+  // 縁のぎざぎざ：白い四角から、まわりの小さな丸を抜く（別の絵を用意して、上に重ねる）
+  const c = document.createElement('canvas')
+  c.width = w + 20
+  c.height = h + 20
+  const s = c.getContext('2d')
+  if (s) {
+    s.translate(10, 10)
+    s.fillStyle = '#fffdf8'
+    s.fillRect(0, 0, w, h)
+    s.globalCompositeOperation = 'destination-out'
+    for (let px = 0; px <= w; px += 16) for (const py of [0, h]) {
+      s.beginPath()
+      s.arc(px, py, 5, 0, Math.PI * 2)
+      s.fill()
+    }
+    for (let py = 0; py <= h; py += 16) for (const px of [0, w]) {
+      s.beginPath()
+      s.arc(px, py, 5, 0, Math.PI * 2)
+      s.fill()
+    }
+    s.globalCompositeOperation = 'source-over'
+    s.fillStyle = theme
+    s.fillRect(12, 12, w - 24, h - 24)
+    ctx.drawImage(c, -w / 2 - 10, -h / 2 - 10)
+  }
+  ctx.shadowColor = 'transparent'
+  drawClover(ctx, 0, -6, 24, COVER_CLOVER)
+  ctx.restore()
+  // 消印：二重の丸と波線（文字なし）
+  const mx = cx - 70
+  const my = cy + 20
+  const r = 52
+  ctx.save()
+  ctx.strokeStyle = INK
+  ctx.globalAlpha = 0.5
+  ctx.lineWidth = 4
+  ctx.beginPath()
+  ctx.arc(mx, my, r, 0, Math.PI * 2)
+  ctx.stroke()
+  ctx.lineWidth = 2.5
+  ctx.beginPath()
+  ctx.arc(mx, my, r * 0.72, 0, Math.PI * 2)
+  ctx.stroke()
+  for (let k = 0; k < 3; k++) {
+    const y = my - r * 0.3 + k * r * 0.3
+    ctx.beginPath()
+    ctx.moveTo(mx - r * 2.4, y)
+    for (let i = 0; i < 4; i++) ctx.quadraticCurveTo(mx - r * 2.4 + i * 34 + 17, y + (i % 2 ? -8 : 8), mx - r * 2.4 + (i + 1) * 34, y)
+    ctx.stroke()
+  }
+  ctx.restore()
+}
+
+// 便箋（紙の色・テーマ色の線・うすい罫線・切手と消印）
+function drawLetterPaper(ctx: CanvasRenderingContext2D, theme: string) {
+  const L = LETTER
+  ctx.save()
+  ctx.shadowColor = 'rgba(0,0,0,0.35)'
+  ctx.shadowBlur = 26
+  ctx.shadowOffsetY = 8
+  ctx.fillStyle = PAPER
+  ctx.fillRect(L.x, L.y, L.w, L.h)
+  ctx.restore()
+  ctx.fillStyle = theme
+  ctx.fillRect(L.x, L.y, L.w, 12)
+  drawStamp(ctx, L.x + L.w - 80, L.y + 10, theme)
+}
+
+const WORDS_SIZES = [46, 44, 42] // ひとことの文字の大きさ（通常46px、長いときは42pxまで。作る人の決定）
+const LETTER_LH = 1.6
+
 export function drawWordsCard(
   ctx: CanvasRenderingContext2D,
-  opts: { text: string; logo: Img | null; theme: string },
-): WordsLayout {
+  opts: { text: string; logo: Img | null; theme: string; photo?: Img | null; framing?: Framing },
+): WordsLayout & { size: number; lines: number } {
   ctx.clearRect(0, 0, CARD_W, CARD_H)
-  const { band, color: onBand } = bandColors(opts.theme)
-  ctx.fillStyle = PAPER
-  ctx.fillRect(0, 0, CARD_W, CARD_H)
-  ctx.strokeStyle = band
-  ctx.lineWidth = 10
-  ctx.strokeRect(SAFE.left - 24, SAFE.top - 40, CARD_W - (SAFE.left - 24) * 2, CARD_H - SAFE.top - SAFE.bottom + 80)
+  drawLetterPhoto(ctx, opts.photo ?? null, opts.framing ?? NO_FRAMING)
   drawLogo(ctx, opts.logo, SAFE.left, SAFE.top)
-
+  drawLetterPaper(ctx, opts.theme)
+  const L = LETTER
+  ctx.fillStyle = inkOfTheme(opts.theme)
+  ctx.font = `800 40px ${FONT}`
+  ctx.textBaseline = 'top'
+  ctx.textAlign = 'left'
+  ctx.fillText('ひとこと', LETTER_TEXT.x, L.y + 50)
   const quoted = `「${opts.text.trim()}」`
-  const areaTop = SAFE.top + 150
-  const areaBottom = CORNER_TOP - 30 // 右下のボタンの高さより上に収める（横幅を広く使うため）
-  const width = WIDE_W - 60
-  const LH = 1.6
-  let k = 1
+  const top = L.y + 128
+  const bottom = L.y + L.h - 24
+  const width = LETTER_TEXT.right - LETTER_TEXT.x
+  let size = WORDS_SIZES[0]
   let lines: string[] = []
+  for (const px of WORDS_SIZES) {
+    size = px
+    ctx.font = `700 ${px}px ${FONT}`
+    lines = quoted.split('\n').flatMap((para) => (para ? wrap(ctx, para, width) : ['']))
+    if (top + lines.length * px * LETTER_LH <= bottom) break
+  }
+  const fits = top + lines.length * size * LETTER_LH <= bottom
+  ctx.fillStyle = INK
+  let y = top
+  for (const l of lines) {
+    if (y + size > bottom + 1) break // 入りきらない行は描かない（fits=false で知らせる）
+    ctx.fillText(l, LETTER_TEXT.x, y)
+    y += size * LETTER_LH
+  }
+  return { fits, scale: size / WORDS_SIZES[0], sec: wordsSec(opts.text), size, lines: lines.length }
+}
+
+export function drawEndCard(
+  ctx: CanvasRenderingContext2D,
+  opts: { logo: Img | null; shelterName: string; contact: string; event: EndEvent | null; theme: string; photo?: Img | null; framing?: Framing },
+): EndLayout {
+  ctx.clearRect(0, 0, CARD_W, CARD_H)
+  drawLetterPhoto(ctx, opts.photo ?? null, opts.framing ?? NO_FRAMING)
+  drawLetterPaper(ctx, opts.theme)
+  const L = LETTER
+  const head = inkOfTheme(opts.theme)
+  const contactLines = opts.contact
+    .split('\n')
+    .map((l) => l.trim())
+    .filter(Boolean)
+  // ロゴは便箋の左上に（SPEC 3.1。11/5夜 作る人の決定）。文字はロゴの下から
+  const LOGO = opts.logo ? 110 : 0
+  type Row = { text: string; px: number; weight: number; color: string; gap: number }
+  const build = (k: number): Row[] => {
+    const rows: Row[] = []
+    if (opts.event) {
+      rows.push({ text: '次の譲渡会', px: 40 * k, weight: 800, color: head, gap: 0 })
+      const time = eventTimeText(opts.event)
+      rows.push({ text: eventDateText(opts.event), px: 58 * k, weight: 800, color: INK, gap: 14 * k })
+      if (time) rows.push({ text: time, px: 50 * k, weight: 800, color: INK, gap: 2 * k })
+      if (opts.event.venue) rows.push({ text: opts.event.venue, px: 46 * k, weight: 700, color: INK, gap: 8 * k })
+    }
+    rows.push({ text: opts.shelterName, px: 54 * k, weight: 800, color: INK, gap: opts.event ? 34 * k : 0 })
+    contactLines.forEach((t, i) => rows.push({ text: t, px: 40 * k, weight: 600, color: INK, gap: (i === 0 ? 14 : 4) * k }))
+    return rows
+  }
+  const LH = 1.3
+  const top = L.y + 44 + (LOGO ? LOGO + 18 : 0)
+  const bottom = L.y + L.h - 24
+  const width = LETTER_TEXT.right - LETTER_TEXT.x
+  let k = 1
+  let laid: { lines: string[]; row: Row; y: number }[] = []
+  let total = 0
   for (const s of [1, 0.92, 0.84, 0.76, 0.68, 0.6]) {
     k = s
-    ctx.font = `700 ${Math.round(WORDS_PX * k)}px ${FONT}`
-    lines = quoted.split('\n').flatMap((para) => (para ? wrap(ctx, para, width) : ['']))
-    if (lines.length * WORDS_PX * k * LH + 110 <= areaBottom - areaTop) break
+    laid = []
+    let y = 0
+    for (const row of build(k)) {
+      ctx.font = `${row.weight} ${Math.round(row.px)}px ${FONT}`
+      y += row.gap
+      const lines = wrap(ctx, row.text, width)
+      laid.push({ lines, row, y })
+      y += lines.length * row.px * LH
+    }
+    total = y
+    if (top + total <= bottom) break
   }
-  const size = Math.round(WORDS_PX * k)
-  const blockH = lines.length * size * LH
-  const fits = blockH + 110 <= areaBottom - areaTop
-  // 見出し「ひとこと」（テーマ色の丸い札）
-  const headY = areaTop + Math.max(0, (areaBottom - areaTop - blockH - 110) / 2)
-  ctx.font = `800 46px ${FONT}`
-  const hw = ctx.measureText('ひとこと').width + 64
-  ctx.fillStyle = band
-  ctx.beginPath()
-  ctx.roundRect(CARD_W / 2 - hw / 2, headY, hw, 70, 35)
-  ctx.fill()
-  ctx.fillStyle = onBand
-  ctx.textAlign = 'center'
+  const fits = top + total <= bottom
+  if (opts.logo) {
+    const s = LOGO / Math.max(opts.logo.width, opts.logo.height)
+    ctx.drawImage(opts.logo, LETTER_TEXT.x, L.y + 44, opts.logo.width * s, opts.logo.height * s)
+  }
+  // 譲渡会がないとき（文字が少ないとき）は、便箋の中の真ん中あたりに
+  const y0 = top + Math.max(0, (bottom - top - total) / 2) * (opts.event ? 0 : 1)
   ctx.textBaseline = 'top'
-  ctx.fillText('ひとこと', CARD_W / 2, headY + 12)
-  // 本文（左にそろえ、かたまりを真ん中に置く）
-  ctx.font = `700 ${size}px ${FONT}`
-  const widest = Math.max(...lines.map((l) => ctx.measureText(l).width))
-  const x0 = CARD_W / 2 - widest / 2
   ctx.textAlign = 'left'
-  ctx.fillStyle = INK
-  let y = headY + 110
-  for (const l of lines) {
-    if (y + size > areaBottom + 1) break // 入りきらない行は描かない（fits=false で知らせる）
-    ctx.fillText(l, x0, y)
-    y += size * LH
+  for (const { lines, row, y } of laid) {
+    ctx.font = `${row.weight} ${Math.round(row.px)}px ${FONT}`
+    ctx.fillStyle = row.color
+    let yy = y0 + y
+    for (const l of lines) {
+      if (yy + row.px > bottom + 1) break
+      ctx.fillText(l, LETTER_TEXT.x, yy + row.px * 0.08)
+      yy += row.px * LH
+    }
   }
-  drawClover(ctx, CARD_W - SAFE.right - 70, SAFE.top + 40, 34, { fill: band })
-  drawClover(ctx, SAFE.left + 60, CARD_H - SAFE.bottom - 10, 28, { fill: band })
-  return { fits, scale: k, sec: wordsSec(opts.text) }
+  return { fits, scale: k, hasEvent: !!opts.event, contrast: round1(ratio(hexLum(INK), hexLum(PAPER))) }
 }

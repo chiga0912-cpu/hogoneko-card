@@ -15,6 +15,7 @@ import {
 } from '../lib/card'
 import * as db from '../db'
 import { nextEvent } from '../lib/events'
+import { clipTimeFor, photoIndex, type CardKey } from '../lib/photoPlan'
 import { TopBar } from './ShelterForm'
 
 const POSITIONS: [TextPosition, string][] = [
@@ -140,21 +141,34 @@ export default function Preview({ shelter, cat, onCatChange, post, onPostChange,
     )
   }, [])
   const photo1 = cat.photos[0] ?? null
-  // 写真がなく動画だけのときは、表紙と猫カードに、選んだ5秒の最初のコマを使う（SPEC 3.2）
-  const [still, setStill] = useState<HTMLCanvasElement | null>(null)
+  // 写真がなく動画だけのときは、選んだ5秒のコマを使う（SPEC 3.2 の表。表紙・猫カードは最初、ひとことはまん中、最後の1枚は最後）
+  const [stills, setStills] = useState<Partial<Record<CardKey, HTMLCanvasElement | null>>>({})
+  const still = stills.cover ?? null
   const clipBlob = !photo1 ? (cat.clip?.blob ?? null) : null
   const clipStart = cat.clip?.start ?? 0
+  const clipLength = cat.clip?.length ?? 5
   useEffect(() => {
     if (!clipBlob) return
     let stop = false
     // 動画の部品は大きいので、使うときだけ読み込む
-    import('../lib/video').then(({ clipFrame }) => clipFrame(clipBlob, clipStart)).then((c) => {
-      if (!stop) setStill(c)
+    import('../lib/video').then(async ({ clipFrame }) => {
+      const range = { start: clipStart, length: clipLength }
+      const got: Partial<Record<CardKey, HTMLCanvasElement | null>> = {}
+      for (const key of ['cover', 'words', 'end'] as const) got[key] = await clipFrame(clipBlob, clipTimeFor(range, key))
+      if (!stop) setStills(got)
     })
     return () => {
       stop = true
     }
-  }, [clipBlob, clipStart])
+  }, [clipBlob, clipStart, clipLength])
+  // ひとことカード・最後の1枚の写真（SPEC 3.2 の表）
+  const blobFor = (key: CardKey) => {
+    const i = photoIndex(cat.photos.length, key)
+    return i === null ? null : (cat.photos[i] ?? null)
+  }
+  const wordsBlob = blobFor('words')
+  const endBlob = blobFor('end')
+  const photoFor = async (key: CardKey, blob: Blob | null) => (blob ? await loadImage(blob).catch(() => null) : clipBlob ? (stills[key] ?? null) : null)
   const paintCover: Painter = async (ctx) => {
     const [photo, logo] = await Promise.all([
       photo1 ? loadImage(photo1).catch(() => null) : null,
@@ -166,13 +180,13 @@ export default function Preview({ shelter, cat, onCatChange, post, onPostChange,
   }
   const usedEvent = showEvent ? event : null
   const paintEnd: Painter = async (ctx) => {
-    const logo = shelter.logo ? await loadImage(shelter.logo).catch(() => null) : null
-    const l = drawEndCard(ctx, { logo, shelterName: shelter.name, contact: shelter.contact, event: usedEvent, theme: shelter.themeColor })
+    const [logo, photo] = await Promise.all([shelter.logo ? loadImage(shelter.logo).catch(() => null) : null, photoFor('end', endBlob)])
+    const l = drawEndCard(ctx, { logo, shelterName: shelter.name, contact: shelter.contact, event: usedEvent, theme: shelter.themeColor, photo, framing: cat.framing.end })
     setEndFits(l.fits)
-    return { fits: l.fits, scale: l.scale, event: l.hasEvent }
+    return { fits: l.fits, scale: l.scale, event: l.hasEvent, photo: photoIndex(cat.photos.length, 'end') ?? (clipBlob ? 'clip' : 'none') }
   }
   const coverDeps = [photo1, still, clipBlob, shelter.logo, shelter.themeColor, cat.name]
-  const endDeps = [shelter.logo, shelter.name, shelter.contact, shelter.themeColor, usedEvent]
+  const endDeps = [shelter.logo, shelter.name, shelter.contact, shelter.themeColor, usedEvent, endBlob, stills, cat.framing.end]
 
   // ひとことカード（#28）。書き換えずに載せる。入りきらないときは知らせて、投稿文にだけ載せるか、載せる文を選んでもらう（SPEC 3.2）。
   // 選んだ文は名簿に残さない（作る人の決定。11/5夜）
@@ -202,11 +216,11 @@ export default function Preview({ shelter, cat, onCatChange, post, onPostChange,
   const pickedFits = useMemo(() => (wordsText && picked !== null ? fitsText(wordsText) : true), [wordsText, picked]) // eslint-disable-line react-hooks/exhaustive-deps
   const wordsOnCard = wordsText !== null && pickedFits ? wordsText : null
   const paintWords: Painter = async (ctx) => {
-    const logo = shelter.logo ? await loadImage(shelter.logo).catch(() => null) : null
-    const l = drawWordsCard(ctx, { text: wordsOnCard ?? '', logo, theme: shelter.themeColor })
-    return { fits: l.fits, sec: l.sec }
+    const [logo, photo] = await Promise.all([shelter.logo ? loadImage(shelter.logo).catch(() => null) : null, photoFor('words', wordsBlob)])
+    const l = drawWordsCard(ctx, { text: wordsOnCard ?? '', logo, theme: shelter.themeColor, photo, framing: cat.framing.words })
+    return { fits: l.fits, sec: l.sec, size: l.size, lines: l.lines, photo: photoIndex(cat.photos.length, 'words') ?? (clipBlob ? 'clip' : 'none') }
   }
-  const wordsDeps = [wordsOnCard, shelter.logo, shelter.themeColor]
+  const wordsDeps = [wordsOnCard, shelter.logo, shelter.themeColor, wordsBlob, stills, cat.framing.words]
   const [saving, setSaving] = useState(false)
   const [saveFailed, setSaveFailed] = useState(false)
   const tagCount = countHashtags(post)

@@ -65,7 +65,8 @@ const init = () => {
   CanvasRenderingContext2D.prototype.drawImage = function (src, ...a) {
     const w = src.naturalWidth || src.videoWidth || src.width
     const h = src.naturalHeight || src.videoHeight || src.height
-    window.__draws.push({ cw: this.canvas.width, w, h })
+    // 写真（画像）かどうかも残す。切手などの飾りは、プログラムで描いた小さな絵（canvas）なので、表紙とまちがえないように
+    window.__draws.push({ cw: this.canvas.width, w, h, img: src instanceof HTMLImageElement })
     return di.call(this, src, ...a)
   }
   window.__maxGap = 0
@@ -362,7 +363,7 @@ const AUTO_CONFIRM = () => {
   await p.waitForTimeout(1500)
   const draws = (await p.evaluate(() => window.__draws)).filter((x) => x.cw === CARD_W)
   check(draws.some((x) => x.w === BIG.w && x.h === BIG.h), 'カードに、元の大きさの写真を描いている')
-  check(!draws.some((x) => Math.max(x.w, x.h) <= COVER_MAX), `カードに、小さな表紙（長い辺${COVER_MAX}px以下）を描いていない`)
+  check(!draws.some((x) => x.img && Math.max(x.w, x.h) <= COVER_MAX), `カードに、小さな表紙（長い辺${COVER_MAX}px以下）を描いていない`)
   await p.screenshot({ path: join(outDir, '3d_元の写真でカード.png') })
 
   // 保存し直しても、写真と動画は前と同じ

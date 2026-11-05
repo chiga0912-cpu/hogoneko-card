@@ -842,6 +842,78 @@ console.log('表示:', await page.locator('.status-line').innerText())
   await ctx6.close()
 }
 
+// 便箋のカード（ひとこと・最後の1枚。11/5夜 作者の決定）：写真の使い分け・譲渡会なし・ロゴあり・ひとことの長さ
+{
+  const ctx7 = await browser.newContext({ ...phone })
+  const p7 = await ctx7.newPage()
+  await p7.goto(url + '/?sizes=1')
+  await p7.getByText('はじめに').waitFor()
+  await p7.getByRole('button', { name: '追加せずに、このまま使う' }).click()
+  await p7.getByLabel('団体名').fill('（架空）とても長い名前の保護猫の会・ねこのおうち探しプロジェクト')
+  await p7.locator('input[type=file][accept="image/*"]').setInputFiles(dummy('#5b8fb9', 'ロゴ', 300, 300))
+  await p7.getByLabel('連絡先').fill('（架空）Instagramのメッセージでお問い合わせください\n（架空）メール：example@example.com\n（架空）電話：00-0000-0000（平日10時〜17時）')
+  await p7.getByRole('button', { name: '登録して始める' }).click()
+  await p7.getByRole('button', { name: '新しい子を紹介' }).click()
+  const words = p7.locator('.card-words')
+  const end = p7.locator('.card-end')
+  const photos = async (n) => {
+    const labels = ['写真A', '写真B', '写真C']
+    for (let i = 0; i < n; i++) {
+      await p7.locator('input[type=file][accept="image/*"]').setInputFiles(dummy(['#c9b8a6', '#9fb3a0', '#b3a0c9'][i], labels[i]))
+      await p7.locator('.photo img').nth(i).waitFor()
+    }
+  }
+  await photos(1)
+  await p7.getByLabel('名前').fill('テスト')
+  await p7.getByLabel(/ひとこと/).fill('（架空）毎日癒されています。')
+  const look = async () => {
+    await p7.getByRole('button', { name: '次へ' }).click()
+    await p7.locator('.card-words[data-drawn="1"]').waitFor({ timeout: 5000 }).catch(() => {})
+    await p7.locator('.card-end[data-drawn="1"]').waitFor({ timeout: 5000 }).catch(() => {})
+    await p7.waitForTimeout(400)
+    return `${await words.getAttribute('data-photo')}/${await end.getAttribute('data-photo')}`
+  }
+  check((await look()) === '0/0', '写真1枚：ひとことも最後の1枚も1枚目')
+  // 上の写真が、ぼかしではなく、そのままの色で描かれているか（写真A＝#c9b8a6。11/6 境目をなめらかにしたときに写真が消えた失敗を受けて足した）
+  for (const [name, loc] of [['ひとこと', words], ['最後の1枚', end]]) {
+    const px = await loc.evaluate((c) => [...c.getContext('2d').getImageData(200, 500, 1, 1).data].slice(0, 3))
+    check(Math.abs(px[0] - 0xc9) <= 6 && Math.abs(px[1] - 0xb8) <= 6 && Math.abs(px[2] - 0xa6) <= 6, `${name}の上に、写真がそのままの色で描かれる（${px.join(',')}）`)
+  }
+  check((await end.getAttribute('data-event')) === '0' && (await end.getAttribute('data-fits')) === '1', '譲渡会がなく、ロゴと長い団体名・3行の連絡先でも、最後の1枚がはみ出さない')
+  await p7.screenshot({ path: join(outDir, '5r_便箋_写真1枚.png') })
+  await end.click()
+  await p7.locator('.card-full .card-full-canvas[data-drawn="1"]').waitFor()
+  await p7.screenshot({ path: join(outDir, '5s_最後の1枚_ロゴ_譲渡会なし.png') })
+  await p7.getByRole('button', { name: '× 閉じる' }).click()
+  await p7.getByRole('button', { name: '戻る' }).click()
+  await photos(0)
+  await p7.locator('input[type=file][accept="image/*"]').setInputFiles(dummy('#9fb3a0', '写真B'))
+  await p7.locator('.photo img').nth(1).waitFor()
+  check((await look()) === '0/1', '写真2枚：ひとことは1枚目、最後の1枚は2枚目')
+  await p7.getByRole('button', { name: '戻る' }).click()
+  await p7.locator('input[type=file][accept="image/*"]').setInputFiles(dummy('#b3a0c9', '写真C'))
+  await p7.locator('.photo img').nth(2).waitFor()
+  check((await look()) === '2/0', '写真3枚：ひとことは3枚目、最後の1枚は1枚目')
+  // ひとことの長さ：80字ほどは46px、100字ほどは小さくして入る、それより長いと知らせる
+  await p7.getByRole('button', { name: '戻る' }).click()
+  const len = async (n) => {
+    const t = ('（架空）' + 'まいにちげんかんまでおむかえにきてくれます。'.repeat(10)).slice(0, n - 1) + '。'
+    await p7.getByLabel(/ひとこと/).fill(t)
+    await p7.getByRole('button', { name: '次へ' }).click()
+    await p7.waitForTimeout(700)
+    const r = (await words.count()) ? `${await words.getAttribute('data-size')}px・${await words.getAttribute('data-lines')}行` : (await p7.getByText('ひとことが長くて、カードに入りきりません').isVisible()) ? 'カードなし・知らせあり' : 'カードなし・知らせなし'
+    await p7.getByRole('button', { name: '戻る' }).click()
+    return r
+  }
+  const r80 = await len(80)
+  check(r80.startsWith('46px'), `ひとこと80字は、46pxで入る（${r80}）`)
+  const r100 = await len(100)
+  check(/^4[24]px/.test(r100), `ひとこと100字は、小さくして入る（${r100}）`)
+  const r140 = await len(140)
+  check(r140 === 'カードなし・知らせあり', `ひとこと140字は、カードに載せず知らせる（${r140}）`)
+  await ctx7.close()
+}
+
 // 確認モードの合図は、日本語のキーボードで打った全角（？sizes＝１）でも読む（11/5夜 iPhoneで見つけた）
 {
   const ctx5 = await browser.newContext({ ...phone })
