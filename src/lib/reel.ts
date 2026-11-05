@@ -41,6 +41,7 @@ export async function buildSegments(cat: Cat, shelter: Shelter, event: AdoptionE
     lines: cat.goodPoints,
     theme: shelter.themeColor,
     position: cat.textPosition,
+    framing: cat.framing.cat,
   })
   const end = canvas()
   drawEndCard(end.getContext('2d')!, { logo, shelterName: shelter.name, contact: shelter.contact, event, theme: shelter.themeColor, photo: endPhoto, framing: cat.framing.end })

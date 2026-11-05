@@ -772,3 +772,57 @@ input[type='color'] {
   flex: 0 0 22px;
   margin-top: 2px;
 }
+
+/* 写真を指で動かす画面（#29） */
+.framing {
+  position: fixed;
+  inset: 0;
+  z-index: 60;
+  background: #1e1a17;
+  color: #fff;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 16px calc(12px + env(safe-area-inset-bottom));
+}
+.framing-hint {
+  margin: 0;
+  font-size: 13px;
+  text-align: center;
+}
+.framing-canvas {
+  flex: 1 1 auto;
+  min-height: 0;
+  max-width: 100%;
+  aspect-ratio: 9 / 16;
+  height: auto;
+  touch-action: none;
+  border-radius: 8px;
+}
+.framing-bar {
+  display: flex;
+  gap: 8px;
+  width: 100%;
+  max-width: 420px;
+}
+.framing-bar .btn {
+  flex: 1;
+  min-height: 46px;
+}
+.move-photo {
+  display: block;
+  margin: 4px auto 0;
+  font-size: 13px;
+  padding: 6px 12px;
+}
+.framing-bar .btn {
+  font-size: 15px;
+  padding-left: 6px;
+  padding-right: 6px;
+  white-space: nowrap;
+}
+.framing-bar .btn-ghost {
+  color: #fff;
+  border-color: rgba(255, 255, 255, 0.7);
+}

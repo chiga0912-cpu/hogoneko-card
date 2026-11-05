@@ -11,12 +11,14 @@ import {
   loadImage,
   splitSentences,
   type CardLayout,
+  type Framing,
   type TextPosition,
 } from '../lib/card'
 import * as db from '../db'
 import { nextEvent } from '../lib/events'
 import { clipTimeFor, photoIndex, type CardKey } from '../lib/photoPlan'
 import { TopBar } from './ShelterForm'
+import FramingEditor from './FramingEditor'
 
 const POSITIONS: [TextPosition, string][] = [
   ['up', '少し上'],
@@ -60,6 +62,7 @@ function CatCard({
         lines: cat.goodPoints,
         theme: shelter.themeColor,
         position: cat.textPosition,
+        framing: cat.framing.cat,
       })
       setLayout(l)
       onLayout?.(l)
@@ -67,7 +70,7 @@ function CatCard({
     return () => {
       stop = true
     }
-  }, [photoBlob, still, shelter.logo, shelter.themeColor, cat.name, cat.goodPoints, cat.textPosition, onLayout])
+  }, [photoBlob, still, shelter.logo, shelter.themeColor, cat.name, cat.goodPoints, cat.textPosition, cat.framing.cat, onLayout])
   return (
     <canvas
       ref={ref}
@@ -222,6 +225,31 @@ export default function Preview({ shelter, cat, onCatChange, post, onPostChange,
     return { fits: l.fits, sec: l.sec, size: l.size, lines: l.lines, photo: photoIndex(cat.photos.length, 'words') ?? (clipBlob ? 'clip' : 'none') }
   }
   const wordsDeps = [wordsOnCard, shelter.logo, shelter.themeColor, wordsBlob, stills, cat.framing.words]
+
+  // 写真を指で動かす（#29。猫カードの案A・ひとこと・最後の1枚）。動かしている間に写真を何度も読み直さないよう、読んだ写真を覚えておく
+  const [moving, setMoving] = useState<'cat' | 'words' | 'end' | null>(null)
+  const imgCache = useRef(new Map<Blob, Promise<HTMLImageElement | null>>())
+  const img = (b: Blob | null) => {
+    if (!b) return Promise.resolve(null)
+    let p = imgCache.current.get(b)
+    if (!p) imgCache.current.set(b, (p = loadImage(b).catch(() => null)))
+    return p
+  }
+  const catBlob = cat.photos[1] ?? cat.photos[0] ?? null
+  const movePaint = async (ctx: CanvasRenderingContext2D, f: Framing): Promise<Framing | null> => {
+    const logo = await img(shelter.logo)
+    if (moving === 'cat') {
+      const photo = (await img(catBlob)) ?? (clipBlob ? still : null)
+      return drawCatCard(ctx, { photo, logo, name: cat.name, lines: cat.goodPoints, theme: shelter.themeColor, position: cat.textPosition, framing: f }).framing ?? null
+    }
+    if (moving === 'words') {
+      const photo = (await img(wordsBlob)) ?? (clipBlob ? (stills.words ?? null) : null)
+      return drawWordsCard(ctx, { text: wordsOnCard ?? '', logo, theme: shelter.themeColor, photo, framing: f }).framing
+    }
+    const photo = (await img(endBlob)) ?? (clipBlob ? (stills.end ?? null) : null)
+    return drawEndCard(ctx, { logo, shelterName: shelter.name, contact: shelter.contact, event: usedEvent, theme: shelter.themeColor, photo, framing: f }).framing
+  }
+  const hasPhotoFor = (key: 'cat' | 'words' | 'end') => cat.photos.length > 0 || !!clipBlob || key === 'cat' && !!catBlob
   const [saving, setSaving] = useState(false)
   const [saveFailed, setSaveFailed] = useState(false)
   const tagCount = countHashtags(post)
@@ -242,16 +270,31 @@ export default function Preview({ shelter, cat, onCatChange, post, onPostChange,
           <figure className="card-slot">
             <CatCard cat={cat} shelter={shelter} still={clipBlob ? still : null} className="card-canvas" onLayout={setLayout} onClick={() => setFull('cat')} />
             <figcaption>2 猫カード</figcaption>
+            {layout?.design === 'A' && hasPhotoFor('cat') && (
+              <button className="btn btn-small move-photo" onClick={() => setMoving('cat')}>
+                写真を動かす
+              </button>
+            )}
           </figure>
           {wordsOnCard && (
             <figure className="card-slot">
               <PaintedCard paint={paintWords} deps={wordsDeps} className="card-thumb card-words" label="ひとことカード（押すと画面いっぱいに出ます）" onClick={() => setFull('words')} />
               <figcaption>3 ひとこと</figcaption>
+              {hasPhotoFor('words') && (
+                <button className="btn btn-small move-photo" onClick={() => setMoving('words')}>
+                  写真を動かす
+                </button>
+              )}
             </figure>
           )}
           <figure className="card-slot">
             <PaintedCard paint={paintEnd} deps={endDeps} className="card-thumb card-end" label="最後の1枚（押すと画面いっぱいに出ます）" onClick={() => setFull('end')} />
             <figcaption>{wordsOnCard ? 4 : 3} 最後の1枚</figcaption>
+            {hasPhotoFor('end') && (
+              <button className="btn btn-small move-photo" onClick={() => setMoving('end')}>
+                写真を動かす
+              </button>
+            )}
           </figure>
         </div>
         <p className="muted center">横にめくると、ほかのカードが見られます。カードを押すと、画面いっぱいに出ます</p>
@@ -320,6 +363,26 @@ export default function Preview({ shelter, cat, onCatChange, post, onPostChange,
         </label>
       )}
       {!event && <p className="muted">次の譲渡会が登録されていないので、最後の1枚には団体名と連絡先だけを入れます。</p>}
+
+      {moving && (
+        <FramingEditor
+          key={moving}
+          title={{ cat: '猫カード', words: 'ひとことカード', end: '最後の1枚' }[moving]}
+          initial={cat.framing[moving]}
+          paint={movePaint}
+          onCancel={() => setMoving(null)}
+          onDone={(f) => {
+            const key = moving
+            onCatChange((c) => {
+              const framing = { ...c.framing }
+              if (f) framing[key] = f
+              else delete framing[key]
+              return { ...c, framing }
+            })
+            setMoving(null)
+          }}
+        />
+      )}
 
       {full && (
         <div className="card-full" role="dialog" aria-label="カードを画面いっぱいに表示" onClick={() => setFull(null)}>

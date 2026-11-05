@@ -48,6 +48,7 @@ export type CardLayout = {
   linesTotal: number
   contrast: number // 文字と、その後ろの色の見やすさ（4.5以上なら読みやすい）。案Aは写真の明るい所で測る
   darken: number // 案A：写真の下のほうを暗くした強さ（0〜1）
+  framing?: Framing | null // 案A：実際に使った写真の位置（#29）
 }
 
 type Img = CanvasImageSource & { width: number; height: number }
@@ -278,6 +279,7 @@ type Opts = {
   lines: string[] // カードの言葉（「いいところ」の行をそのまま）
   theme: string
   position: TextPosition
+  framing?: Framing // 写真の位置（#29。案Aだけ）
 }
 
 export function drawCatCard(ctx: CanvasRenderingContext2D, opts: Opts): CardLayout {
@@ -293,7 +295,7 @@ const A_LIFT: Record<TextPosition, number> = { down: 0, normal: 140, up: 300 } /
 function drawA(ctx: CanvasRenderingContext2D, opts: Opts, lines: string[]): CardLayout {
   ctx.fillStyle = '#6b5f55'
   ctx.fillRect(0, 0, CARD_W, CARD_H)
-  if (opts.photo) drawCover(ctx, opts.photo, 0, 0, CARD_W, CARD_H)
+  const used = opts.photo ? drawFramed(ctx, opts.photo, 0, 0, CARD_W, CARD_H, 0.5, opts.framing ?? NO_FRAMING) : null
 
   const bottom = CARD_H - SAFE.bottom - A_LIFT[opts.position]
   const w = widthFor(bottom)
@@ -327,6 +329,7 @@ function drawA(ctx: CanvasRenderingContext2D, opts: Opts, lines: string[]): Card
     linesTotal: lines.length,
     contrast: round1(ratio(1, after(darken))),
     darken: round1(darken * 100) / 100,
+    framing: used,
   }
 }
 
@@ -641,29 +644,32 @@ const LETTER_TOP_H = 1300 // 縦の写真を入れる高さ（便箋の後ろま
 const FACE_AT = 0.42 // 顔は写真の上から4割くらいにあると見る ⚙（Claudeは写真を見ない。合わないときは人が指で動かす）
 
 // 写真を、枠いっぱいに切って入れる。focusY：写真のどの高さを枠の真ん中に寄せるか。framing：人が指で動かした分
-export function drawFramed(ctx: CanvasRenderingContext2D, img: Img, x: number, y: number, w: number, h: number, focusY = 0.5, framing: Framing = NO_FRAMING) {
-  const k = Math.max(1, framing.scale)
+// 返すのは、実際に使った位置（枠からはみ出さないように止めたあとの値。指で動かす画面が、止まった所から動かせるように）
+export function drawFramed(ctx: CanvasRenderingContext2D, img: Img, x: number, y: number, w: number, h: number, focusY = 0.5, framing: Framing = NO_FRAMING): Framing {
+  const k = Math.min(MAX_SCALE, Math.max(1, framing.scale))
   const s = Math.max(w / img.width, h / img.height) * k
   const dw = img.width * s
   const dh = img.height * s
   // 寄せたい高さが枠の真ん中に来るように。ただし枠からはみ出さない（すき間を作らない）
-  let dx = x + (w - dw) / 2 + framing.x
-  let dy = y + h / 2 - dh * focusY + framing.y
-  dx = Math.min(x, Math.max(x + w - dw, dx))
-  dy = Math.min(y, Math.max(y + h - dh, dy))
+  const baseX = x + (w - dw) / 2
+  const baseY = Math.min(y, Math.max(y + h - dh, y + h / 2 - dh * focusY))
+  const dx = Math.min(x, Math.max(x + w - dw, baseX + framing.x))
+  const dy = Math.min(y, Math.max(y + h - dh, baseY + framing.y))
   ctx.save()
   ctx.beginPath()
   ctx.rect(x, y, w, h)
   ctx.clip()
   ctx.drawImage(img, dx, dy, dw, dh)
   ctx.restore()
+  return { x: dx - baseX, y: dy - baseY, scale: k }
 }
+export const MAX_SCALE = 3 // 写真を大きくできるのは3倍まで ⚙
 
 // 上の写真。縦の写真は上に寄せて入れ、横の写真は切らずに全体を入れる。まわりはぼかした同じ写真で埋める
-function drawLetterPhoto(ctx: CanvasRenderingContext2D, photo: Img | null, framing: Framing) {
+function drawLetterPhoto(ctx: CanvasRenderingContext2D, photo: Img | null, framing: Framing): Framing | null {
   ctx.fillStyle = '#6b5f55'
   ctx.fillRect(0, 0, CARD_W, CARD_H)
-  if (!photo) return
+  if (!photo) return null
   // まわり：ぼかした写真（ぼかせないブラウザでは、少し暗くするだけ）
   ctx.save()
   ctx.filter = 'blur(28px)'
@@ -678,7 +684,7 @@ function drawLetterPhoto(ctx: CanvasRenderingContext2D, photo: Img | null, frami
     t.height = LETTER_TOP_H
     const tc = t.getContext('2d')
     if (tc) {
-      drawFramed(tc, photo, 0, 0, CARD_W, LETTER_TOP_H, FACE_AT, framing)
+      const used = drawFramed(tc, photo, 0, 0, CARD_W, LETTER_TOP_H, FACE_AT, framing)
       tc.globalCompositeOperation = 'destination-in'
       const g = tc.createLinearGradient(0, LETTER_TOP_H - 220, 0, LETTER_TOP_H)
       g.addColorStop(0, 'rgba(0,0,0,1)')
@@ -687,11 +693,13 @@ function drawLetterPhoto(ctx: CanvasRenderingContext2D, photo: Img | null, frami
       tc.fillStyle = g
       tc.fillRect(0, 0, CARD_W, LETTER_TOP_H)
       ctx.drawImage(t, 0, 0)
-    } else drawFramed(ctx, photo, 0, 0, CARD_W, LETTER_TOP_H, FACE_AT, framing)
+      return used
+    }
+    return drawFramed(ctx, photo, 0, 0, CARD_W, LETTER_TOP_H, FACE_AT, framing)
   } else {
     // 横・正方形の写真：横幅いっぱいに、切らずに。上の隠れる所の下から、便箋の上まで
     const h = Math.min((CARD_W * photo.height) / photo.width, LETTER.y + 40 - SAFE.top)
-    drawFramed(ctx, photo, 0, SAFE.top, CARD_W, h, 0.5, framing)
+    return drawFramed(ctx, photo, 0, SAFE.top, CARD_W, h, 0.5, framing)
   }
 }
 
@@ -788,9 +796,9 @@ const LETTER_LH = 1.6
 export function drawWordsCard(
   ctx: CanvasRenderingContext2D,
   opts: { text: string; logo: Img | null; theme: string; photo?: Img | null; framing?: Framing },
-): WordsLayout & { size: number; lines: number } {
+): WordsLayout & { size: number; lines: number; framing: Framing | null } {
   ctx.clearRect(0, 0, CARD_W, CARD_H)
-  drawLetterPhoto(ctx, opts.photo ?? null, opts.framing ?? NO_FRAMING)
+  const used = drawLetterPhoto(ctx, opts.photo ?? null, opts.framing ?? NO_FRAMING)
   drawLogo(ctx, opts.logo, SAFE.left, SAFE.top)
   drawLetterPaper(ctx, opts.theme)
   const L = LETTER
@@ -819,15 +827,15 @@ export function drawWordsCard(
     ctx.fillText(l, LETTER_TEXT.x, y)
     y += size * LETTER_LH
   }
-  return { fits, scale: size / WORDS_SIZES[0], sec: wordsSec(opts.text), size, lines: lines.length }
+  return { fits, scale: size / WORDS_SIZES[0], sec: wordsSec(opts.text), size, lines: lines.length, framing: used }
 }
 
 export function drawEndCard(
   ctx: CanvasRenderingContext2D,
   opts: { logo: Img | null; shelterName: string; contact: string; event: EndEvent | null; theme: string; photo?: Img | null; framing?: Framing },
-): EndLayout {
+): EndLayout & { framing: Framing | null } {
   ctx.clearRect(0, 0, CARD_W, CARD_H)
-  drawLetterPhoto(ctx, opts.photo ?? null, opts.framing ?? NO_FRAMING)
+  const used = drawLetterPhoto(ctx, opts.photo ?? null, opts.framing ?? NO_FRAMING)
   drawLetterPaper(ctx, opts.theme)
   const L = LETTER
   const head = inkOfTheme(opts.theme)
@@ -891,5 +899,5 @@ export function drawEndCard(
       yy += row.px * LH
     }
   }
-  return { fits, scale: k, hasEvent: !!opts.event, contrast: round1(ratio(hexLum(INK), hexLum(PAPER))) }
+  return { fits, scale: k, hasEvent: !!opts.event, contrast: round1(ratio(hexLum(INK), hexLum(PAPER))), framing: used }
 }
