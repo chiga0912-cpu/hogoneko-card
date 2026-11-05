@@ -108,8 +108,11 @@ export default function Preview({ shelter, cat, onCatChange, post, onPostChange,
         )}
         {layout && !layout.fits && <p className="alert">名前が長くて、カードに入りきりません。</p>}
 
-        {layout?.design === 'B' && <p className="muted center">横長・正方形の写真なので、文字は上下の色の帯に入ります</p>}
-        {layout?.design !== 'B' && (
+        {layout?.design === 'B' && (
+          <p className="muted center">横長・正方形の写真なので、文字は上下の色の帯に入ります。縦長の写真なら、写真の上に文字が載ります</p>
+        )}
+        {/* カードを描き終わってから出す（開いた直後に、案Bでも一瞬出てしまわないように） */}
+        {layout?.design === 'A' && (
         <div className="choices" role="group" aria-label="文字の位置">
           {POSITIONS.map(([v, label]) => (
             <button

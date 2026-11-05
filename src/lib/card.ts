@@ -281,6 +281,26 @@ function drawA(ctx: CanvasRenderingContext2D, opts: Opts, lines: string[]): Card
   }
 }
 
+// 帯の色と文字の色を決める
+function bandColors(theme: string): { band: string; color: string; contrast: number } {
+  const n = parseInt(theme.replace('#', '').padEnd(6, '0').slice(0, 6), 16)
+  const rgb = [(n >> 16) & 255, (n >> 8) & 255, n & 255]
+  const inkLum = hexLum(INK)
+  const white = ratio(1, lum(rgb[0], rgb[1], rgb[2]))
+  const ink = ratio(inkLum, lum(rgb[0], rgb[1], rgb[2]))
+  const useWhite = white >= ink
+  const textLum = useWhite ? 1 : inkLum
+  const toward = useWhite ? 0 : 255 // 白い文字なら帯を暗く、濃い文字なら帯を明るく
+  let t = 0
+  let c = rgb
+  while (ratio(textLum, lum(c[0], c[1], c[2])) < 4.5 && t < 1) {
+    t = Math.min(1, t + 0.02)
+    c = rgb.map((v) => Math.round(v + (toward - v) * t))
+  }
+  const hex = '#' + c.map((v) => v.toString(16).padStart(2, '0')).join('')
+  return { band: hex, color: useWhite ? WHITE : INK, contrast: ratio(textLum, lum(c[0], c[1], c[2])) }
+}
+
 // 案B：上下にテーマ色の帯。帯の中に大きな文字。写真は切らずに真ん中に
 const B_PAD = 36 // 帯の中の、文字の上下の余白
 const B_LOGO = 90 // 案Bのロゴは少し小さく（帯を低くするため）
@@ -288,10 +308,9 @@ const B_MIN_PHOTO = 700 // 写真に残す高さの下限 ⚙
 
 function drawB(ctx: CanvasRenderingContext2D, opts: Opts, lines: string[]): CardLayout {
   // 帯の文字は、白と濃い色のうち、テーマ色の上で読みやすいほう（見直し A13 と同じ考え）
-  const bandLum = hexLum(opts.theme)
-  const white = ratio(1, bandLum)
-  const ink = ratio(hexLum(INK), bandLum)
-  const color = white >= ink ? WHITE : INK
+  // どちらも見やすさ4.5に届かない中くらいの色のときは、帯の色だけを少し暗く（白い文字）か明るく（濃い文字）して4.5にそろえる。
+  // テーマ色の設定は変えない（11/5 見直し①の1番。作る人の決定）
+  const { band, color, contrast } = bandColors(opts.theme)
   const logoH = opts.logo ? B_LOGO + 14 : 0
 
   const bands = (p: Planned) => {
@@ -300,15 +319,16 @@ function drawB(ctx: CanvasRenderingContext2D, opts: Opts, lines: string[]): Card
     const botH = b ? B_PAD + b + SAFE.bottom : 0
     return { topH, botH }
   }
-  // 名前は上の帯（広い横幅）。いいところは下の帯で、右下のボタンの高さにかかるので狭い横幅
-  const bodyW = widthFor(CARD_H - SAFE.bottom)
+  // 名前は上の帯（広い横幅）。いいところは下の帯で、右下のボタンの高さにかかる。
+  // 名前と中心をそろえるため、右のボタンを避ける幅を左右どちらも空けて、真ん中に置く（11/5 見直し①の5番。作る人の決定）
+  const bodyW = widthFor(CARD_H - SAFE.bottom) === WIDE_W ? WIDE_W : CARD_W - SAFE.cornerRight * 2
   const { p, scale, fits } = choose(ctx, opts.name, lines, 1, { name: WIDE_W, body: bodyW }, (p) => {
     const { topH, botH } = bands(p)
     return CARD_H - topH - botH >= B_MIN_PHOTO
   })
   const { topH, botH } = bands(p)
 
-  ctx.fillStyle = opts.theme
+  ctx.fillStyle = band
   ctx.fillRect(0, 0, CARD_W, CARD_H)
   if (opts.photo) drawContain(ctx, opts.photo, 0, topH, CARD_W, CARD_H - topH - botH)
 
@@ -317,7 +337,7 @@ function drawB(ctx: CanvasRenderingContext2D, opts: Opts, lines: string[]): Card
   let bodyOk = true
   let lastBottom = n.bottom
   if (p.body.length) {
-    const t = drawText(ctx, p, SAFE.left + bodyW / 2, CARD_H - botH + B_PAD, color, 'center', false, 'body')
+    const t = drawText(ctx, p, CARD_W / 2, CARD_H - botH + B_PAD, color, 'center', false, 'body')
     bodyOk = t.widest <= bodyW + 0.5
     lastBottom = t.bottom
   }
@@ -328,7 +348,7 @@ function drawB(ctx: CanvasRenderingContext2D, opts: Opts, lines: string[]): Card
     scale,
     linesShown: p.body.length,
     linesTotal: lines.length,
-    contrast: round1(Math.max(white, ink)),
+    contrast: round1(contrast),
     darken: 0,
   }
 }

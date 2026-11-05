@@ -273,6 +273,31 @@ const seenWithoutScroll = async (p, loc) => {
   await ctx.close()
 }
 
+// 案B：中くらいの明るさのテーマ色でも、帯の文字が読めるか（11/5 見直し①の1番。白でも濃い色でも4.5に届かない色）
+for (const theme of ['#888888', '#5b8fb9', '#d9534f']) {
+  const ctx = await browser.newContext({ ...phone })
+  const p = await ctx.newPage()
+  p.on('dialog', (d) => d.accept())
+  await p.goto(url)
+  await p.getByText('はじめに').waitFor()
+  await p.getByRole('button', { name: '追加せずに、このまま使う' }).click()
+  await p.getByLabel('団体名').fill('テスト保護猫の会')
+  await p.locator('input[type=color]').fill(theme)
+  await p.getByRole('button', { name: '登録して始める' }).click()
+  await p.getByRole('button', { name: '新しい子を紹介' }).click()
+  await p.locator('input[type=file]').setInputFiles(dummy('#8fa9a3', '横', 800, 600))
+  await p.locator('.photo img').first().waitFor()
+  await p.getByLabel('名前').fill('テスト')
+  await p.getByLabel('いいところ').fill('（架空）ひざの上が大好き\n（架空）ごはんの時間を教えてくれる')
+  await p.getByRole('button', { name: '次へ' }).click()
+  const card = p.locator('.card-canvas')
+  await p.locator('.card-canvas[data-design="B"][data-drawn="1"]').waitFor()
+  await p.waitForTimeout(300)
+  check(Number(await card.getAttribute('data-contrast')) >= 4.5 && (await card.getAttribute('data-fits')) === '1', `案B：中くらいのテーマ色（${theme}）でも、帯の文字が読みやすく、はみ出さない（見やすさ ${await card.getAttribute('data-contrast')}）`)
+  await p.screenshot({ path: join(outDir, `5i_猫カード_案B_${theme.slice(1)}.png`), fullPage: true })
+  await ctx.close()
+}
+
 const context = await browser.newContext({ ...phone })
 // 健康情報を「前に確認した」状態にするため、最初は11/1として動かす（時計だけ変える）
 let page = await context.newPage()
