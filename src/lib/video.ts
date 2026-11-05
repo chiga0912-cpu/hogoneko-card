@@ -292,3 +292,27 @@ export async function videoHasLocation(blob: Blob): Promise<'あり' | 'なし' 
     return '調べられない'
   }
 }
+
+// 画像（JPEG）に位置情報がないか。カードの画像はスマホの中で描いたものなので、ふつうは入っていない。
+// 撮影情報（Exif）の中に、位置の印（GPSの番号 0x8825）があれば「あり」とみなす
+export async function imageHasLocation(blob: Blob): Promise<'あり' | 'なし' | '調べられない'> {
+  try {
+    const b = new Uint8Array(await blob.slice(0, 256 * 1024).arrayBuffer())
+    if (b[0] !== 0xff || b[1] !== 0xd8) return blob.type === 'image/jpeg' ? '調べられない' : 'なし'
+    let i = 2
+    while (i + 4 <= b.length && b[i] === 0xff) {
+      const marker = b[i + 1]
+      const len = (b[i + 2] << 8) | b[i + 3]
+      if (marker === 0xda) break // ここから先は絵そのもの
+      if (marker === 0xe1) {
+        const seg = b.subarray(i + 4, i + 2 + len)
+        const isExif = seg[0] === 0x45 && seg[1] === 0x78 && seg[2] === 0x69 && seg[3] === 0x66
+        if (isExif && (hasMark(seg, new Uint8Array([0x88, 0x25])) || hasMark(seg, new Uint8Array([0x25, 0x88])))) return 'あり'
+      }
+      i += 2 + len
+    }
+    return 'なし'
+  } catch {
+    return '調べられない'
+  }
+}

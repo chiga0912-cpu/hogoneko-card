@@ -64,6 +64,29 @@ await p.locator('.reel-video, .reel-images, .alert').first().waitFor({ timeout: 
 const info = await p.evaluate(async () => { const v = document.querySelector('.reel-video'); if (!v) return document.querySelector('.reel-box').textContent; if (!v.duration) await new Promise(r => v.addEventListener('loadedmetadata', r, { once: true })); return { d: v.duration, m: v.dataset.method } })
 ok(info && info.d >= 13.9 && info.d <= 14.1, '表紙2秒＋動画5秒＋猫カード3秒＋最後の1枚4秒＝14秒の動画ができる（' + JSON.stringify(info) + '・' + (await p.locator('.reel-box .muted').textContent().catch(() => '')) + '）')
 await p.screenshot({ path: join(outDir, '6c_動画_保存の画面.png') })
+ok((await p.getByTestId('location').textContent()).includes('なし'), 'できた動画の位置情報を確かめて「なし」と出る（確認モード）')
+ok(await p.getByRole('button', { name: '投稿文をコピーしてInstagramへ' }).isEnabled(), '位置情報が「なし」なら、大きいボタンが押せる')
+ok(await p.getByText('「リール」を選ぶ').isVisible(), '3つの手順の案内が出る')
+// 大きいボタン：押すと投稿文がコピーされ、ボタンが「コピーしました ✓」に変わる。パソコンのテスト用ブラウザには
+// 共有の画面がないことが多いので、そのときは「開けませんでした」と、動画を長押しして保存する案内が出る
+if (process.env.ENGINE !== 'webkit') await ctx.grantPermissions(['clipboard-read', 'clipboard-write'], { origin: new URL(url).origin })
+await p.evaluate(() => {
+  window.__shared = null
+  if (navigator.share) {
+    navigator.share = async (d) => {
+      window.__shared = d.files.map((f) => `${f.type}:${f.size}`)
+    }
+    navigator.canShare = () => true
+  }
+})
+await p.getByRole('button', { name: '投稿文をコピーしてInstagramへ' }).click()
+await p.getByRole('button', { name: 'コピーしました ✓' }).waitFor({ timeout: 5000 }).catch(() => {})
+ok(await p.getByRole('button', { name: 'コピーしました ✓' }).isVisible(), '大きいボタンを押すと、ボタンが「コピーしました ✓」に変わる')
+const shared = await p.evaluate(() => window.__shared)
+if (shared) ok(shared.length === 1 && shared[0].startsWith('video/mp4:'), '共有の画面に、できた動画1本（mp4）を渡す')
+else ok(await p.getByText('共有の画面を開けませんでした').isVisible(), '共有の画面がないときは、動画を長押しして保存する案内が出る')
+await p.screenshot({ path: join(outDir, '6d_保存_コピーした.png'), fullPage: true })
+
 // 名簿の子で動画を外したら、読み込み直しても戻らない
 await p.getByRole('button', { name: '名簿を見る' }).click()
 await p.getByText('テスト').first().click()
@@ -80,6 +103,33 @@ await p.locator('input[type=file][accept="video/*"]').setInputFiles(join(FAKE, '
 await p.locator('.clip-time').waitFor()
 await p.waitForTimeout(500)
 ok((await p.getByText('5秒より短い動画なので、全部使います').isVisible()) && Number(await p.locator('.clip-time').getAttribute('data-length')) <= 3.01, '5秒より短い動画は全部使う（' + await p.locator('.clip-time').getAttribute('data-length') + '秒）')
+// 架空の位置を入れた動画で：元の動画は「あり」、それを使って作った動画は「なし」
+{
+  const ctx2 = await b.newContext({ ...phone })
+  const p2 = await ctx2.newPage()
+  p2.on('dialog', (d) => d.accept())
+  await p2.goto(url + '/?sizes=1')
+  await p2.getByText('はじめに').waitFor()
+  await p2.getByRole('button', { name: '追加せずに、このまま使う' }).click()
+  await p2.getByLabel('団体名').fill('テスト保護猫の会')
+  await p2.getByRole('button', { name: '登録して始める' }).click()
+  await p2.getByRole('button', { name: '新しい子を紹介' }).click()
+  await p2.locator('input[type=file][accept="video/*"]').setInputFiles(join(FAKE, 'tall12_loc.mov'))
+  await p2.locator('.clip-time').waitFor()
+  const src = await p2.locator('.clip-video').evaluate(async (el) => {
+    const b = await (await fetch(el.src)).blob()
+    const v = await import('/src/lib/video.ts').catch(() => null)
+    return v ? v.videoHasLocation(b) : '調べられない（本番と同じ作りでは部品を直接読めない）'
+  })
+  console.log('  元の動画（架空の位置入り）の位置情報：' + src)
+  if (!url.includes('4173')) ok(src === 'あり', '架空の位置を入れた元の動画は「あり」と見つけられる')
+  await p2.getByLabel('名前').fill('テスト')
+  await p2.getByRole('button', { name: '次へ' }).click()
+  await p2.getByRole('button', { name: '動画を作る' }).click()
+  await p2.getByTestId('location').filter({ hasText: /なし|あり|調べられない/ }).waitFor({ timeout: 60000 })
+  ok((await p2.getByTestId('location').textContent()).includes('なし'), '位置情報の入った動画を使っても、できた動画は「なし」')
+  await ctx2.close()
+}
 await b.close()
 console.log(failures ? `確認NG が ${failures} こ` : '動画の確認：全部OK')
 process.exit(failures ? 1 : 0)

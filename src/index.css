@@ -718,3 +718,13 @@ input[type='color'] {
   text-align: center;
   margin: 2px 0 8px;
 }
+.share-box {
+  margin: 0 0 20px;
+}
+.share-steps {
+  margin: 10px 0 0;
+  padding-left: 1.4em;
+  font-size: 14px;
+  color: #6b5f55;
+  line-height: 1.7;
+}
