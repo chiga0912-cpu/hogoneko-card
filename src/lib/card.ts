@@ -59,6 +59,53 @@ export type CardLayout = {
 
 type Img = CanvasImageSource & { width: number; height: number }
 
+// ── ロゴの描き方（11/6夜 作る人の決定）──
+// ツールはロゴの下に台を敷かない。背景が透明なロゴは、そのまま描く。
+// 背景があるロゴ（透明な所がない画像。白い背景など）は、白を自動で消さず、角を丸くして描く
+const logoClear = new WeakMap<object, boolean>()
+export function logoHasClear(img: Img): boolean {
+  const known = logoClear.get(img)
+  if (known !== undefined) return known
+  let clear = false
+  try {
+    const c = document.createElement('canvas')
+    c.width = 48
+    c.height = 48
+    const x = c.getContext('2d', { willReadFrequently: true })
+    if (x) {
+      x.drawImage(img, 0, 0, 48, 48)
+      const d = x.getImageData(0, 0, 48, 48).data
+      for (let i = 3; i < d.length; i += 4)
+        if (d[i] < 250) {
+          clear = true
+          break
+        }
+    }
+  } catch {
+    clear = false // 調べられないときは、背景があるとみなして角を丸くする
+  }
+  logoClear.set(img, clear)
+  return clear
+}
+export function drawLogo(ctx: CanvasRenderingContext2D, img: Img, x: number, y: number, w: number, h: number) {
+  if (logoHasClear(img)) {
+    ctx.drawImage(img, x, y, w, h)
+    return
+  }
+  const r = Math.min(w, h) * 0.16 // 角の丸さ ⚙
+  ctx.save()
+  ctx.beginPath()
+  ctx.moveTo(x + r, y)
+  ctx.arcTo(x + w, y, x + w, y + h, r)
+  ctx.arcTo(x + w, y + h, x, y + h, r)
+  ctx.arcTo(x, y + h, x, y, r)
+  ctx.arcTo(x, y, x + w, y, r)
+  ctx.closePath()
+  ctx.clip()
+  ctx.drawImage(img, x, y, w, h)
+  ctx.restore()
+}
+
 // 日本語を、幅に収まるように折り返す（「、」「。」などで行を始めない）
 const NO_START = '、。，．,.）」』】〕！？!?ーぁぃぅぇぉっゃゅょァィゥェォッャュョ・'
 // 言葉のまとまりに分ける（issue #10：「教えてく／れる」のように言葉の途中で折らないため）
@@ -706,7 +753,7 @@ function planMark(ctx: CanvasRenderingContext2D, logo: Img | null, org: string, 
 }
 function drawMark(ctx: CanvasRenderingContext2D, m: Mark, y: number, color: string, shadow: boolean): number {
   if (m.kind === 'logo' && m.logo && m.w) {
-    ctx.drawImage(m.logo, CARD_W / 2 - m.w / 2, y, m.w, m.h)
+    drawLogo(ctx, m.logo, CARD_W / 2 - m.w / 2, y, m.w, m.h)
     return m.w
   }
   if (m.kind === 'org' && m.lines && m.size) {
@@ -863,10 +910,10 @@ function drawRows(ctx: CanvasRenderingContext2D, rows: TextRow[], top: number, d
   for (const r of rows) {
     y += r.gap
     if (r.logo) {
-      // ロゴは白い背景も含めて、そのまま描く（切り抜かない。影も付けない）
+      // ロゴは台を敷かずに描く。透明なロゴはそのまま、背景があるロゴは白を消さずに角を丸く（drawLogo）。影は付けない
       ctx.save()
       ctx.shadowColor = 'transparent'
-      ctx.drawImage(r.logo.img, center ? CARD_W / 2 - r.logo.w / 2 : SAFE.left, y, r.logo.w, r.logo.h)
+      drawLogo(ctx, r.logo.img, center ? CARD_W / 2 - r.logo.w / 2 : SAFE.left, y, r.logo.w, r.logo.h)
       ctx.restore()
       widest = Math.max(widest, r.logo.w)
       y += r.logo.h

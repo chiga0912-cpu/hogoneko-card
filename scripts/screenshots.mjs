@@ -1482,6 +1482,31 @@ console.log('表示:', await page.locator('.status-line').innerText())
         }
       }
       out.bands = ['#e8826b', '#5a9e6f', '#f5d547', '#ffffff', '#ffe4ec'].map((t) => m.bandColors(t))
+      // ロゴ（11/6夜 作者の決定）：ツールは台を敷かない。透明なロゴはそのまま、背景があるロゴは白を消さずに角を丸く
+      const clearLogo = cv()
+      clearLogo.width = 400
+      clearLogo.height = 400
+      const cx = clearLogo.getContext('2d')
+      cx.fillStyle = 'rgb(255,0,255)'
+      cx.beginPath()
+      cx.arc(200, 200, 120, 0, Math.PI * 2)
+      cx.fill()
+      const whiteLogo = pic(400, 400, '#ffffff')
+      const wx = whiteLogo.getContext('2d')
+      wx.fillStyle = 'rgb(255,0,255)'
+      wx.beginPath()
+      wx.arc(200, 200, 120, 0, Math.PI * 2)
+      wx.fill()
+      const px = (c, x, y) => [...c.getContext('2d').getImageData(x, y, 1, 1).data].slice(0, 3).join(',')
+      const band = m.bandColors('#e8826b').band
+      const bandRgb = [1, 3, 5].map((i) => parseInt(band.slice(i, i + 2), 16)).join(',')
+      out.logo = { clear: m.logoHasClear(clearLogo), white: m.logoHasClear(whiteLogo), band: bandRgb }
+      for (const [k, logo] of [['透明', clearLogo], ['白い背景', whiteLogo]]) {
+        // 横の写真の最後の1枚（譲渡会なし）：ロゴは上の帯の真ん中、220から高さ200
+        const c = cv()
+        m.drawEndCard(c.getContext('2d'), { logo, shelterName: '（架空）テスト保護猫の会', contact: '', event: null, theme: '#e8826b', photo: wide })
+        out.logo[k] = { corner: px(c, 441, 221), edge: px(c, 442, 320), center: px(c, 540, 320) }
+      }
       return out
     } catch (e) {
       // 本番と同じ作りでは、部品を直接読めない（そのときだけ飛ばす。ほかのまちがいは確認NGにする）
@@ -1513,8 +1538,38 @@ console.log('表示:', await page.locator('.status-line').innerText())
     check(ends.every((c) => c.contact >= 36), `最後の1枚：譲渡会ありでも、連絡先はスマホで読める大きさ（36px＝スマホで約13px以上。最小 ${Math.min(...ends.map((c) => c.contact))}px）`)
     check(r.cards.filter((c) => c.kind === 'ひとこと').every((c) => c.logo === 0 && c.lines === 3 && c.sec === 5), 'ひとこと：改行どおり3行、5秒（ロゴは入れない）')
     check(r.orphan.every((o) => o.ok), `団体名の最後の1文字だけが、次の行に落ちない（${r.orphan.filter((o) => !o.ok).map((o) => o.px + 'px・' + o.n + '字').join('、') || 'すべてOK'}）`)
+    check(r.logo.clear && !r.logo.white, 'ロゴの背景が透明か、背景があるかを見分ける')
+    check(r.logo['透明'].corner === r.logo.band && r.logo['透明'].edge === r.logo.band && r.logo['透明'].center === '255,0,255', `透明なロゴは、台を敷かずにそのまま出る（ロゴの四角の角・端が帯の色 ${r.logo['透明'].corner}／${r.logo['透明'].edge}）`)
+    check(r.logo['白い背景'].corner === r.logo.band && r.logo['白い背景'].edge === '255,255,255' && r.logo['白い背景'].center === '255,0,255', `白い背景のロゴは、白を消さずに角を丸くする（角 ${r.logo['白い背景'].corner}・端 ${r.logo['白い背景'].edge}）`)
     check(r.bands.every((b) => b.color === '#ffffff' && b.contrast >= 4.5), `帯の文字はいつも白。明るいテーマ色でも、帯を濃くして見やすさ4.5以上（${r.bands.map((b) => b.band + ' ' + Math.round(b.contrast * 10) / 10).join('・')}）`)
   }
+  await ctx.close()
+}
+
+// シェルター情報のロゴの欄（11/6夜 作者の決定）：「背景が透明なロゴだと、きれいに出ます」。試し用では確認用の仮のロゴ（透明・透明で暗い色・白い背景）を入れられる
+{
+  const ctx = await browser.newContext({ ...phone })
+  const p = await ctx.newPage()
+  await p.goto(url + '/?sizes=1')
+  await p.getByText('はじめに').waitFor()
+  await p.getByRole('button', { name: '追加せずに、このまま使う' }).click()
+  check(await p.getByText('背景が透明なロゴだと、きれいに出ます').isVisible(), 'ロゴの欄に「背景が透明なロゴだと、きれいに出ます」と出る')
+  const testMode = (await p.locator('[data-test-logos]').count()) === 1
+  if (testMode) {
+    await p.locator('[data-test-logos]').getByRole('button', { name: '透明', exact: true }).click()
+    await p.locator('.logo-thumb').waitFor({ timeout: 5000 }).catch(() => {})
+    const a = await p.locator('.logo-thumb').evaluate(async (img) => {
+      await img.decode()
+      const c = document.createElement('canvas')
+      c.width = img.naturalWidth
+      c.height = img.naturalHeight
+      const x = c.getContext('2d')
+      x.drawImage(img, 0, 0)
+      return [x.getImageData(0, 0, 1, 1).data[3], x.getImageData(200, 250, 1, 1).data[3]]
+    })
+    check(a[0] === 0 && a[1] === 255, `確認用の仮のロゴ（透明）を入れられる（角は透明・まん中は色。${a.join('/')}）`)
+    await p.screenshot({ path: join(outDir, '1c_シェルター_仮のロゴ.png'), fullPage: true })
+  } else check(true, '本番と同じ作りでは、確認用の仮のロゴのボタンは出ない')
   await ctx.close()
 }
 

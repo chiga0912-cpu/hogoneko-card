@@ -102,6 +102,7 @@ export default function ShelterForm({ initial, first, needName = false, onSave, 
 
       <div className="field">
         <span>ロゴ</span>
+        <p className="muted" data-logo-hint>背景が透明なロゴだと、きれいに出ます</p>
         {logoFailed && <p className="alert">ロゴを読み込めませんでした。もう一度選んでください。</p>}
         <div className="logo-row">
           {logoUrl && <img className="logo-thumb" src={logoUrl} alt="ロゴ" />}
@@ -123,6 +124,22 @@ export default function ShelterForm({ initial, first, needName = false, onSave, 
             </button>
           )}
         </div>
+        {/* 確認用（試し用のアドレスだけ。本番では出さない）：プログラムで描いた仮のロゴを入れて、カードでの見え方を確かめる */}
+        {import.meta.env.VITE_SHOW_CHECK === '1' && (
+          <div className="logo-row" data-test-logos>
+            <span className="muted">確認用の仮のロゴ：</span>
+            {TEST_LOGOS.map(([kind, label]) => (
+              <button
+                key={kind}
+                type="button"
+                className="btn btn-small btn-ghost"
+                onClick={() => void testLogo(kind).then((b) => b && set('logo', b))}
+              >
+                {label}
+              </button>
+            ))}
+          </div>
+        )}
       </div>
 
       <label className="field">
@@ -208,4 +225,41 @@ export function TopBar({ title, onBack }: { title: string; onBack: () => void })
       <h2>{title}</h2>
     </div>
   )
+}
+
+// 確認用の仮のロゴ（プログラムで描く。画像のファイルはリポジトリに入れない）
+// 透明：背景が透明な、色のついたロゴ／透明で暗い色：暗い写真や帯で見えにくくならないかを見る／白い背景：角が丸くなるかを見る
+type TestLogo = 'clear' | 'dark' | 'white'
+const TEST_LOGOS: [TestLogo, string][] = [
+  ['clear', '透明'],
+  ['dark', '透明で暗い色'],
+  ['white', '白い背景'],
+]
+function testLogo(kind: TestLogo): Promise<Blob | null> {
+  const c = document.createElement('canvas')
+  c.width = 400
+  c.height = 400
+  const x = c.getContext('2d')
+  if (!x) return Promise.resolve(null)
+  if (kind === 'white') {
+    x.fillStyle = '#ffffff'
+    x.fillRect(0, 0, 400, 400)
+  }
+  const color = kind === 'dark' ? '#2b2420' : '#7a5c9e'
+  // 丸と、肉球のような小さな丸4つ（どこにもない形。仮のもの）
+  x.fillStyle = color
+  x.beginPath()
+  x.ellipse(200, 250, 95, 80, 0, 0, Math.PI * 2)
+  x.fill()
+  for (const [cx, cy] of [[95, 150], [160, 95], [240, 95], [305, 150]]) {
+    x.beginPath()
+    x.ellipse(cx, cy, 40, 48, 0, 0, Math.PI * 2)
+    x.fill()
+  }
+  x.fillStyle = '#ffffff'
+  x.font = 'bold 56px sans-serif'
+  x.textAlign = 'center'
+  x.textBaseline = 'middle'
+  x.fillText('仮', 200, 255)
+  return new Promise((ok) => c.toBlob((b) => ok(b), 'image/png'))
 }
