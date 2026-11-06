@@ -313,12 +313,13 @@ export default function App() {
     go('cat')
   }
 
-  const discardDraft = async () => {
+  // keepAsk：名簿の子を開くときは、聞き返しの下書きを消さない（下書きはメモで見分けるので、同じ子を開き直せば続きが出る。見直しの4）
+  const discardDraft = async (keepAsk = false) => {
     window.clearTimeout(timer.current)
     latest.current = null
     setHasDraft(false)
     setDraftUnreadable(false)
-    saveAsk(null) // 聞き返しの下書きも消す（#18）
+    if (!keepAsk) saveAsk(null) // 聞き返しの下書きも消す（#18）
     await db.clearDraft()
   }
 
@@ -334,7 +335,7 @@ export default function App() {
       return
     }
     setPickError(false)
-    await discardDraft()
+    await discardDraft(true)
     setCat(full)
     setOpenedAs(full)
     setFromRoster(true)

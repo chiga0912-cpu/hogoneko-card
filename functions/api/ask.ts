@@ -73,7 +73,10 @@ export const onRequestPost = async ({ request, env }: Ctx): Promise<Response> =>
     const body = (await request.json()) as { memo?: unknown; testQuestion?: unknown }
     memo = typeof body.memo === 'string' ? body.memo : ''
     // 手元で確かめるときだけ（ASK_TEST=1）：決めた質問を、確かめる係だけに通す。公開のサーバーでは使えない
-    if (env.ASK_TEST === '1' && typeof body.testQuestion === 'string') testQuestion = body.testQuestion
+    if (env.ASK_TEST === '1' && typeof body.testQuestion === 'string') {
+      testQuestion = body.testQuestion.trim()
+      if (!questionOk(testQuestion)) return json({ question: null, skipped: 'bad-format' }, 200) // 決めた質問も形を確かめる（見直しの7）
+    }
   } catch {
     return json({ error: 'bad-request' }, 400)
   }

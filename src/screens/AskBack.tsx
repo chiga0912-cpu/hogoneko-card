@@ -23,7 +23,14 @@ export default function AskBack({ ask, onEdit, onAdd, onSkip }: Props) {
       </p>
       <label className="field">
         <span>預かりさんへ送るLINEの文（送る前に、自由に直せます）</span>
-        <textarea rows={4} value={ask.line} onChange={(e) => onEdit({ ...ask, line: e.target.value })} />
+        <textarea
+          rows={4}
+          value={ask.line}
+          onChange={(e) => {
+            setCopied(null) // 直したら、もう一度コピーしてもらう（見直しの8）
+            onEdit({ ...ask, line: e.target.value })
+          }}
+        />
       </label>
       <button
         type="button"

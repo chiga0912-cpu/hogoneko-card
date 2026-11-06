@@ -61,7 +61,7 @@ const setup = async (askAnswer) => {
   return { ctx, p, sent }
 }
 const Q = { question: 'ひざに乗ってくることはありますか？', skipped: null }
-const MEMO = '（架空）ミケです。とてもいい子です。よろしくお願いします。'
+const MEMO = '（架空）ミケです。とてもいい子です。よろしくお願いします。連絡は 090-0000-0000 か test@example.com へ。'
 const panel = (p) => p.locator('[data-ask]')
 const readNow = async (p) => {
   await p.getByRole('button', { name: 'メッセージから読み取る' }).click()
@@ -76,12 +76,16 @@ const readNow = async (p) => {
   ok(await panel(p).isVisible(), 'メモが抽象的で質問が出たら、聞き返しの欄が出る')
   const line = p.getByLabel('預かりさんへ送るLINEの文（送る前に、自由に直せます）')
   ok((await line.inputValue()) === 'ミケちゃんの紹介を書いています。ひざに乗ってくることはありますか？ よかったら教えてください。', `LINEの文に、読み取った名前と質問が入る（${await line.inputValue()}）`)
-  ok(sent.ask.length === 1 && !sent.ask[0].includes('090'), '読み取りのあとに、聞き返しが要るかを1回だけ聞く')
+  ok(sent.ask.length === 1, '読み取りのあとに、聞き返しが要るかを1回だけ聞く')
+  ok(!sent.ask[0].includes('090-0000-0000') && !sent.ask[0].includes('test@example.com') && sent.ask[0].includes('［電話番号］'), '聞き返しの窓口にも、電話番号・メールを伏せて送る（見直しの5）')
   await line.fill('ミケちゃんのことで1つだけ。ひざに乗ってくることはありますか？')
   await p.getByRole('button', { name: 'LINEの文をコピー' }).click()
   await p.waitForTimeout(200)
   ok((await p.evaluate(() => window.__copied)) === 'ミケちゃんのことで1つだけ。ひざに乗ってくることはありますか？', '［LINEの文をコピー］で、直した文をそのままコピーする')
   ok(await p.getByRole('button', { name: 'コピーしました ✓' }).isVisible(), 'コピーしたら「コピーしました ✓」と出る')
+  await line.fill('ミケちゃんのことで1つだけ。ひざに乗ってくることはありますか？ ')
+  ok(await p.getByRole('button', { name: 'LINEの文をコピー' }).isVisible(), 'コピーしたあとでLINEの文を直したら、ボタンは［LINEの文をコピー］に戻る（見直しの8）')
+  await line.fill('ミケちゃんのことで1つだけ。ひざに乗ってくることはありますか？')
   const reply = p.getByLabel('預かりさんの返事（貼るか、書いてください。キーボードのマイクで話してもOK）')
   await reply.fill('（架空）よくひざに乗ってきます')
   await p.screenshot({ path: join(outDir, '4a_聞き返し.png'), fullPage: true })
@@ -91,7 +95,7 @@ const readNow = async (p) => {
   await p.getByLabel('預かりさんからのメッセージ・メモ').waitFor()
   ok(await panel(p).isVisible(), '返事を待つ間も、聞き返しの欄が残る（読み込み直しても消えない）')
   ok((await line.inputValue()) === 'ミケちゃんのことで1つだけ。ひざに乗ってくることはありますか？' && (await reply.inputValue()) === '（架空）よくひざに乗ってきます', '直したLINEの文と、貼りかけの返事も残る')
-  const replyText = '（架空）よくひざに乗ってきます。\n夜は  少しさみしがりです🐾'
+  const replyText = '（架空）よくひざに乗ってきます。\n夜は  少しさみしがりです🐾 電話は 090-0000-0000 です'
   await reply.fill(replyText)
   const readsBefore = sent.read.length
   await p.getByRole('button', { name: '返事をメモに足す' }).click()
@@ -101,6 +105,7 @@ const readNow = async (p) => {
   ok(added === `${REPLY_LABEL}\n${replyText}`, `返事は書き換えずに、「（預かりさんの返事）」としてメモの最後に足す（${JSON.stringify(added)}）`)
   ok((await p.getByLabel('預かりさんからのメッセージ・メモ').inputValue()) === MEMO, '元のメモの欄は変えない')
   ok(sent.read.length === readsBefore + 1 && sent.read.at(-1).includes(`${REPLY_LABEL}\n（架空）よくひざに乗ってきます。`), '返事を足したら、元のメモ＋返事で読み取り直す')
+  ok(!sent.read.at(-1).includes('090-0000-0000'), '読み取り直すときも、返事の中の電話番号を伏せて送る（見直しの5）')
   ok(sent.ask.length === 1, '返事を足したあとは、もう聞き返さない')
   await p.screenshot({ path: join(outDir, '4b_聞き返し_返事を足した.png'), fullPage: true })
   await p.reload()
@@ -108,6 +113,11 @@ const readNow = async (p) => {
   ok((await p.locator('[data-memo-additions] pre').textContent().catch(() => null)) === `${REPLY_LABEL}\n${replyText}`, '足した返事は、入力の途中として残る（読み込み直しても消えない）')
   await readNow(p)
   ok(sent.ask.length === 1 && !(await panel(p).isVisible()), '返事を足したあとで読み取り直しても、聞き返しは出ない')
+  // 足した返事を外せる（見直しの1）
+  await p.getByRole('button', { name: '足した返事を外す' }).click()
+  ok((await p.locator('[data-memo-additions]').count()) === 0, '［足した返事を外す］で、足した返事を外せる')
+  await readNow(p)
+  ok(!sent.read.at(-1).includes(REPLY_LABEL), '外したあとは、返事を使わずに読み取る')
   await ctx.close()
 }
 
@@ -134,6 +144,18 @@ const readNow = async (p) => {
   await p.getByRole('button', { name: '消して新しく始める' }).click({ timeout: 3000 }).catch(() => {})
   await p.getByLabel('預かりさんからのメッセージ・メモ').waitFor()
   ok((await p.evaluate(() => localStorage.getItem('hogoneko-ask'))) === null && !(await panel(p).isVisible()), '入力の途中を消して新しく始めたら、聞き返しの下書きも消える')
+  await ctx.close()
+}
+
+// 2b. 一時的な失敗（AIの返事が崩れた）なら、次に読み取ったときにもう一度考える（見直しの2）
+{
+  let n = 0
+  const { ctx, p, sent } = await setup(() => (++n === 1 ? { question: null, skipped: 'ask-failed' } : Q))
+  await p.getByLabel('預かりさんからのメッセージ・メモ').fill(MEMO)
+  await readNow(p)
+  ok(!(await panel(p).isVisible()), '質問を作るのに失敗したときは、欄を出さない')
+  await readNow(p)
+  ok(sent.ask.length === 2 && (await panel(p).isVisible()), '一時的な失敗のあとは、次に読み取ったときにもう一度考える')
   await ctx.close()
 }
 

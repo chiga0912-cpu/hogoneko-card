@@ -37,7 +37,9 @@ export default function ReadMemo({ cat, onChange }: Props) {
       const ans = await callClaude<AskResponse>('/api/ask', { memo: masked })
       if (!ans.ok) return
       const q = typeof ans.body.question === 'string' ? ans.body.question : null
-      setAsk(q ? { memo: memoKey, line: askLine(name, q), reply: '', status: 'open' } : { memo: memoKey, line: '', reply: '', status: 'none' })
+      if (q) setAsk({ memo: memoKey, line: askLine(name, q), reply: '', status: 'open' })
+      // 「要らない」「メモにない事実が入った」ときだけ、このメモではもう聞かない。一時的な失敗なら、次に読み取ったときにもう一度考える（見直しの2）
+      else if (ans.body.skipped === 'not-needed' || ans.body.skipped === 'unsupported') setAsk({ memo: memoKey, line: '', reply: '', status: 'none' })
     } finally {
       setAsking(false)
     }

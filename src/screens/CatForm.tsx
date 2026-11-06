@@ -194,6 +194,11 @@ export default function CatForm({ cat, fromRoster, onChange, onBack, onNext, aut
         <div className="notice memo-additions" data-memo-additions>
           <p className="muted">メモの最後に、預かりさんの返事を足しました（書き換えていません）。読み取りと投稿文づくりに使います。</p>
           <pre className="line-preview">{cat.memoAdditions}</pre>
+          {/* まちがえて貼ったとき・メッセージを新しくしたときに外せるように（見直しの1） */}
+          <p className="muted">ちがう返事を足したときや、メッセージを新しく貼り直したときは、外してください。</p>
+          <button type="button" className="btn btn-small btn-ghost" onClick={() => onChange((c) => ({ ...c, memoAdditions: '' }))}>
+            足した返事を外す
+          </button>
         </div>
       )}
       {cleaned.isHistory && (
