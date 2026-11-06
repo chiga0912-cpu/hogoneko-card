@@ -1,3 +1,4 @@
+import { callClaude, limitText } from '../lib/claude'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { MAX_HASHTAGS, type AdoptionEvent, type Cat, type Shelter } from '../types'
 import { countHashtags } from '../lib/hashtags'
@@ -16,6 +17,11 @@ import {
 } from '../lib/card'
 import * as db from '../db'
 import { nextEvent } from '../lib/events'
+import WriteStory from './WriteStory'
+import StoryCheck, { openFlags, type CheckState } from './StoryCheck'
+import { removeSentence, storySentences, type StoryDraft, type Verdict } from '../lib/story'
+import { makeFixedPost } from '../lib/post'
+import { askConfirm } from '../lib/confirm'
 import { loadBandPattern } from '../lib/band'
 import { cardProfile } from '../lib/age'
 import { clipTimeFor, photoIndex, type CardKey } from '../lib/photoPlan'
@@ -131,10 +137,45 @@ type Props = {
   onBack: () => void
   onSave: (event: AdoptionEvent | null, words: string | null) => Promise<void>
   restoreNotice?: string | null
+  story?: StoryDraft | null // Claudeが書いた本文と根拠の確認の結果（#17。入力の途中に残る）
+  onStoryChange?: (s: StoryDraft | null | ((cur: StoryDraft | null) => StoryDraft | null)) => void
+  onStoryPost?: (p: string) => void // Claudeの本文で作った投稿文（手で直したことにしない。見直しの中9）
 }
 
 // 確認（仮）。カードと根拠の印は11/5〜11/6に作る。今は決まった形の投稿文だけ
-export default function Preview({ shelter, cat, onCatChange, post, onPostChange, onBack, onSave, restoreNotice }: Props) {
+export default function Preview({ shelter, cat, onCatChange, post, onPostChange, onBack, onSave, restoreNotice, story = null, onStoryChange = () => {}, onStoryPost }: Props) {
+  // ── 根拠の確認（#17。SPEC 2.4・4.2）──
+  // 本文を書いたら続けて確かめる。確かめている途中・失敗はこの画面の中だけ（入力の途中には、確認が終わったものだけ残す）
+  const [checking, setChecking] = useState<'idle' | 'checking' | 'failed'>('idle')
+  const [checkLimit, setCheckLimit] = useState<string | null>(null) // 回数の上限の文（#20）
+  const latestStory = useRef(story)
+  latestStory.current = story
+  const runCheck = async (s: StoryDraft) => {
+    setChecking('checking')
+    setCheckLimit(null)
+    const sentences = storySentences(s.result.body)
+    try {
+      const ans = await callClaude<{ results?: Verdict[] }>('/api/check', { memo: s.result.memoChunks.join('\n'), facts: { name: cat.name, goodPoints: cat.goodPoints }, sentences })
+      if (!ans.ok && latestStory.current?.result.body === s.result.body) setCheckLimit(limitText(ans.error))
+      if (!ans.ok || !Array.isArray(ans.body.results) || ans.body.results.length !== sentences.length) throw new Error('check')
+      const results = ans.body.results
+      // 今の本文（入力の途中にある、画面の外の値）が、確かめた本文と同じで、まだ確かめていないときだけ入れる。
+      // 確かめている間に本文が替わった・別の子になった・すでに結果がある（「残す」を選んだあと）なら、古い結果は使わない（見直しの重い1）
+      onStoryChange((cur) => (cur && cur.result.body === s.result.body && cur.check === null ? { ...cur, check: { sentences, verdicts: results, kept: [] } } : cur))
+      if (latestStory.current?.result.body === s.result.body) setChecking('idle')
+    } catch {
+      if (latestStory.current?.result.body === s.result.body) setChecking('failed')
+    }
+  }
+  // 本文が投稿文に残っているか（手で全部消したり、作り直したりしたら、確認はもう要らない）
+  // 本文がある間は、確認が終わり、印の文をすべて人が片づけるまで押せない（SPEC 2.4）。
+  // 印の文を手で直して文字が変わっても、印は消えない（［本当です（残す）］か、本文を外すまで。見直しの重い3・4。作者に聞くまでの安全な形）
+  const storyInPost = !!story
+  const checkState: CheckState =
+    checking === 'checking' ? { status: 'checking' } : story?.check ? { status: 'done', ...story.check } : { status: 'failed', limit: checkLimit }
+  const flags = storyInPost ? openFlags(checkState, post) : []
+  const storyBlocked = storyInPost && (checkState.status !== 'done' || flags.length > 0)
+
   const [full, setFull] = useState<'cover' | 'cat' | 'words' | 'end' | null>(null)
   const [layout, setLayout] = useState<CardLayout | null>(null)
   const [event, setEvent] = useState<AdoptionEvent | null>(null)
@@ -463,18 +504,70 @@ export default function Preview({ shelter, cat, onCatChange, post, onPostChange,
         </p>
       )}
 
+      {/* 物語の本文（#16。読み取りの作業場所だけ） */}
+      <WriteStory
+        cat={cat}
+        shelter={shelter}
+        post={post}
+        onPost={(p, result) => {
+          ;(onStoryPost ?? onPostChange)(p)
+          const s = { result, check: null }
+          onStoryChange(s)
+          void runCheck(s)
+        }}
+      />
+      {story && storyInPost && (
+        <StoryCheck
+          story={story.result}
+          check={checkState}
+          name={cat.name}
+          post={post}
+          onKeep={(i) => story.check && onStoryChange({ ...story, check: { ...story.check, kept: [...story.check.kept, i] } })}
+          onRemove={(i, s) => {
+            onPostChange(removeSentence(post, s))
+            if (story.check) onStoryChange({ ...story, check: { ...story.check, removed: [...(story.check.removed ?? []), i] } })
+          }}
+          onRetry={() => void runCheck(story)}
+          onDropStory={async () => {
+            // 手で書き足していたら、黙って消さない（見直しの重い7）
+            const generated = makeFixedPost(cat, shelter, new Date(), story.result.body)
+            if (post !== generated && !(await askConfirm('投稿文を手で直しています。直した文も消えて、決まった形の投稿文に戻ります。戻しますか？', { yes: '戻す' }))) return
+            onPostChange(makeFixedPost(cat, shelter))
+            onStoryChange(null)
+            setChecking('idle')
+          }}
+        />
+      )}
+
       <label className="field">
         <span>投稿文（その場で直せます）</span>
         <textarea rows={14} value={post} onChange={(e) => onPostChange(e.target.value)} />
-        <small className="muted">入れた項目を決まった形に並べた文章です。AIで整えるのは次の段階です</small>
+        <small className="muted">本文はClaudeが書き、年齢・健康・連絡先・ハッシュタグはプログラムが決まった形で足します。投稿する前に、必ず読んで確かめてください</small>
       </label>
 
       <div className="bottom-bar">
         {/* 押した場所のすぐ上に出す（スクロールしなくても見えるように） */}
         {saveFailed && <p className="alert bar-alert">名簿に保存できませんでした。もう一度押してください。</p>}
+        {/* 印の文をすべて確かめるまで、［動画を作る］は押せない（SPEC 2.4） */}
+        {storyBlocked && (
+          <p className="alert bar-alert" data-story-blocked="1">
+            {checkState.status === 'checking'
+              ? '本文の根拠を確かめています…'
+              : checkState.status === 'failed'
+                ? checkLimit
+                  ? '回数の上限で、本文の根拠を確かめられません。上の［本文を外して、決まった形に戻す］を押すと、動画を作れます。'
+                  : '本文の根拠を確かめられませんでした。上の［もう一度確かめる］を押してください。'
+                : `印の文があと${flags.length}つあります。`}
+            {flags.length > 0 && (
+              <button className="btn btn-small" onClick={() => document.getElementById(`story-line-${flags[0]}`)?.scrollIntoView({ behavior: 'smooth', block: 'center' })}>
+                次の印の文へ
+              </button>
+            )}
+          </p>
+        )}
         <button
           className="btn btn-primary btn-big"
-          disabled={saving || tooMany || !eventsRead}
+          disabled={saving || tooMany || !eventsRead || storyBlocked}
           onClick={async () => {
             setSaving(true)
             setSaveFailed(false)

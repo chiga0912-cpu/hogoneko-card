@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useMemo, useState } from 'react'
 import {
   AGE_STAGES,
   MAX_PHOTOS,
@@ -16,6 +16,8 @@ import { ageText, fromMonthValue, jpDate, toMonthValue, todayString } from '../l
 import { useBlobUrls } from '../lib/useBlobUrls'
 import { TopBar } from './ShelterForm'
 import ClipPicker from './ClipPicker'
+import ReadMemo, { FromMemo } from './ReadMemo'
+import { cleanLine } from '../lib/lineText'
 
 type Props = {
   cat: Cat
@@ -45,8 +47,16 @@ const sizeText = (z: ShrinkInfo) =>
 export default function CatForm({ cat, fromRoster, onChange, onBack, onNext, autosaveFailed, clipLost, photosStale }: Props) {
   const [showErrors, setShowErrors] = useState(false)
   const [photoNote, setPhotoNote] = useState('')
-  const set = <K extends keyof Cat>(key: K, value: Cat[K]) => onChange((c) => ({ ...c, [key]: value }))
+  // 手で直した項目は「メモから」の印を外す（もうメモから読み取ったままではないため）
+  const unmark = (c: Cat, key: string) => {
+    if (!(key in c.sources)) return c.sources
+    const { [key as keyof Cat['sources']]: _drop, ...rest } = c.sources
+    return rest
+  }
+  const set = <K extends keyof Cat>(key: K, value: Cat[K]) => onChange((c) => ({ ...c, [key]: value, sources: unmark(c, key) }))
   const photoUrls = useBlobUrls(cat.photos)
+  // LINEのトーク履歴の形が貼られたら、送る前に時刻・名前などを外した文章を見せる（貼った文章は変えない）
+  const cleaned = useMemo(() => cleanLine(cat.memo), [cat.memo])
 
   const addPhotos = async (files: FileList | null) => {
     if (!files) return
@@ -76,13 +86,14 @@ export default function CatForm({ cat, fromRoster, onChange, onBack, onNext, aut
   const makeCover = (i: number) =>
     onChange((c) => ({ ...c, photos: [c.photos[i], ...c.photos.filter((_, j) => j !== i)] }))
 
-  const setAge = (patch: Partial<Age>) => onChange((c) => ({ ...c, age: { ...c.age, ...patch } }))
+  const setAge = (patch: Partial<Age>) => onChange((c) => ({ ...c, age: { ...c.age, ...patch }, sources: unmark(c, 'age') }))
 
   // 健康の値を直したら、確認した日を今日にする（「載せる」を変えただけのときは変えない）
   const setHealth = (key: HealthKey, h: Health<string>) =>
     onChange((c) => ({
       ...c,
       [key]: h,
+      sources: c[key].value !== h.value ? unmark(c, key) : c.sources,
       healthCheckedAt: c[key].value !== h.value ? todayString() : c.healthCheckedAt,
     }))
 
@@ -176,26 +187,33 @@ export default function CatForm({ cat, fromRoster, onChange, onBack, onNext, aut
           value={cat.memo}
           onChange={(e) => set('memo', e.target.value)}
         />
-        <small className="muted">🎤 キーボードのマイクで話して入れてもOK</small>
+        <small className="muted">🎤 キーボードのマイクで話して入れてもOK。何通かあれば、続けて貼ってください</small>
       </label>
+      {cleaned.isHistory && (
+        <div className="notice line-notice" data-removed={cleaned.removed}>
+          LINEのトーク履歴の形でした。読み取るときは、時刻・名前・スタンプなど{cleaned.removed}行を外した文章を使います（欄の文章はそのままです）。
+          <details>
+            <summary>使う文章を見る</summary>
+            <pre className="line-preview">{cleaned.text}</pre>
+          </details>
+        </div>
+      )}
 
-      {/* 3. 読み取り（Claudeを入れるまでは押せない） */}
-      <button className="btn btn-big" disabled>
-        メッセージから読み取る
-        <span className="soon">準備中</span>
-      </button>
-      <p className="muted center">今は、下の項目を手で入れてください</p>
+      {/* 3. 読み取り（Claudeがメモから項目を入れる。入れた項目には「メモから」の印） */}
+      <ReadMemo cat={cat} onChange={onChange} />
 
       {/* 4. 項目 */}
       <label className="field">
         <span>
-          名前 <em className="req">必須</em>
+          名前 <em className="req">必須</em> <FromMemo source={cat.sources.name} />
         </span>
         <input value={cat.name} onChange={(e) => set('name', e.target.value)} />
       </label>
 
       <div className="field">
-        <span>年齢</span>
+        <span>
+          年齢 <FromMemo source={cat.sources.age} />
+        </span>
         <Choices
           label="年齢の入れ方"
           options={['不明', '生まれた年月', 'おおよその年代']}
@@ -238,7 +256,9 @@ export default function CatForm({ cat, fromRoster, onChange, onBack, onNext, aut
       </div>
 
       <div className="field">
-        <span>性別</span>
+        <span>
+          性別 <FromMemo source={cat.sources.sex} />
+        </span>
         <Choices label="性別" options={[...SEXES]} value={cat.sex} onChange={(v) => set('sex', v as Cat['sex'])} />
       </div>
 
@@ -258,25 +278,30 @@ export default function CatForm({ cat, fromRoster, onChange, onBack, onNext, aut
       )}
       <HealthField
         label="ワクチン"
+        source={cat.sources.vaccine}
         options={[...VACCINES]}
         health={cat.vaccine}
         onChange={(h) => setHealth('vaccine', h)}
       />
       <HealthField
         label="不妊・去勢手術"
+        source={cat.sources.neuter}
         options={[...NEUTERS]}
         health={cat.neuter}
         onChange={(h) => setHealth('neuter', h)}
       />
       <HealthField
         label="猫エイズ・白血病の検査"
+        source={cat.sources.virusTest}
         options={[...VIRUS_TESTS]}
         health={cat.virusTest}
         onChange={(h) => setHealth('virusTest', h)}
       />
 
       <label className="field">
-        <span>いいところ</span>
+        <span>
+          いいところ <FromMemo source={cat.sources.goodPoints} />
+        </span>
         <textarea
           rows={4}
           placeholder={'1行に1つ\n例：ひざの上が大好き\n例：ごはんの時間を教えてくれる'}
@@ -286,7 +311,9 @@ export default function CatForm({ cat, fromRoster, onChange, onBack, onNext, aut
       </label>
 
       <label className="field">
-        <span>預かりさん・スタッフさんのひとこと（なくてもOK）</span>
+        <span>
+          預かりさん・スタッフさんのひとこと（なくてもOK） <FromMemo source={cat.sources.carerWords} />
+        </span>
         <textarea rows={3} value={cat.carerWords} onChange={(e) => set('carerWords', e.target.value)} />
         <small className="muted">書いた言葉のまま載せます（書き換えません）</small>
       </label>
@@ -339,16 +366,20 @@ function HealthField({
   options,
   health,
   onChange,
+  source,
 }: {
   label: string
   options: string[]
   health: Health<string>
   onChange: (h: Health<string>) => void
+  source?: string
 }) {
   const unknown = health.value === '未確認'
   return (
     <div className="field health">
-      <span>{label}</span>
+      <span>
+        {label} <FromMemo source={source} />
+      </span>
       <Choices
         label={label}
         options={options}

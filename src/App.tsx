@@ -8,6 +8,7 @@ import { makeCover } from './lib/shrink'
 import { migrateOldCats } from './lib/migrate'
 import { askConfirm, ConfirmHost } from './lib/confirm'
 import { newerVersion } from './lib/update'
+import type { StoryDraft } from './lib/story'
 import InstallGuide, { GUIDE_SKIPPED_KEY } from './screens/InstallGuide'
 import Home from './screens/Home'
 import ShelterForm from './screens/ShelterForm'
@@ -74,6 +75,7 @@ export default function App() {
   const [unreadableCats, setUnreadableCats] = useState(0) // 名簿の中で、読めなかった子の数（消さずに残している）
   const [draftUnreadable, setDraftUnreadable] = useState(false) // 入力の途中が読めなかった
   const [postEdited, setPostEdited] = useState(false) // 投稿文を手で直したか
+  const [story, setStory] = useState<StoryDraft | null>(null) // Claudeが書いた本文と根拠の確認の結果（#17）
   // 入力の途中を残せなかった（文字・写真・動画で分けて持つ。1つが成功しても、ほかの失敗の知らせを消さないため）
   const [saveFail, setSaveFail] = useState({ text: false, photos: false, clip: false })
   const setFail = (k: 'text' | 'photos' | 'clip', v: boolean) => setSaveFail((f) => (f[k] === v ? f : { ...f, [k]: v }))
@@ -187,6 +189,7 @@ export default function App() {
           setFromRoster(saved.draft.fromRoster)
           setPost(saved.draft.post)
           setPostEdited(saved.draft.postEdited)
+          setStory(saved.draft.story ?? null)
           setHasDraft(true)
           open(saved.draft.screen)
           return
@@ -226,12 +229,13 @@ export default function App() {
       screen: screen as 'cat' | 'preview',
       post,
       postEdited,
+      story,
       photosKey: db.photosKeyOf(cat.photos),
       photosRosterIdx: db.photosRosterIdxOf(cat.photos),
     }
     window.clearTimeout(timer.current)
     timer.current = window.setTimeout(flush, 300)
-  }, [cat, fromRoster, screen, post, postEdited, worthKeeping, flush])
+  }, [cat, fromRoster, screen, post, postEdited, story, worthKeeping, flush])
 
   // 写真は大きいので、変わったときだけ書く
   useEffect(() => {
@@ -303,6 +307,7 @@ export default function App() {
     setFromRoster(false)
     setPost('')
     setPostEdited(false)
+    setStory(null)
     go('cat')
   }
 
@@ -332,6 +337,7 @@ export default function App() {
     setFromRoster(true)
     setPost('')
     setPostEdited(false)
+    setStory(null)
     go('cat')
   }
 
@@ -472,7 +478,10 @@ export default function App() {
             if (shelter) {
               const fresh = makeFixedPost(cat, shelter)
               // 手で直した投稿文は、黙って作り直さない（二度書かせないため）
-              if (
+              // Claudeの本文で作った投稿文のまま（手で直していない）なら、本文と確認の結果を残したまま、入力の内容で作り直す（見直しの中9）
+              if (!postEdited && story) {
+                setPost(makeFixedPost(cat, shelter, new Date(), story.result.body))
+              } else if (
                 !postEdited ||
                 post === fresh ||
                 (await askConfirm('投稿文を手で直しています。入力の内容で作り直しますか？\n（作り直すと、直した文は消えます）', {
@@ -482,6 +491,7 @@ export default function App() {
               ) {
                 setPost(fresh)
                 setPostEdited(false)
+                setStory(null) // 投稿文を作り直したので、前の本文の確認の結果は使わない
               }
             }
             go('preview')
@@ -508,6 +518,12 @@ export default function App() {
           onPostChange={(p) => {
             setPost(p)
             setPostEdited(true)
+          }}
+          story={story}
+          onStoryChange={setStory}
+          onStoryPost={(p) => {
+            setPost(p)
+            setPostEdited(false)
           }}
           onBack={() => go('cat')}
           onSave={saveToRoster}

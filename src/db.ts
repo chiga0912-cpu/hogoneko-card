@@ -19,6 +19,7 @@ import {
   type Health,
   type Shelter,
 } from './types'
+import { normalizeStoryDraft, type StoryDraft } from './lib/story'
 
 const DB_NAME = 'hogoneko-card'
 // 保存場所そのものの番号。2で catMedia を足した（中身の移し替えは、ここではしない。下の migrateCat）
@@ -408,6 +409,7 @@ export type Draft = {
   postEdited: boolean // 投稿文を手で直したか（直していたら、作り直す前に聞く）
   photosKey?: string // 写真の組の番号（写真の中身と同じ組かを見分けるため。#44）
   photosRosterIdx?: number[] | null // 写真が全部、名簿から読んだ写真のときの、名簿の何枚目か（並び順のまま）
+  story?: StoryDraft | null // Claudeが書いた本文と、根拠の確認の結果（#17。11/6 作者のOK。前の版はこの項目を読まずに無視する）
 }
 // 入力の途中を読む。読めないときは 'unreadable'（途中は消さない。新しく始めたときに上書きされる）
 // photosMissing：途中の写真がまだ書かれていなかった（文字は書けたが、写真を書く前にページが終わったときなど）
@@ -433,6 +435,7 @@ export const loadDraft = async (): Promise<
     if (raw === undefined) return null
     if (!isObj(raw)) return 'unreadable'
     const rawPhotos = await run<unknown>('drafts', 'readonly', (s) => s.get('photos'))
+    const rawStory = await run<unknown>('drafts', 'readonly', (s) => s.get('story'))
     // 写真は {key, photos} の形（#44 から）。前の版は写真の並びだけ
     const keyed = isObj(rawPhotos) && Array.isArray(rawPhotos.photos)
     const photos = blobs(keyed ? (rawPhotos as Record<string, unknown>).photos : rawPhotos)
@@ -503,6 +506,7 @@ export const loadDraft = async (): Promise<
         screen: oneOf(raw.screen, ['cat', 'preview'] as const, 'cat'),
         post: str(raw.post),
         postEdited: raw.postEdited === true,
+        story: normalizeStoryDraft(rawStory ?? raw.story),
       },
     }
   } catch (e) {
@@ -529,9 +533,13 @@ const clipIdOf = (b: Blob) => {
 }
 
 // 途中の記録には、動画の中身は入れない（大きいので、変わったときだけ saveDraftClip で書く）
-export const saveDraft = (draft: Draft) =>
-  run<void>('drafts', 'readwrite', (s) =>
-    s.put(
+// 本文と根拠の確認の結果（story）は、'main' とは別の 'story' に残す。
+// 前の版の画面が 'main' を書き直しても、確認の結果だけがなくなって、確かめずに押せることがないように（見直しの中8）
+export const saveDraft = ({ story, ...draft }: Draft) =>
+  run<void>('drafts', 'readwrite', (s) => {
+    if (story) s.put(story, 'story')
+    else s.delete('story')
+    return s.put(
       {
         ...draft,
         cat: {
@@ -548,8 +556,8 @@ export const saveDraft = (draft: Draft) =>
         schemaVersion: SCHEMA_VERSION,
       },
       'main',
-    ),
-  )
+    )
+  })
 // 書き込みは、あとから呼ばれたものだけを残す（大きい動画の書き込みが、あとの小さい動画より遅く終わっても上書きしない）
 let clipSeq = 0
 export async function saveDraftClip(clip: Clip | null) {

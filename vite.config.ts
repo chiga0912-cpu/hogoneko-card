@@ -41,6 +41,8 @@ const versionFile = (): Plugin => ({
 // https://vite.dev/config/
 export default defineConfig({
   plugins: [react(), versionFile()],
+  // 手元で読み取り（functions/）を試すとき：npx wrangler pages dev dist --port 8788 を動かし、/api をそこへつなぐ
+  server: { proxy: { '/api': 'http://localhost:8788' } },
   define: {
     'import.meta.env.VITE_SHOW_CHECK': JSON.stringify(showCheck ? '1' : '0'),
     'import.meta.env.VITE_APP_VERSION': JSON.stringify(appVersion),

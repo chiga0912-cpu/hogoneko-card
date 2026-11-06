@@ -1,17 +1,22 @@
 import type { Cat, Shelter } from '../types'
 import { ageText } from './age'
 import { limitHashtags } from './hashtags'
+import { closingLine, tidyEmoji } from './story'
 
 // 決まった形の投稿文（AIを使わない）。SPEC 4.4
-// 物語の本文は、Claudeを入れるまでは人が書く
-export function makeFixedPost(cat: Cat, shelter: Shelter, today = new Date()): string {
+// story：Claudeが書いた物語の本文（#16）。あるときは「いいところ」の箇条書きの代わりに入れる（本文がいいところを元に書くため）
+// ないとき（Claudeが使えない・使わない）は、今までどおり決まった形だけ（SPEC 4.4）
+export function makeFixedPost(cat: Cat, shelter: Shelter, today = new Date(), story?: string): string {
   const blocks: string[][] = []
 
   const profile = [ageText(cat.age, today), cat.sex !== '未確認' ? cat.sex : ''].filter(Boolean).join('・')
   blocks.push([`【${cat.name.trim()}】`, ...(profile ? [profile] : [])])
 
   const points = cat.goodPoints.map((p) => p.trim()).filter(Boolean)
-  if (points.length) blocks.push(points.map((p) => `・${p}`))
+  const body = story ? tidyEmoji(story) : ''
+  // 本文のあとに決まった文を足す（Claudeには書かせない。根拠の確認の対象にしない。人が消したり直したりできる。SPEC 4.2）
+  if (body) blocks.push([...body.split('\n').map((l) => l.trim()).filter(Boolean), closingLine(cat.name, cat.id)])
+  else if (points.length) blocks.push(points.map((p) => `・${p}`))
 
   if (cat.carerWords.trim()) blocks.push(['＜ひとこと＞', `「${cat.carerWords}」`])
 
