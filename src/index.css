@@ -924,3 +924,14 @@ input[type='color'] {
 .story-memo mark { background: none; color: inherit; }
 .story-memo mark.story-lit { background: #ffe58a; border-radius: 4px; padding: 0 2px; }
 .bar-alert .btn { margin-left: 8px; }
+
+/* 聞き返し（#18） */
+.ask-back .field {
+  margin-top: 10px;
+}
+.ask-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 10px;
+}

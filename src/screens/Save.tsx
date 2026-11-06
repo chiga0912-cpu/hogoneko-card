@@ -3,6 +3,7 @@ import type { AdoptionEvent, Cat, Shelter } from '../types'
 import { CHECK_MODE } from '../lib/checkMode'
 import { useBlobUrl } from '../lib/useBlobUrls'
 import type { Made, Method } from '../lib/video'
+import { copyText } from '../lib/copy'
 
 type Props = {
   cat: Cat
@@ -191,26 +192,6 @@ export default function Save({ cat, shelter, event, words, post, onHome, onRoste
       </div>
     </main>
   )
-}
-
-// 本当にコピーできたときだけ true（https でないときなどは、予備の方法で試す）
-async function copyText(text: string): Promise<boolean> {
-  try {
-    await navigator.clipboard.writeText(text)
-    return true
-  } catch {
-    const ta = document.createElement('textarea')
-    ta.value = text
-    document.body.appendChild(ta)
-    ta.select()
-    try {
-      return document.execCommand('copy')
-    } catch {
-      return false
-    } finally {
-      ta.remove()
-    }
-  }
 }
 
 function ImageThumb({ blob, label }: { blob: Blob; label: string }) {

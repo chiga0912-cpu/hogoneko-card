@@ -17,6 +17,7 @@ import CatForm from './screens/CatForm'
 import Preview from './screens/Preview'
 import Save from './screens/Save'
 import { themeInk } from './lib/themeInk'
+import { saveAsk } from './lib/askState'
 
 export type Screen = 'loading' | 'guide' | 'welcome' | 'home' | 'shelter' | 'roster' | 'cat' | 'preview' | 'save'
 
@@ -317,6 +318,7 @@ export default function App() {
     latest.current = null
     setHasDraft(false)
     setDraftUnreadable(false)
+    saveAsk(null) // 聞き返しの下書きも消す（#18）
     await db.clearDraft()
   }
 

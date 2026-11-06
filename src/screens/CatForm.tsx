@@ -189,6 +189,13 @@ export default function CatForm({ cat, fromRoster, onChange, onBack, onNext, aut
         />
         <small className="muted">🎤 キーボードのマイクで話して入れてもOK。何通かあれば、続けて貼ってください</small>
       </label>
+      {/* 聞き返しで足した返事（#18。SPEC 2.3）。書き換えずに、メモの最後に足してある */}
+      {cat.memoAdditions.trim() && (
+        <div className="notice memo-additions" data-memo-additions>
+          <p className="muted">メモの最後に、預かりさんの返事を足しました（書き換えていません）。読み取りと投稿文づくりに使います。</p>
+          <pre className="line-preview">{cat.memoAdditions}</pre>
+        </div>
+      )}
       {cleaned.isHistory && (
         <div className="notice line-notice" data-removed={cleaned.removed}>
           LINEのトーク履歴の形でした。読み取るときは、時刻・名前・スタンプなど{cleaned.removed}行を外した文章を使います（欄の文章はそのままです）。

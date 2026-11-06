@@ -6,6 +6,7 @@ import { maskContacts } from '../lib/extract'
 import { makeFixedPost } from '../lib/post'
 import { storyReady, type StoryResult } from '../lib/story'
 import { askConfirm } from '../lib/confirm'
+import { fullMemo } from '../lib/ask'
 
 type Props = {
   cat: Cat
@@ -25,7 +26,7 @@ export default function WriteStory({ cat, shelter, post, onPost }: Props) {
   const latestPost = useRef(post) // 答えが届いたときの、今の投稿文
   latestPost.current = post
   const facts = { name: cat.name, goodPoints: cat.goodPoints }
-  const memo = cat.memo + (cat.memoAdditions ? `\n${cat.memoAdditions}` : '')
+  const memo = fullMemo(cat) // 元のメモ＋聞き返しで足した返事（#18）
 
   const write = async () => {
     // 手で直した投稿文を、黙って置きかえない（SPEC 2.4）

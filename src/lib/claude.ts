@@ -1,4 +1,4 @@
-// Claudeの窓口（/api/read・/api/post・/api/check）を呼ぶ（#20 回数の上限）
+// Claudeの窓口（/api/read・/api/post・/api/check・/api/ask）を呼ぶ（#20 回数の上限）
 // - このスマホの番号（ばらばらの文字。名前や機種は入らない）を付けて送る。1台ごとの回数を数えるため
 // - 上限のときは、画面に出す短い文を返す（Claudeが使えなくても、手で入れて最後まで進める。SPEC 4.4）
 
@@ -20,7 +20,7 @@ export function deviceId(): string {
 
 export type ClaudeAnswer<T> = { ok: true; body: T } | { ok: false; error: string }
 
-export async function callClaude<T>(path: '/api/read' | '/api/post' | '/api/check', payload: unknown): Promise<ClaudeAnswer<T>> {
+export async function callClaude<T>(path: '/api/read' | '/api/post' | '/api/check' | '/api/ask', payload: unknown): Promise<ClaudeAnswer<T>> {
   try {
     const res = await fetch(path, {
       method: 'POST',

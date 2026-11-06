@@ -8,7 +8,7 @@
     "build": "tsc -b && vite build",
     "lint": "oxlint",
     "preview": "vite preview",
-    "shots": "node scripts/css-check.mjs && node scripts/line-check.mjs && node scripts/extract-check.mjs && node scripts/wrap-check.mjs && node scripts/screenshots.mjs screenshots && node scripts/story-check.mjs screenshots && node scripts/roster-check.mjs screenshots && node scripts/video-check.mjs screenshots",
+    "shots": "node scripts/css-check.mjs && node scripts/line-check.mjs && node scripts/extract-check.mjs && node scripts/wrap-check.mjs && node scripts/screenshots.mjs screenshots && node scripts/story-check.mjs screenshots && node scripts/ask-check.mjs screenshots && node scripts/roster-check.mjs screenshots && node scripts/video-check.mjs screenshots",
     "check-push": "node scripts/check-before-push.mjs"
   },
   "dependencies": {
