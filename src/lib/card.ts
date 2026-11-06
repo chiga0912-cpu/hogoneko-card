@@ -250,12 +250,6 @@ function drawContain(ctx: CanvasRenderingContext2D, img: Img, x: number, y: numb
   ctx.drawImage(img, x + (w - img.width * s) / 2, y + (h - img.height * s) / 2, img.width * s, img.height * s)
 }
 
-function drawLogo(ctx: CanvasRenderingContext2D, logo: Img | null, x: number, y: number, size = 110) {
-  if (!logo) return
-  const s = size / Math.max(logo.width, logo.height)
-  ctx.drawImage(logo, x, y, logo.width * s, logo.height * s)
-}
-
 // 文字を書く。align：left なら x から、center なら x を真ん中に
 function drawText(
   ctx: CanvasRenderingContext2D,
@@ -428,7 +422,6 @@ function bandColors(theme: string): { band: string; color: string; contrast: num
 
 // 案B：上下にテーマ色の帯。上の帯に大きな文字（名前・年齢と性別・カードの言葉）。写真は切らずに、帯のあいだに
 const B_PAD = 36 // 帯の中の、文字の上下の余白
-const B_LOGO = 90 // 案Bのロゴは少し小さく（帯を低くするため）
 const B_MIN_PHOTO = 700 // 写真に残す高さの下限 ⚙
 // カードの言葉がふつうの写真の高さでは入らないときだけ、写真をここまで小さくしてよい（できるだけ言葉を載せるため。#10）⚙
 const B_MIN_PHOTO_TWO = 560
@@ -552,10 +545,10 @@ export function drawClover(ctx: CanvasRenderingContext2D, cx: number, cy: number
 }
 const COVER_CLOVER: CloverStyle = { fill: CLOVER_GREEN, outline: WHITE, vein: 'rgba(255,255,255,0.7)', stem: WHITE }
 
-// ── 表紙（SPEC 3.2 の1番目）：写真1枚目・「ずっとのおうちを探しています」・「○○です」・小さなクローバー ──
+// ── 表紙（SPEC 3.2 の1番目）：写真1枚目・「ずっとのおうちを探しています」・「○○です」・その下にロゴか団体名（11/6 クローバーをやめた） ──
 // 言葉は決まった文で、入力にない事実を足さない（11/5夜 作者の決定）。名前は猫カードと同じく下のほう（11/5 作者の決定）
 export const COVER_GREETING = 'ずっとのおうちを探しています'
-export type CoverLayout = { design: CardDesign; fits: boolean; contrast: number; nameSize: number }
+export type CoverLayout = { design: CardDesign; fits: boolean; contrast: number; nameSize: number; mark: 'logo' | 'org' | 'none'; markBottom: number }
 const GREET_PX = 60
 const GREET_GAP = 18
 
@@ -587,33 +580,41 @@ function drawGreeting(ctx: CanvasRenderingContext2D, size: number, y: number, co
 
 export function drawCoverCard(
   ctx: CanvasRenderingContext2D,
-  opts: { photo: Img | null; logo: Img | null; name: string; theme: string },
+  opts: { photo: Img | null; logo: Img | null; name: string; theme: string; shelterName?: string },
 ): CoverLayout {
   ctx.clearRect(0, 0, CARD_W, CARD_H)
   const design = designFor(opts.photo)
   const title = opts.name.trim() ? `${opts.name.trim()}です` : ''
+  const org = (opts.shelterName ?? '').trim()
   if (design === 'B') {
-    // 横・正方形の写真：猫カードの案Bと同じく、上下にテーマ色の帯。言葉と名前は上の帯、クローバーは下の帯
+    // 横・正方形の写真：上の帯に、言葉・名前・その下に差出人のようにロゴか団体名（11/6 作者の決定）。下の帯には何も置かない
     const { band, color, contrast } = bandColors(opts.theme)
-    const logoH = opts.logo ? B_LOGO + 14 : 0
     const gSize = planGreeting(ctx, 0.9, WIDE_W)
     const { size, lines } = planName(ctx, title, 1.0, WIDE_W)
-    const textTop = SAFE.top + logoH
+    const textTop = SAFE.top
     const nameTop = textTop + gSize * 1.2 + GREET_GAP
-    const topH = nameTop + lines.length * size * NAME_LH + B_PAD
-    const botH = SAFE.bottom + 170
+    const markTop = nameTop + lines.length * size * NAME_LH + MARK_GAP
+    const mark = planMark(ctx, opts.logo, org, CARD_H - SAFE.bottom - markTop - B_PAD - B_MIN_PHOTO_TWO)
+    const topH = markTop + mark.h + (mark.h ? B_PAD : B_PAD - MARK_GAP)
+    const botH = SAFE.bottom
     ctx.fillStyle = band
     ctx.fillRect(0, 0, CARD_W, CARD_H)
     if (opts.photo) drawContain(ctx, opts.photo, 0, topH, CARD_W, CARD_H - topH - botH)
-    drawLogo(ctx, opts.logo, SAFE.left, SAFE.top, B_LOGO)
     const gw = drawGreeting(ctx, gSize, textTop, color, false)
     const p: Planned = { nameLines: lines, prof: [], profSize: 0, body: [], nameSize: size, lineSize: 0, h: 0 }
     const n = drawText(ctx, p, CARD_W / 2, nameTop, color, 'center', false, 'name')
-    drawClover(ctx, CARD_W / 2, CARD_H - botH + 70, 40, COVER_CLOVER)
-    return { design, fits: gw <= WIDE_W + 0.5 && n.widest <= WIDE_W + 0.5 && n.bottom <= topH, contrast: round1(contrast), nameSize: size }
+    const mw = drawMark(ctx, mark, markTop, color, false)
+    return {
+      design,
+      fits: gw <= WIDE_W + 0.5 && n.widest <= WIDE_W + 0.5 && mw <= WIDE_W + 0.5 && markTop + mark.h <= topH && topH <= CORNER_TOP,
+      contrast: round1(contrast),
+      nameSize: size,
+      mark: mark.kind,
+      markBottom: Math.round(markTop + mark.h),
+    }
   }
 
-  // 縦の写真：写真を全面に。言葉と名前は白い文字（影つき）
+  // 縦の写真：写真を全面に。言葉と名前は白い文字（影つき）。その下に差出人のようにロゴか団体名（11/6 作者の決定）
   ctx.fillStyle = '#6b5f55'
   ctx.fillRect(0, 0, CARD_W, CARD_H)
   if (opts.photo) drawCover(ctx, opts.photo, 0, 0, CARD_W, CARD_H)
@@ -621,35 +622,93 @@ export function drawCoverCard(
   const { size, lines } = planName(ctx, title, 1.1, WIDE_W)
   const nameH = lines.length * size * NAME_LH
   const h = gSize * 1.2 + GREET_GAP + nameH // 言葉＋名前のかたまり
-  const cloverR = 34
-  // 猫カードの名前と同じあたり（下のほう）。真ん中にそろえるので、右下のボタンの高さ（下から540）より上に置く
+  // 言葉と名前は、ロゴがないときと同じ位置（ロゴのために上げない。11/6 作者の決定）。真ん中にそろえるので、右下のボタンの高さ（下から540）より上
   const top = CORNER_TOP - 10 - h
-  const [r, g, b] = brightLums(ctx, SAFE.left, top, WIDE_W, h)
+  const markTop = top + h + MARK_GAP
+  // ロゴか団体名は名前の下。下の隠れる所（下300）には入れない（入らないときはロゴを小さくする）
+  const mark = planMark(ctx, opts.logo, org, CARD_H - SAFE.bottom - markTop)
+  const bottom = markTop + mark.h
+  const [r, g, b] = brightLums(ctx, SAFE.left, top, WIDE_W, bottom - top)
   let darken = 0.3
   const after = (a: number) => lum(r * (1 - a), g * (1 - a), b * (1 - a))
   while (darken < 0.85 && ratio(1, after(darken)) < 4.5) darken = Math.min(0.85, darken + 0.05)
-  // 言葉と名前の周りだけを、上下にぼかして暗くする
+  // 言葉・名前・ロゴか団体名の周りだけを、上下にぼかして暗くする
   const pad = 220
-  const grad = ctx.createLinearGradient(0, top - pad, 0, top + h + pad)
+  const grad = ctx.createLinearGradient(0, top - pad, 0, bottom + pad)
   grad.addColorStop(0, 'rgba(0,0,0,0)')
-  grad.addColorStop(0.35, `rgba(0,0,0,${darken})`)
-  grad.addColorStop(0.65, `rgba(0,0,0,${darken})`)
+  grad.addColorStop(0.3, `rgba(0,0,0,${darken})`)
+  grad.addColorStop(0.75, `rgba(0,0,0,${darken})`)
   grad.addColorStop(1, 'rgba(0,0,0,0)')
   ctx.fillStyle = grad
-  ctx.fillRect(0, top - pad, CARD_W, h + pad * 2)
-  drawLogo(ctx, opts.logo, SAFE.left, SAFE.top)
+  ctx.fillRect(0, top - pad, CARD_W, bottom - top + pad * 2)
   const gw = drawGreeting(ctx, gSize, top, WHITE, true)
   const p: Planned = { nameLines: lines, prof: [], profSize: 0, body: [], nameSize: size, lineSize: 0, h: nameH }
   const n = drawText(ctx, p, CARD_W / 2, top + gSize * 1.2 + GREET_GAP, WHITE, 'center', true, 'name')
-  const cloverY = top - cloverR * 1.3 - 26
-  drawClover(ctx, CARD_W / 2, cloverY, cloverR, COVER_CLOVER)
+  const mw = drawMark(ctx, mark, markTop, WHITE, true)
   const w = widthFor(n.bottom)
   return {
     design,
-    fits: gw <= WIDE_W + 0.5 && n.widest <= w + 0.5 && cloverY - cloverR * 1.5 >= SAFE.top && n.bottom <= CARD_H - SAFE.bottom,
+    fits: gw <= WIDE_W + 0.5 && n.widest <= w + 0.5 && mw <= WIDE_W + 0.5 && top >= SAFE.top && bottom <= CARD_H - SAFE.bottom,
     contrast: round1(ratio(1, after(darken))),
     nameSize: size,
+    mark: mark.kind,
+    markBottom: Math.round(bottom),
   }
+}
+
+// 表紙の、名前の下のロゴか団体名（差出人のように）。11/6 作者の決定
+// ロゴ：220px の正方形と同じくらいの大きさ（高さ220まで、横長は幅396まで）。白い背景も含め、ロゴの画像をそのまま描く（切り抜かない）
+// 団体名：言葉と同じ60px（遠くから読めるように）。長いときは2行・小さくする
+const MARK_LOGO = 220
+const MARK_GAP = 22
+const ORG_PX = 60
+type Mark = { kind: 'logo' | 'org' | 'none'; h: number; logo?: Img; w?: number; lines?: string[]; size?: number }
+function planMark(ctx: CanvasRenderingContext2D, logo: Img | null, org: string, room: number): Mark {
+  if (logo && logo.width > 0 && logo.height > 0) {
+    const r = logo.width / logo.height
+    let w = MARK_LOGO * Math.sqrt(r)
+    let h = MARK_LOGO / Math.sqrt(r)
+    if (h > MARK_LOGO) [w, h] = [MARK_LOGO * r, MARK_LOGO]
+    const maxW = Math.min(MARK_LOGO * 1.8, WIDE_W)
+    if (w > maxW) [w, h] = [maxW, maxW / r]
+    if (h > room && room > 40) [w, h] = [(w * room) / h, room] // 隠れる所に入らないように小さくする
+    return { kind: 'logo', h: Math.round(h), w: Math.round(w), logo }
+  }
+  if (org) {
+    for (const s of [1, 0.9, 0.8, 0.7]) {
+      const size = Math.round(ORG_PX * s)
+      ctx.font = `800 ${size}px ${FONT}`
+      const lines = wrap(ctx, org, WIDE_W)
+      if (lines.length <= 2 || s === 0.7) return { kind: 'org', h: Math.round(lines.length * size * 1.3), lines: lines.slice(0, 2), size }
+    }
+  }
+  return { kind: 'none', h: 0 }
+}
+function drawMark(ctx: CanvasRenderingContext2D, m: Mark, y: number, color: string, shadow: boolean): number {
+  if (m.kind === 'logo' && m.logo && m.w) {
+    ctx.drawImage(m.logo, CARD_W / 2 - m.w / 2, y, m.w, m.h)
+    return m.w
+  }
+  if (m.kind === 'org' && m.lines && m.size) {
+    ctx.save()
+    ctx.fillStyle = color
+    ctx.textAlign = 'center'
+    ctx.textBaseline = 'top'
+    if (shadow) {
+      ctx.shadowColor = 'rgba(0,0,0,0.55)'
+      ctx.shadowBlur = 16
+      ctx.shadowOffsetY = 3
+    }
+    ctx.font = `800 ${m.size}px ${FONT}`
+    let widest = 0
+    m.lines.forEach((l, i) => {
+      ctx.fillText(l, CARD_W / 2, y + i * m.size! * 1.3)
+      widest = Math.max(widest, ctx.measureText(l).width)
+    })
+    ctx.restore()
+    return widest
+  }
+  return 0
 }
 
 // ── 最後の1枚（SPEC 3.2 の5番目）：次の譲渡会の日時・場所、団体名、ロゴ、連絡先 ──

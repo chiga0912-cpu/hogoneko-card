@@ -185,9 +185,9 @@ export default function Preview({ shelter, cat, onCatChange, post, onPostChange,
       photo1 ? loadImage(photo1).catch(() => null) : null,
       shelter.logo ? loadImage(shelter.logo).catch(() => null) : null,
     ])
-    const l = drawCoverCard(ctx, { photo: photo ?? (clipBlob ? still : null), logo, name: cat.name, theme: shelter.themeColor })
+    const l = drawCoverCard(ctx, { photo: photo ?? (clipBlob ? still : null), logo, name: cat.name, theme: shelter.themeColor, shelterName: shelter.name })
     setCoverFits(l.fits)
-    return { fits: l.fits, design: l.design, contrast: l.contrast }
+    return { fits: l.fits, design: l.design, contrast: l.contrast, mark: l.mark, markbottom: l.markBottom }
   }
   const usedEvent = showEvent ? event : null
   const paintEnd: Painter = async (ctx) => {
@@ -196,7 +196,7 @@ export default function Preview({ shelter, cat, onCatChange, post, onPostChange,
     setEndFits(l.fits)
     return { fits: l.fits, scale: l.scale, event: l.hasEvent, photo: photoIndex(cat.photos.length, 'end') ?? (clipBlob ? 'clip' : 'none') }
   }
-  const coverDeps = [photo1, still, clipBlob, shelter.logo, shelter.themeColor, cat.name]
+  const coverDeps = [photo1, still, clipBlob, shelter.logo, shelter.themeColor, shelter.name, cat.name]
   const endDeps = [shelter.logo, shelter.name, shelter.contact, shelter.themeColor, usedEvent, endBlob, stills, cat.framing.end]
 
   // ひとことカード（#28）。書き換えずに載せる。入りきらないときは知らせて、投稿文にだけ載せるか、載せる文を選んでもらう（SPEC 3.2）。

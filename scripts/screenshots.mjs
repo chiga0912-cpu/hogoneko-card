@@ -1332,6 +1332,96 @@ console.log('表示:', await page.locator('.status-line').innerText())
   await ctx.close()
 }
 
+// 表紙：名前の下にロゴか団体名（クローバー・左上のロゴなし）。猫カード・ひとことカードにはロゴを入れない（11/6 作者の決定）
+{
+  const ctx = await browser.newContext({ ...phone })
+  const p = await ctx.newPage()
+  await p.goto(url)
+  const r = await p.evaluate(async () => {
+    try {
+      const m = await import('/src/lib/card.ts')
+      const cv = () => {
+        const c = document.createElement('canvas')
+        c.width = 1080
+        c.height = 1920
+        return c
+      }
+      const pic = (w, h, color) => {
+        const c = document.createElement('canvas')
+        c.width = w
+        c.height = h
+        const x = c.getContext('2d')
+        x.fillStyle = color
+        x.fillRect(0, 0, w, h)
+        return c
+      }
+      // ロゴは見分けやすい色（赤紫）1色。カードの中にこの色があるかで、ロゴが描かれたかを見る
+      const MAG = [255, 0, 255]
+      const magenta = (c, y0 = 0, y1 = 1920) => {
+        const d = c.getContext('2d').getImageData(0, y0, 1080, y1 - y0).data
+        let n = 0
+        let top = 1e9
+        let bottom = -1
+        for (let i = 0; i < d.length; i += 4)
+          if (Math.abs(d[i] - MAG[0]) < 8 && d[i + 1] < 8 && Math.abs(d[i + 2] - MAG[2]) < 8) {
+            n++
+            const y = y0 + Math.floor(i / 4 / 1080)
+            top = Math.min(top, y)
+            bottom = Math.max(bottom, y)
+          }
+        return { n, top, bottom }
+      }
+      const tall = pic(600, 800, '#8fa9a3')
+      const wide = pic(800, 600, '#8fa9a3')
+      const square = pic(700, 700, '#8fa9a3')
+      const round = pic(400, 400, 'rgb(255,0,255)')
+      const long = pic(900, 300, 'rgb(255,0,255)')
+      const out = {}
+      for (const [k, photo] of [['縦', tall], ['横', wide], ['正方形', square]]) {
+        for (const [lk, logo] of [['丸', round], ['横長', long], ['なし', null]]) {
+          const c = cv()
+          const l = m.drawCoverCard(c.getContext('2d'), { photo, logo, name: 'テスト', theme: '#e8826b', shelterName: '（架空）テスト保護猫の会' })
+          const mg = magenta(c)
+          out[`${k}・${lk}`] = { fits: l.fits, mark: l.mark, markBottom: l.markBottom, mg, leftTop: magenta(c, 220, 400).n && mg.top < 400 }
+        }
+      }
+      // 名前の位置は、ロゴがあってもなくても同じ（ロゴのために上げない）：名前の上の端の高さを、ロゴあり・なしで比べる
+      const nameTop = (logo) => {
+        const c = cv()
+        m.drawCoverCard(c.getContext('2d'), { photo: tall, logo, name: 'テスト', theme: '#e8826b', shelterName: '' })
+        const d = c.getContext('2d').getImageData(540, 0, 1, 1920).data
+        for (let y = 0; y < 1920; y++) if (d[y * 4] > 250 && d[y * 4 + 1] > 250 && d[y * 4 + 2] > 250) return y
+        return -1
+      }
+      out.sameTop = nameTop(null) === nameTop(round)
+      const cat = cv()
+      m.drawCatCard(cat.getContext('2d'), { photo: tall, logo: round, name: 'テスト', lines: ['よく食べる'], theme: '#e8826b', position: 'normal' })
+      const catB = cv()
+      m.drawCatCard(catB.getContext('2d'), { photo: wide, logo: round, name: 'テスト', lines: ['よく食べる'], theme: '#e8826b', position: 'normal' })
+      const words = cv()
+      m.drawWordsCard(words.getContext('2d'), { text: 'よく食べます。', logo: round, theme: '#e8826b', photo: tall })
+      out.noLogo = [magenta(cat).n, magenta(catB).n, magenta(words).n]
+      return out
+    } catch (e) {
+      return null // 本番と同じ作りでは、部品を直接読めない
+    }
+  })
+  if (r) {
+    for (const k of ['縦', '横', '正方形']) {
+      for (const lk of ['丸', '横長']) {
+        const t = r[`${k}・${lk}`]
+        check(t.mark === 'logo' && t.fits && t.mg.n > 0 && t.mg.bottom <= 1620 && t.mg.top >= 220 && !t.leftTop, `表紙（${k}の写真・${lk}のロゴ）：ロゴは名前の下に入り、隠れる所・左上には出ない（ロゴ ${t.mg.top}〜${t.mg.bottom}）`)
+      }
+      const t = r[`${k}・なし`]
+      check(t.mark === 'org' && t.fits && t.mg.n === 0, `表紙（${k}の写真・ロゴなし）：名前の下に団体名が入り、はみ出さない`)
+    }
+    check(r['縦・丸'].mg.bottom - r['縦・丸'].mg.top >= 210, `表紙のロゴは220pxくらいの大きさ（丸いロゴの高さ ${r['縦・丸'].mg.bottom - r['縦・丸'].mg.top + 1}px）`)
+    check(r.sameTop, '表紙の言葉と名前は、ロゴがあってもなくても同じ位置（ロゴのために上げない）')
+    check(r.noLogo.every((n) => n === 0), `猫カード（縦・横）とひとことカードには、ロゴを入れない（${r.noLogo.join('/')}）`)
+  }
+  await ctx.close()
+}
+
 // 新しい版の知らせ（SPEC 2.9）：公開されている版（version.json）が、開いている画面の版と違うときだけ出す
 {
   const ctx = await browser.newContext({ ...phone })

@@ -33,7 +33,7 @@ export async function buildSegments(cat: Cat, shelter: Shelter, event: AdoptionE
   const endPhoto = await pick('end')
 
   const cover = canvas()
-  drawCoverCard(cover.getContext('2d')!, { photo: coverPhoto, logo, name: cat.name, theme: shelter.themeColor })
+  drawCoverCard(cover.getContext('2d')!, { photo: coverPhoto, logo, name: cat.name, theme: shelter.themeColor, shelterName: shelter.name })
   const catCard = canvas()
   const catLayout = drawCatCard(catCard.getContext('2d')!, {
     photo: catPhoto,
