@@ -126,7 +126,7 @@ export default function ShelterForm({ initial, first, needName = false, onSave, 
         </div>
         {/* 確認用（試し用のアドレスだけ。本番では出さない）：プログラムで描いた仮のロゴを入れて、カードでの見え方を確かめる */}
         {import.meta.env.VITE_SHOW_CHECK === '1' && (
-          <div className="logo-row" data-test-logos>
+          <div className="logo-row test-logos" data-test-logos>
             <span className="muted">確認用の仮のロゴ：</span>
             {TEST_LOGOS.map(([kind, label]) => (
               <button

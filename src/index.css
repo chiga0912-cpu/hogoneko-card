@@ -189,6 +189,18 @@ textarea:focus {
   align-items: center;
   gap: 12px;
 }
+/* 確認用の仮のロゴのボタン（試し用だけ）。文字の途中で折れないように、ボタンごと次の行へ */
+.test-logos {
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 10px;
+}
+.test-logos .muted {
+  flex-basis: 100%;
+}
+.test-logos .btn {
+  white-space: nowrap;
+}
 input[type='color'] {
   width: 56px;
   height: 44px;
