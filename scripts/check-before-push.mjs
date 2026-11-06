@@ -76,6 +76,23 @@ const EMBED_PATTERNS = [
   [/(\/9j\/4|iVBORw0KGgo)[A-Za-z0-9+/]{200,}/, '写真を文字にして埋め込んだらしきもの（長い英数字）'],
 ]
 
+// 取り込み（merge）でぶつかった所の印が残っていないか。行の頭の「<<<<<<< 」「>>>>>>> 」で見る（11/6 作者の指示）
+// 途中のコミットではなく、上げる先頭（tips）の中身だけを見る（あとのコミットで直したものは止めない）
+const MARKER = /^(<<<<<<< |>>>>>>> )/m
+export const hasMergeMarker = (text) => MARKER.test(text)
+
+// 先頭のコミットにある「中身の番号 パス」の組
+function tipBlobs(tips) {
+  const set = new Set()
+  for (const t of tips) {
+    for (const line of gitText(['ls-tree', '-r', t]).split('\n')) {
+      const m = /^\d+ blob ([0-9a-f]+)\t(.+)$/.exec(line)
+      if (m) set.add(`${m[1]} ${m[2]}`)
+    }
+  }
+  return set
+}
+
 // これから上げるコミットに入っているファイル（パスと中身の番号）を集める
 function collectFiles(revArgs) {
   const commits = gitText(['rev-list', ...revArgs]).split('\n').filter(Boolean)
@@ -102,9 +119,10 @@ function collectFiles(revArgs) {
   return { commits, files: [...files.values()] }
 }
 
-function check(revArgs, top) {
+function check(revArgs, top, tips) {
   const allow = readAllowlist(top)
   const { commits, files } = collectFiles(revArgs)
+  const atTip = tipBlobs(tips)
   const problems = []
   for (const { blob, path } of files) {
     const buf = git(['cat-file', 'blob', blob])
@@ -122,6 +140,7 @@ function check(revArgs, top) {
       const text = buf.toString('utf8')
       for (const [re, label] of SECRET_PATTERNS) if (re.test(text)) why.push(label)
       if (!allowed) for (const [re, label] of EMBED_PATTERNS) if (re.test(text)) why.push(label)
+      if (atTip.has(`${blob} ${path}`) && hasMergeMarker(text)) why.push('取り込みの印（<<<<<<< や >>>>>>>）が残っている')
     }
     if (why.length) problems.push({ path, why: [...new Set(why)] })
   }
@@ -180,7 +199,7 @@ if (mode === '--git-hook') {
     if (!localSha || ZERO.test(localSha)) continue // 消すだけのとき
     const revArgs = [localSha, '--not', `--remotes=${remote}`]
     if (remoteSha && !ZERO.test(remoteSha)) revArgs.push(remoteSha)
-    if (!report(check(revArgs, top))) ok = false
+    if (!report(check(revArgs, top, [localSha]))) ok = false
   }
   process.exit(ok ? 0 : 1)
 }
@@ -191,9 +210,9 @@ if (mode === '--claude-hook') {
     process.exit(2)
   }
   // まだ上げていない、すべての枝のコミットを見る
-  const ok = report(check(['--branches', '--not', '--remotes'], top))
+  const ok = report(check(['--branches', '--not', '--remotes'], top, gitText(['for-each-ref', 'refs/heads', '--format=%(objectname)']).split('\n').filter(Boolean)))
   process.exit(ok ? 0 : 2)
 }
 
 // 手で試すとき
-process.exit(report(check(['--branches', '--not', '--remotes'], top)) ? 0 : 1)
+process.exit(report(check(['--branches', '--not', '--remotes'], top, gitText(['for-each-ref', 'refs/heads', '--format=%(objectname)']).split('\n').filter(Boolean))) ? 0 : 1)
