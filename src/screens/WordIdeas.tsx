@@ -8,8 +8,8 @@ import type { Verdict } from '../lib/story'
 
 // カードの言葉の案（#19。SPEC 2.4）。猫カードに入らなかった長い「いいところ」の行を、Claudeが短くした案にする
 // - 押したときだけ作る。案は、本文と同じ根拠の確認（/api/check）を通ったものだけを見せる。確かめられなかったら出さない
-// - 人が選んだときだけ使う（その行を案に置きかえる）。［元に戻す］で戻せる。選ばなければ何も変えない
-// used：選んだ案（確認画面の側で覚える。行が短くなってカードに入ると longLines が空になるが、［元に戻す］は出し続けるため）
+// - 人が選んだときだけ使う（猫カードの言葉だけを案にする。「いいところ」の行は書き換えない）。［元に戻す］で戻せる。選ばなければ何も変えない
+// used：選んだ案（猫のデータの cardLines に残る。画面を出ても［元に戻す］が使える）
 type Props = { cat: Cat; longLines: string[]; used: { from: string; to: string } | null; onUse: (from: string, to: string) => void; onUndo: () => void }
 type Idea = { line: string; proposals: string[] }
 type WordsResponse = { items?: { line: string; proposals: string[] }[]; error?: string }
@@ -83,7 +83,7 @@ export default function WordIdeas({ cat, longLines, used, onUse, onUndo }: Props
       {used && (
         <>
           <p>
-            猫カードの言葉に使うため、「いいところ」の「{used.from}」を「{used.to}」に置きかえました（下の投稿文は変えていません）。
+            猫カードの言葉だけ、「{used.from}」を「{used.to}」にしました（「いいところ」の行と、下の投稿文は変えていません）。
           </p>
           <button
             type="button"

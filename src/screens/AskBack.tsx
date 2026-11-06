@@ -4,7 +4,7 @@ import type { AskState } from '../lib/askState'
 
 // 聞き返し（#18。SPEC 2.3）の欄。読み取りのすぐ下に出す
 // - 預かりさんへ送るLINEの文（送る前に、欄の中で自由に直せる）と［LINEの文をコピー］
-// - 返事を貼る欄（自分で書いても、キーボードのマイクで話してもよい）と［返事をメモに足す］［飛ばす］
+// - 返事を貼る欄（自分で書いてもよい）と［返事をメモに足す］［飛ばす］
 // - 返事を待つ間も残す（LINEに移って戻っても消えない）。残し方は src/lib/askState.ts
 
 type Props = {
@@ -42,7 +42,7 @@ export default function AskBack({ ask, onEdit, onAdd, onSkip }: Props) {
       </button>
       {copied === false && <p className="alert">コピーできませんでした。欄の文を長押しして、コピーしてください。</p>}
       <label className="field">
-        <span>預かりさんの返事（貼るか、書いてください。キーボードのマイクで話してもOK）</span>
+        <span>預かりさんの返事（貼るか、書いてください）</span>
         <textarea rows={4} value={ask.reply} onChange={(e) => onEdit({ ...ask, reply: e.target.value })} />
       </label>
       <div className="ask-actions">
@@ -53,7 +53,7 @@ export default function AskBack({ ask, onEdit, onAdd, onSkip }: Props) {
           飛ばす
         </button>
       </div>
-      <p className="muted">返事を待つ間も、この欄は残ります（LINEに移って戻っても消えません）。返事は書き換えずに、メモの最後に足します。</p>
+      <p className="muted">返事を待つ間も、この欄は残ります（LINEに移って戻っても消えません）。返事は書き換えずに、聞いた質問（上のLINEの文）と一緒に、メモの最後に足します。</p>
     </div>
   )
 }

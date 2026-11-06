@@ -4,7 +4,8 @@
 import { chromium, devices } from 'playwright'
 import { mkdirSync } from 'node:fs'
 import { join } from 'node:path'
-import { askLine, questionOk, fullMemo, replyAddition, REPLY_LABEL } from '../src/lib/ask.ts'
+import { askLine, questionOk, fullMemo, replyAddition, REPLY_LABEL, QUESTION_LABEL } from '../src/lib/ask.ts'
+import { cardSwaps, cardWordLines, addSwap, removeSwap } from '../src/lib/words.ts'
 
 const outDir = process.argv[2] ?? 'screenshots'
 const url = process.argv[3] ?? 'http://localhost:5173'
@@ -21,7 +22,16 @@ ok(askLine(' ', 'ひざに乗ってくることはありますか？') === '紹�
 ok(questionOk('ひざに乗ってくることはありますか？') && questionOk('好きなおもちゃはありますか?'), '質問1つ・「？」で終わる形は通す')
 ok(!questionOk('ひざに乗りますか？おもちゃは好きですか？') && !questionOk('ひざに乗りますか？\nよろしく') && !questionOk('ひざに乗ります。') && !questionOk('あ'.repeat(70) + '？'), '質問が2つ・改行あり・「？」なし・長すぎるものは通さない')
 ok(replyAddition('（架空）よく遊びます。\n夜は鳴きます') === `${REPLY_LABEL}\n（架空）よく遊びます。\n夜は鳴きます`, '返事は一字も変えずに「（預かりさんの返事）」のあとに足す')
+ok(replyAddition('（架空）はい', 'ミケちゃんの紹介を書いています。\nひざに乗りますか？ ') === `${QUESTION_LABEL}\nミケちゃんの紹介を書いています。\nひざに乗りますか？\n${REPLY_LABEL}\n（架空）はい`, '聞いた質問（送ったLINEの文）も、返事の前に一字も変えずに足す（11/7 作者の決定）')
 ok(fullMemo({ memo: 'A', memoAdditions: '' }) === 'A' && fullMemo({ memo: 'A', memoAdditions: replyAddition('B') }) === `A\n${REPLY_LABEL}\nB`, '読み取り・投稿文には、元のメモ＋足した返事を使う')
+
+{
+  const gp = ['短い行', '（架空）とても長い元の行です']
+  const cl = addSwap([], '（架空）とても長い元の行です', '長い元の行')
+  ok(JSON.stringify(cardWordLines(gp, cl)) === JSON.stringify(['短い行', '長い元の行']) && JSON.stringify(gp) === JSON.stringify(['短い行', '（架空）とても長い元の行です']), '選んだ案は、カードの言葉の候補だけを変え、「いいところ」の行は変えない')
+  ok(cardSwaps(cl, ['短い行', '（架空）手で直した行']).length === 0 && JSON.stringify(cardWordLines(['（架空）手で直した行'], cl)) === JSON.stringify(['（架空）手で直した行']), '元の行を手で直したら、その案は使わない（別の行に付かない）')
+  ok(removeSwap(cl, '（架空）とても長い元の行です').length === 0 && addSwap(cl, '（架空）とても長い元の行です', '別の案').length === 1, '［元に戻す］で外せる。同じ行に選び直したら、前の案と入れかわる')
+}
 
 // ── 画面の部分（窓口の答えをすりかえる）──
 const browser = await chromium.launch()
@@ -86,7 +96,7 @@ const readNow = async (p) => {
   await line.fill('ミケちゃんのことで1つだけ。ひざに乗ってくることはありますか？ ')
   ok(await p.getByRole('button', { name: 'LINEの文をコピー' }).isVisible(), 'コピーしたあとでLINEの文を直したら、ボタンは［LINEの文をコピー］に戻る（見直しの8）')
   await line.fill('ミケちゃんのことで1つだけ。ひざに乗ってくることはありますか？')
-  const reply = p.getByLabel('預かりさんの返事（貼るか、書いてください。キーボードのマイクで話してもOK）')
+  const reply = p.getByLabel('預かりさんの返事（貼るか、書いてください）')
   await reply.fill('（架空）よくひざに乗ってきます')
   await p.screenshot({ path: join(outDir, '4a_聞き返し.png'), fullPage: true })
   // LINEに移って戻った代わりに、読み込み直す
@@ -102,7 +112,9 @@ const readNow = async (p) => {
   await p.waitForTimeout(800)
   ok(!(await panel(p).isVisible()), '返事を足したら、聞き返しの欄は閉じる')
   const added = await p.locator('[data-memo-additions] pre').textContent().catch(() => null)
-  ok(added === `${REPLY_LABEL}\n${replyText}`, `返事は書き換えずに、「（預かりさんの返事）」としてメモの最後に足す（${JSON.stringify(added)}）`)
+  const LINE2 = 'ミケちゃんのことで1つだけ。ひざに乗ってくることはありますか？'
+  const ADDED = `${QUESTION_LABEL}\n${LINE2}\n${REPLY_LABEL}\n${replyText}`
+  ok(added === ADDED, `聞いた質問（送ったLINEの文）と返事を、書き換えずにメモの最後に足す（${JSON.stringify(added)}）`)
   ok((await p.getByLabel('預かりさんからのメッセージ・メモ').inputValue()) === MEMO, '元のメモの欄は変えない')
   ok(sent.read.length === readsBefore + 1 && sent.read.at(-1).includes(`${REPLY_LABEL}\n（架空）よくひざに乗ってきます。`), '返事を足したら、元のメモ＋返事で読み取り直す')
   ok(!sent.read.at(-1).includes('090-0000-0000'), '読み取り直すときも、返事の中の電話番号を伏せて送る（見直しの5）')
@@ -110,14 +122,23 @@ const readNow = async (p) => {
   await p.screenshot({ path: join(outDir, '4b_聞き返し_返事を足した.png'), fullPage: true })
   await p.reload()
   await p.getByLabel('預かりさんからのメッセージ・メモ').waitFor()
-  ok((await p.locator('[data-memo-additions] pre').textContent().catch(() => null)) === `${REPLY_LABEL}\n${replyText}`, '足した返事は、入力の途中として残る（読み込み直しても消えない）')
+  ok((await p.locator('[data-memo-additions] pre').textContent().catch(() => null)) === ADDED, '足した質問と返事は、入力の途中として残る（読み込み直しても消えない）')
   await readNow(p)
   ok(sent.ask.length === 1 && !(await panel(p).isVisible()), '返事を足したあとで読み取り直しても、聞き返しは出ない')
   // 足した返事を外せる（見直しの1）
   await p.getByRole('button', { name: '足した返事を外す' }).click()
-  ok((await p.locator('[data-memo-additions]').count()) === 0, '［足した返事を外す］で、足した返事を外せる')
+  ok((await p.locator('[data-memo-additions]').count()) === 0, '［足した返事を外す］で、足した質問と返事を外せる')
+  // 外したあとは、同じ質問の欄がもう一度出る（Claudeは呼び直さない。11/7 作者の決定）
+  await p.waitForTimeout(300)
+  ok((await panel(p).isVisible()) && sent.ask.length === 1, '外したあと、同じ質問の欄がもう一度出る（聞き返しの窓口は呼ばない）')
+  ok((await line.inputValue()) === LINE2 && (await reply.inputValue()) === replyText, '欄には、前のLINEの文と、外した返事が残る（直して足し直せる）')
   await readNow(p)
-  ok(!sent.read.at(-1).includes(REPLY_LABEL), '外したあとは、返事を使わずに読み取る')
+  ok(!sent.read.at(-1).includes(REPLY_LABEL) && !sent.read.at(-1).includes(QUESTION_LABEL), '外したあとは、質問も返事も使わずに読み取る')
+  ok(sent.ask.length === 1, '外したあとで読み取り直しても、聞き返しの窓口は呼ばない')
+  await reply.fill('（架空）ひざには乗りません')
+  await p.getByRole('button', { name: '返事をメモに足す' }).click()
+  await p.waitForTimeout(800)
+  ok((await p.locator('[data-memo-additions] pre').textContent().catch(() => null)) === `${QUESTION_LABEL}\n${LINE2}\n${REPLY_LABEL}\n（架空）ひざには乗りません`, '外したあとで、直した返事を足し直せる')
   await ctx.close()
 }
 
@@ -210,7 +231,14 @@ for (const [label, ans] of [
   await p.getByRole('button', { name: '「玄関までお迎え」を使う' }).click()
   await p.waitForTimeout(800)
   ok((await p.locator('.card-canvas').getAttribute('data-word')) === '玄関までお迎え', '選んだ案が、猫カードの言葉になる')
-  ok(await ideas.getByText('「玄関までお迎え」に置きかえました').isVisible(), '置きかえたことを知らせる')
+  ok(await ideas.getByText('「玄関までお迎え」にしました').isVisible(), '猫カードの言葉だけを案にしたことを知らせる')
+  // 名簿の「いいところ」は書き換えない。画面を出て戻っても、案のまま・［元に戻す］が使える（11/7 作者の決定）
+  await p.getByRole('button', { name: '戻る' }).click()
+  ok((await p.getByLabel('いいところ').inputValue()) === LONG, '案を選んでも、「いいところ」の行は書き換えない')
+  await p.getByRole('button', { name: '次へ' }).click()
+  await p.locator('.card-canvas[data-drawn="1"]').waitFor({ timeout: 8000 })
+  await p.waitForTimeout(500)
+  ok((await p.locator('.card-canvas').getAttribute('data-word')) === '玄関までお迎え' && (await p.getByRole('button', { name: '元に戻す' }).isVisible()), '画面を出て戻っても、猫カードは案のまま・［元に戻す］が使える')
   await p.getByRole('button', { name: '元に戻す' }).click()
   await p.waitForTimeout(800)
   ok((await p.locator('.card-canvas').getAttribute('data-word')) === '', '［元に戻す］で、元の行に戻る')

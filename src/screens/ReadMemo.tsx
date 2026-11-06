@@ -1,5 +1,5 @@
 import { callClaude, limitText } from '../lib/claude'
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import type { Cat } from '../types'
 import { cleanLine } from '../lib/lineText'
 import { maskContacts, type Extracted } from '../lib/extract'
@@ -26,6 +26,12 @@ export default function ReadMemo({ cat, onChange }: Props) {
     saveAsk(a)
   }
   const [asking, setAsking] = useState(false)
+  // ［足した返事を外す］のあとは、同じ質問の欄をもう一度出す（Claudeは呼び直さない。11/7 作者の決定）
+  // 外した返事は欄に残す（貼り直すときに、直して使えるように）
+  useEffect(() => {
+    if (!cat.memoAdditions.trim() && ask && ask.memo === cat.memo && ask.status === 'added') setAsk({ ...ask, status: 'open' })
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [cat.memoAdditions, cat.memo])
 
   // 聞き返しが要るかをClaudeに聞く。同じメモでは一度だけ（質問が出なかった・飛ばした・返事を足したあとは聞かない）
   // 失敗したとき・上限のときは、何も出さずに先へ進める（聞き返しは必ずではない）
@@ -72,10 +78,10 @@ export default function ReadMemo({ cat, onChange }: Props) {
     }
   }
 
-  // 返事は書き換えずに、元のメモの最後に「（預かりさんの返事）」として足し、読み取り直す（SPEC 2.3）
+  // 返事は書き換えずに、聞いた質問（送ったLINEの文）と一緒に、元のメモの最後に足し、読み取り直す（SPEC 2.3）
   const addReply = (reply: string) => {
     if (!ask) return
-    const addition = replyAddition(reply)
+    const addition = replyAddition(reply, ask.line)
     const additions = cat.memoAdditions.trim() ? `${cat.memoAdditions}\n${addition}` : addition
     onChange((c) => ({ ...c, memoAdditions: c.memoAdditions.trim() ? `${c.memoAdditions}\n${addition}` : addition }))
     setAsk({ ...ask, status: 'added' })

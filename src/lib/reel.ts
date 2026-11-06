@@ -2,6 +2,7 @@
 //   1 表紙 3秒 → 2 撮った動画（選んだ5秒。なければ飛ばす）→ 3 猫カード 3秒（言葉が2行なら4秒）→ 4 ひとこと 3〜5秒（なければ飛ばす）→ 5 最後の1枚 4秒
 import type { AdoptionEvent, Cat, Shelter } from '../types'
 import { bandColors, CARD_H, CARD_W, drawCatCard, drawClipName, drawCoverCard, drawEndCard, drawWordsCard, loadImage, paintBand } from './card'
+import { cardWordLines } from './words'
 import { loadBandPattern } from './band'
 import { clipFrame, type Segment } from './video'
 import { cardProfile } from './age'
@@ -42,7 +43,7 @@ export async function buildSegments(cat: Cat, shelter: Shelter, event: AdoptionE
     logo,
     name: cat.name,
     profile: cardProfile(cat.age, cat.sex),
-    lines: cat.goodPoints,
+    lines: cardWordLines(cat.goodPoints, cat.cardLines), // 選んだ短い言葉の案があれば、その行だけ案に（#19）
     avoid: words?.trim() ? words : null,
     theme: shelter.themeColor,
     position: cat.textPosition,

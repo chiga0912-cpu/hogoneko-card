@@ -19,7 +19,7 @@ import * as db from '../db'
 import { nextEvent } from '../lib/events'
 import WriteStory from './WriteStory'
 import StoryCheck, { openFlags, type CheckState } from './StoryCheck'
-import { removeSentence, storySentences, type StoryDraft, type Verdict } from '../lib/story'
+import { factChunks, removeSentence, splitMemo, storySentences, type StoryDraft, type Verdict } from '../lib/story'
 import { makeFixedPost } from '../lib/post'
 import { askConfirm } from '../lib/confirm'
 import { loadBandPattern } from '../lib/band'
@@ -28,7 +28,10 @@ import { clipTimeFor, photoIndex, type CardKey } from '../lib/photoPlan'
 import { TopBar } from './ShelterForm'
 import FramingEditor from './FramingEditor'
 import WordIdeas from './WordIdeas'
-import { replaceLine } from '../lib/words'
+import { addSwap, cardSwaps, cardWordLines, removeSwap } from '../lib/words'
+import { fullMemo } from '../lib/ask'
+import { cleanLine } from '../lib/lineText'
+import { maskContacts } from '../lib/extract'
 
 const POSITIONS: [TextPosition, string][] = [
   ['up', '少し上'],
@@ -73,7 +76,7 @@ function CatCard({
         logo,
         name: cat.name,
         profile: cardProfile(cat.age, cat.sex),
-        lines: cat.goodPoints,
+        lines: cardWordLines(cat.goodPoints, cat.cardLines), // 選んだ短い言葉の案があれば、その行だけ案に（#19）
         avoid,
         theme: shelter.themeColor,
         position: cat.textPosition,
@@ -86,7 +89,7 @@ function CatCard({
     return () => {
       stop = true
     }
-  }, [photoBlob, still, shelter.logo, shelter.themeColor, cat.name, cat.age, cat.sex, cat.goodPoints, avoid, cat.textPosition, cat.framing.cat, onLayout])
+  }, [photoBlob, still, shelter.logo, shelter.themeColor, cat.name, cat.age, cat.sex, cat.goodPoints, cat.cardLines, avoid, cat.textPosition, cat.framing.cat, onLayout])
   return (
     <canvas
       ref={ref}
@@ -152,18 +155,35 @@ export default function Preview({ shelter, cat, onCatChange, post, onPostChange,
   const [checkLimit, setCheckLimit] = useState<string | null>(null) // 回数の上限の文（#20）
   const latestStory = useRef(story)
   latestStory.current = story
+  // 今のメモ（元のメモ＋足した返事・質問）を、本文を書くときと同じ形（履歴の形を整え、連絡先を伏せる）にしたもの
+  const memoNow = useMemo(() => maskContacts(cleanLine(fullMemo(cat)).text).text, [cat.memo, cat.memoAdditions]) // eslint-disable-line react-hooks/exhaustive-deps
+  // 本文を確かめたときのメモと、今のメモが違うか（#23 重い1。作者の決定 11/7）。違えば ✓ を消し、確かめ直すまで［動画を作る］を押せなくする
+  // 比べるのは区切ったかたまり（空行・空白の違いだけなら、同じとみなす）
+  const memoStale = !!story && JSON.stringify(story.result.memoChunks) !== JSON.stringify(splitMemo(memoNow))
   const runCheck = async (s: StoryDraft) => {
     setChecking('checking')
     setCheckLimit(null)
     const sentences = storySentences(s.result.body)
+    const facts = { name: cat.name, goodPoints: cat.goodPoints }
+    const sentMemo = memoNow // 確かめるのは、いつも今のメモで（メモが変わったあとの確かめ直しも同じ）
+    const sentCheck = s.check // 確かめ始めたときの結果（初めては null）
     try {
-      const ans = await callClaude<{ results?: Verdict[] }>('/api/check', { memo: s.result.memoChunks.join('\n'), facts: { name: cat.name, goodPoints: cat.goodPoints }, sentences })
+      const ans = await callClaude<{ results?: Verdict[] }>('/api/check', { memo: sentMemo, facts, sentences })
       if (!ans.ok && latestStory.current?.result.body === s.result.body) setCheckLimit(limitText(ans.error))
       if (!ans.ok || !Array.isArray(ans.body.results) || ans.body.results.length !== sentences.length) throw new Error('check')
       const results = ans.body.results
-      // 今の本文（入力の途中にある、画面の外の値）が、確かめた本文と同じで、まだ確かめていないときだけ入れる。
-      // 確かめている間に本文が替わった・別の子になった・すでに結果がある（「残す」を選んだあと）なら、古い結果は使わない（見直しの重い1）
-      onStoryChange((cur) => (cur && cur.result.body === s.result.body && cur.check === null ? { ...cur, check: { sentences, verdicts: results, kept: [] } } : cur))
+      const memoChunks = splitMemo(sentMemo)
+      const facChunks = factChunks(facts)
+      // 今の本文（入力の途中にある、画面の外の値）が、確かめた本文と同じで、確かめ始めたときから結果が変わっていないときだけ入れる。
+      // 確かめている間に本文が替わった・別の子になった・「残す」を選んだなら、古い結果は使わない（見直しの重い1）
+      // メモが変わっていたら、確かめたメモに入れかえる。本文を書いたときの根拠の位置（parts の引用）は古いメモの番号なので外す
+      // ［消す］で消した文は、確かめ直しても消したまま（kept＝［本当です（残す）］は、新しいメモでもう一度選んでもらう）
+      onStoryChange((cur) => {
+        if (!cur || cur.result.body !== s.result.body || cur.check !== sentCheck) return cur
+        const same = JSON.stringify(cur.result.memoChunks) === JSON.stringify(memoChunks) && JSON.stringify(cur.result.factChunks) === JSON.stringify(facChunks)
+        const result = same ? cur.result : { ...cur.result, memoChunks, factChunks: facChunks, parts: cur.result.parts.map((p) => ({ ...p, cites: [] })) }
+        return { result, check: { sentences, verdicts: results, kept: [], removed: sentCheck?.removed ?? [] } }
+      })
       if (latestStory.current?.result.body === s.result.body) setChecking('idle')
     } catch {
       if (latestStory.current?.result.body === s.result.body) setChecking('failed')
@@ -174,13 +194,18 @@ export default function Preview({ shelter, cat, onCatChange, post, onPostChange,
   // 印の文を手で直して文字が変わっても、印は消えない（［本当です（残す）］か、本文を外すまで。見直しの重い3・4。作者に聞くまでの安全な形）
   const storyInPost = !!story
   const checkState: CheckState =
-    checking === 'checking' ? { status: 'checking' } : story?.check ? { status: 'done', ...story.check } : { status: 'failed', limit: checkLimit }
+    checking === 'checking'
+      ? { status: 'checking' }
+      : memoStale
+        ? { status: 'stale', limit: checking === 'failed' ? checkLimit : null }
+        : story?.check
+          ? { status: 'done', ...story.check }
+          : { status: 'failed', limit: checkLimit }
   const flags = storyInPost ? openFlags(checkState, post) : []
   const storyBlocked = storyInPost && (checkState.status !== 'done' || flags.length > 0)
 
   const [full, setFull] = useState<'cover' | 'cat' | 'words' | 'end' | null>(null)
   const [layout, setLayout] = useState<CardLayout | null>(null)
-  const [wordSwap, setWordSwap] = useState<{ from: string; to: string } | null>(null) // カードの言葉の案を使ったとき（#19。［元に戻す］のため）
   const [event, setEvent] = useState<AdoptionEvent | null>(null)
   const [eventsRead, setEventsRead] = useState(false) // 譲渡会を読み終えるまで［動画を作る］を押せなくする（読み終える前だと譲渡会なしで作られるため）
   const [coverFits, setCoverFits] = useState(true)
@@ -288,6 +313,8 @@ export default function Preview({ shelter, cat, onCatChange, post, onPostChange,
 
   // 写真を指で動かす（#29。猫カードの案A・ひとこと・最後の1枚）。動かしている間に写真を何度も読み直さないよう、読んだ写真を覚えておく
   const [moving, setMoving] = useState<'cat' | 'words' | 'end' | null>(null)
+  // カードの言葉の案を選んだ行（#19）。猫のデータに残すので、画面を出ても［元に戻す］が使える
+  const wordSwap = cardSwaps(cat.cardLines, cat.goodPoints)[0] ?? null
   const imgCache = useRef(new Map<Blob, Promise<HTMLImageElement | null>>())
   const img = (b: Blob | null) => {
     if (!b) return Promise.resolve(null)
@@ -305,7 +332,7 @@ export default function Preview({ shelter, cat, onCatChange, post, onPostChange,
         logo,
         name: cat.name,
         profile: cardProfile(cat.age, cat.sex),
-        lines: cat.goodPoints,
+        lines: cardWordLines(cat.goodPoints, cat.cardLines),
         avoid: wordsOnCard,
         theme: shelter.themeColor,
         position: cat.textPosition,
@@ -422,7 +449,7 @@ export default function Preview({ shelter, cat, onCatChange, post, onPostChange,
             {layout.skippedLong > 0
               ? `「いいところ」のうち${layout.skippedLong}行は、長いか文字が多くて猫カードに入らないので、載せていません（顔にかからないようにしています）。`
               : 'ひとことカードと同じ文は使わないので、'}
-            {layout.wordIndexes.map((i) => i + 1).join('・')}行目「{layout.words.join('」「')}」を猫カードに載せました（書き換えていません）。
+            {layout.wordIndexes.map((i) => i + 1).join('・')}行目「{layout.words.join('」「')}」を猫カードに載せました{wordSwap ? '' : '（書き換えていません）'}。
           </p>
         )}
         {/* カードの言葉の案（#19）。長くて入らなかった行があるときだけ。人が選んだときだけ使う */}
@@ -431,13 +458,9 @@ export default function Preview({ shelter, cat, onCatChange, post, onPostChange,
             cat={cat}
             longLines={layout.longLines}
             used={wordSwap}
-            onUse={(from, to) => {
-              onCatChange((c) => ({ ...c, goodPoints: replaceLine(c.goodPoints, from, to) }))
-              setWordSwap({ from, to })
-            }}
+            onUse={(from, to) => onCatChange((c) => ({ ...c, cardLines: addSwap(c.cardLines, from, to) }))}
             onUndo={() => {
-              if (wordSwap) onCatChange((c) => ({ ...c, goodPoints: replaceLine(c.goodPoints, wordSwap.to, wordSwap.from) }))
-              setWordSwap(null)
+              if (wordSwap) onCatChange((c) => ({ ...c, cardLines: removeSwap(c.cardLines, wordSwap.from) }))
             }}
           />
         )}
@@ -572,6 +595,8 @@ export default function Preview({ shelter, cat, onCatChange, post, onPostChange,
           <p className="alert bar-alert" data-story-blocked="1">
             {checkState.status === 'checking'
               ? '本文の根拠を確かめています…'
+              : checkState.status === 'stale'
+                ? 'メモが変わりました。上の［もう一度確かめる］を押してください。'
               : checkState.status === 'failed'
                 ? checkLimit
                   ? '回数の上限で、本文の根拠を確かめられません。上の［本文を外して、決まった形に戻す］を押すと、動画を作れます。'

@@ -371,6 +371,66 @@ await p.screenshot({ path: join(outDir, '16b_投稿文_書けなかった.png'),
   await ctx3.close()
 }
 
+// 本文を確かめたあとでメモが変わったら、✓ を消し、［動画を作る］を押せなくし、確かめ直せる（#23 重い1。11/7 作者の決定）
+{
+  const ctx4 = await browser.newContext({ ...devices['iPhone 15'] })
+  const s4 = await ctx4.newPage()
+  const checks = []
+  await s4.route('**/api/post', async (route) => {
+    const sent = JSON.parse(route.request().postData() ?? '{}')
+    const body = '（仮の本文）よく食べる子です。'
+    return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ result: { body, parts: [{ text: body, cites: [{ doc: 0, start: 0, end: 1, text: 'x' }] }], memoChunks: splitMemo(sent.memo), factChunks: factChunks(sent.facts) } }) })
+  })
+  await s4.route('**/api/check', async (route) => {
+    const sent = JSON.parse(route.request().postData() ?? '{}')
+    checks.push(sent)
+    const results = sent.sentences.map((_, i) => ({ i, ok: true, cites: [{ doc: 0, start: 0, end: 1, text: 'x' }], reason: '' }))
+    return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ results }) })
+  })
+  await s4.goto(url)
+  await s4.getByRole('button', { name: '追加せずに、このまま使う' }).click()
+  await s4.getByLabel('団体名').fill('テスト保護猫の会')
+  await s4.getByRole('button', { name: '登録して始める' }).click()
+  await s4.getByRole('button', { name: '新しい子を紹介' }).click()
+  await s4.locator('input[type=file][accept="image/*"]').setInputFiles(dummy)
+  await s4.locator('.photo img').first().waitFor()
+  const MEMO4 = '（架空）よく食べます。'
+  await s4.getByLabel('預かりさんからのメッセージ・メモ').fill(MEMO4)
+  await s4.getByLabel('名前').fill('ミント')
+  await s4.getByRole('button', { name: '次へ' }).click()
+  const save4 = s4.getByRole('button', { name: '動画を作る' })
+  await s4.getByRole('button', { name: '物語の本文を書いてもらう' }).click()
+  await s4.locator('.story-line').first().waitFor({ timeout: 5000 }).catch(() => {})
+  await s4.waitForTimeout(400)
+  ok((await save4.isEnabled()) && (await s4.locator('.story-text', { hasText: '✓' }).count()) === 1, '確かめ終わると ✓ が出て、［動画を作る］を押せる')
+  // 空行・空白だけの違いは、同じメモとみなす
+  await s4.getByRole('button', { name: '戻る' }).click()
+  await s4.getByLabel('預かりさんからのメッセージ・メモ').fill(MEMO4 + '\n\n')
+  await s4.getByRole('button', { name: '次へ' }).click()
+  await s4.waitForTimeout(500)
+  ok((await s4.locator('[data-story-stale]').count()) === 0 && (await save4.isEnabled()), '空行を足しただけなら、確かめ直さなくてよい')
+  // メモを変える
+  await s4.getByRole('button', { name: '戻る' }).click()
+  await s4.getByLabel('預かりさんからのメッセージ・メモ').fill(MEMO4 + '（架空）よく眠ります。')
+  await s4.getByRole('button', { name: '次へ' }).click()
+  await s4.waitForTimeout(500)
+  ok(await s4.getByText('メモが変わりました。もう一度確かめてください。').isVisible(), 'メモが変わったら「メモが変わりました。もう一度確かめてください」と出る')
+  ok((await s4.locator('.story-text', { hasText: '✓' }).count()) === 0, 'メモが変わったら、✓ を消す')
+  ok(await save4.isDisabled(), 'メモが変わったら、確かめ直すまで［動画を作る］を押せない')
+  await s4.screenshot({ path: join(outDir, '17e_メモが変わった.png'), fullPage: true })
+  const before = checks.length
+  await s4.getByRole('button', { name: 'もう一度確かめる' }).first().click()
+  await s4.locator('.story-line').first().waitFor({ timeout: 5000 }).catch(() => {})
+  await s4.waitForTimeout(400)
+  ok(checks.length === before + 1 && checks.at(-1).memo.includes('よく眠ります'), 'ボタンで確かめ直すと、今のメモで確かめる')
+  ok((await s4.locator('[data-story-stale]').count()) === 0 && (await save4.isEnabled()) && (await s4.locator('.story-text', { hasText: '✓' }).count()) === 1, '確かめ直すと ✓ が戻り、［動画を作る］を押せる')
+  await s4.waitForTimeout(800)
+  await s4.reload()
+  await s4.getByRole('button', { name: '動画を作る' }).waitFor({ timeout: 8000 }).catch(() => {})
+  ok((await s4.locator('[data-story-stale]').count()) === 0, '確かめ直した結果も、入力の途中に残る（読み込み直しても「メモが変わりました」は出ない）')
+  await ctx4.close()
+}
+
 // 回数の上限（#20）：上限のときは、そのことを知らせ、手で入れて最後まで進める。スマホの番号を付けて送る
 {
   const ctx4 = await browser.newContext({ ...devices['iPhone 15'] })
