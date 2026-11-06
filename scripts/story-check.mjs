@@ -33,10 +33,10 @@ ok(stripClosing('そんなに食べない子です。') === 'そんなに食べ�
 ok(CLOSINGS.map((f) => f('ミント')).includes(closingLine(' ミント ', 'id-1')) && closingLine('ミント', 'id-1') === closingLine('ミント', 'id-1'), '決まった文は4つのどれかで、名前だけが入り、同じ猫なら同じ文')
 ok(new Set(['a', 'b', 'c', 'd', 'e', 'f', 'g', 'h'].map((k) => closingLine('ミント', 'cat-' + k))).size >= 3, '猫が違えば、決まった文もばらける（全部が同じ文にならない）')
 
-ok(tidyEmoji('（架空）よく食べます😊\nよく寝ます😊🍀\n遊びます🏠🐾') === '（架空）よく食べます😊\nよく寝ます\n遊びます🐾', '同じ絵文字の2回目と、決まった文の🍀🏠を本文から外す')
-ok(tidyEmoji('（架空）よく食べます😊\nよく寝ます🐾✨\n遊びます！💦\nまた遊びます🎵') === '（架空）よく食べます😊\nよく寝ます🐾✨\n遊びます！\nまた遊びます', '本文の絵文字は3つまで。4つ目からは後ろを外す')
-ok(tidyEmoji('（架空）よく食べます😊😊🐾🐾✨💦') === '（架空）よく食べます😊🐾✨', '同じ絵文字は数えず、ちがう絵文字3つまで')
-ok(tidyEmoji('（架空）よく食べます☺️🐾✨💦') === '（架空）よく食べます☺️🐾✨', '異体字の印（FE0F）つきも1つと数える')
+ok(tidyEmoji('（架空）よく食べます😊\nよく寝ます😊🍀\n遊びます🏠🐾', 3) === '（架空）よく食べます😊\nよく寝ます\n遊びます🐾', '同じ絵文字の2回目と、決まった文の🍀🏠を本文から外す')
+ok(tidyEmoji('（架空）よく食べます😊\nよく寝ます🐾✨\n遊びます！💦') === '（架空）よく食べます😊\nよく寝ます\n遊びます！', 'Claudeが書いた本文の絵文字は1つまで。2つ目からは後ろを外す（11/7。投稿文全体で2つまでのため）')
+ok(tidyEmoji('（架空）よく食べます😊😊🐾🐾✨💦', 2) === '（架空）よく食べます😊🐾', '同じ絵文字は数えず、ちがう絵文字を決めた数まで')
+ok(tidyEmoji('（架空）よく食べます☺️🐾✨💦') === '（架空）よく食べます☺️', '異体字の印（FE0F）つきも1つと数える')
 ok(CLOSINGS.map((f) => f('ミント')).includes('ミントに、温かいおうちが見つかりますように🏠'), '決まった文の「温かいおうち」は🏠')
 ok(dropMeta('自然につなげて書きます。\n\n（架空）よく食べます！🐾\n\n(メモの内容を元にしています。)\n\n（架空）よく食べます！') === '（架空）よく食べます！🐾', '本文ではない前置き・注記と、同じ文の2回目を外す')
 
@@ -68,6 +68,31 @@ await ctx.addInitScript(() => {
   }).observe(document, { childList: true, subtree: true })
 })
 const p = await ctx.newPage()
+// 投稿文全体の絵文字（11/7 作者の決定）：決まった文も含めて2つまで。決まった文の絵文字は消さず、本文の後ろから消す
+{
+  await p.goto(url)
+  const r = await p.evaluate(async () => {
+    const post = await import('/src/lib/post.ts')
+    const story = await import('/src/lib/story.ts')
+    const types = await import('/src/types.ts')
+    const E = /\p{Extended_Pictographic}\uFE0F?/gu
+    const out = {}
+    // 決まった文の4つ（絵文字あり3つ・なし1つ）を全部試す
+    for (let k = 0; k < 400 && Object.keys(out).length < 4; k++) {
+      const cat = { ...types.newCat(), id: 'cat-' + k, name: 'ミント' }
+      const closing = story.closingLine(cat.name, cat.id)
+      if (out[closing]) continue
+      const text = post.makeFixedPost(cat, types.emptyShelter(), new Date(), '（架空）よく食べます😊\nよく寝ます🐾✨\n遊びます💦')
+      const bodyPart = text.split(closing)[0]
+      out[closing] = { total: (text.match(E) ?? []).length, closingKept: text.includes(closing), closingEmoji: (closing.match(E) ?? []).length, bodyEmoji: (bodyPart.match(E) ?? []).length, firstKept: bodyPart.includes('😊') }
+    }
+    return out
+  })
+  const rows = Object.entries(r)
+  ok(rows.length === 4, `決まった文の4つを全部試した（${rows.length}）`)
+  ok(rows.every(([, v]) => v.total <= 2), `投稿文全体の絵文字は、決まった文も含めて2つまで（${rows.map(([, v]) => v.total).join('・')}）`)
+  ok(rows.every(([, v]) => v.closingKept && v.bodyEmoji === 2 - v.closingEmoji && v.firstKept), `決まった文の絵文字は消さず、本文の後ろから消す（本文の初めの絵文字は残る。決まった文に絵文字がなければ本文に2つ。${rows.map(([, v]) => v.closingEmoji + '+' + v.bodyEmoji).join('・')}）`)
+}
 let sent = null
 let answer = 'ok'
 await p.route('**/api/post', async (route) => {

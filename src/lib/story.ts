@@ -78,16 +78,20 @@ export function dropMeta(body: string): string {
 // 本文の絵文字を整える（SPEC 4.2。11/6 作者の決定。AIに任せない）
 // - 決まった文で使う 🍀 🏠 は、本文から外す
 // - 同じ絵文字は1本に1回だけ。2回目からは外す
-// - 本文全体で3つまで。4つ目からは外す（後ろから消す。11/6 作者の決定。決まった文の絵文字は数えず、消さない）
-export const EMOJI_MAX = 3
+// - 絵文字は、最後の決まった文も含めて、投稿文全体で2つまで（11/7 作者の決定。11/6 の「本文に3つまで」は置き換え）
+//   超えたときは本文の後ろから消す。決まった文の絵文字は消さない。決まった文には絵文字が1つ入ることがあるので、
+//   Claudeが書いた本文はまず1つまでにする（max の初めの値）。投稿文を組み立てるときに、決まった文と合わせて2つまでにする（post.ts）
+export const POST_EMOJI_MAX = 2
+export const BODY_EMOJI_MAX = 1
 const EMOJI = /\p{Extended_Pictographic}\uFE0F?/gu
 export const CLOSING_EMOJI = ['🍀', '🏠']
-export function tidyEmoji(body: string): string {
+export const countEmoji = (text: string) => (text.match(EMOJI) ?? []).length
+export function tidyEmoji(body: string, max = BODY_EMOJI_MAX): string {
   const seen = new Set<string>()
   return body
     .replace(EMOJI, (e) => {
       const k = e.replace('\uFE0F', '')
-      if (CLOSING_EMOJI.includes(k) || seen.has(k) || seen.size >= EMOJI_MAX) return ''
+      if (CLOSING_EMOJI.includes(k) || seen.has(k) || seen.size >= max) return ''
       seen.add(k)
       return e
     })
