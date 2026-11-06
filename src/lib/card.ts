@@ -44,8 +44,13 @@ export type CardLayout = {
   design: CardDesign
   fits: boolean // 名前とカードの言葉が、決めた範囲に収まったか
   scale: number // 長いので小さくした割合（1 = そのまま）
-  linesShown: number // 載せたカードの言葉の行数（元の行のまま。行の途中では切らない）
-  linesTotal: number
+  linesShown: number // 載せたカードの言葉の数（0か1。元の行のまま。行の途中では切らない）
+  linesTotal: number // 「いいところ」の行の数（空の行を除く）
+  word: string | null // 載せたカードの言葉（「いいところ」の1行をそのまま）
+  wordIndex: number // それが「いいところ」の何行目か（0から。載せないときは -1）
+  wordRows: number // カードの言葉の行数（折り返し。2まで）。2のときは猫カードを4秒にする（SPEC 3.2）
+  skippedLong: number // 長くて2行に入らないので、飛ばした行の数
+  skippedSame: number // ひとことカードに載せる文と同じなので、飛ばした行の数
   contrast: number // 文字と、その後ろの色の見やすさ（4.5以上なら読みやすい）。案Aは写真の明るい所で測る
   darken: number // 案A：写真の下のほうを暗くした強さ（0〜1）
   framing?: Framing | null // 案A：実際に使った写真の位置（#29）
@@ -131,8 +136,11 @@ function hexLum(hex: string) {
 const round1 = (n: number) => Math.round(n * 10) / 10
 
 // 名前とカードの言葉の大きさと折り返しを決める
-type Planned = { nameLines: string[]; body: string[][]; nameSize: number; lineSize: number; h: number }
+type Planned = { nameLines: string[]; prof: string[]; profSize: number; body: string[][]; nameSize: number; lineSize: number; h: number }
 const NAME_LH = 1.18
+const PROF_PX = 54 // 年齢と性別の1行（名前より小さく）⚙
+const PROF_LH = 1.4
+const PROF_GAP = 6
 const LINE_LH = 1.42
 const GAP = 22
 
@@ -146,16 +154,20 @@ function planName(ctx: CanvasRenderingContext2D, name: string, k: number, width:
   return { size: Math.round(NAME_PX * k * 0.5), lines: [name] }
 }
 
-function plan(ctx: CanvasRenderingContext2D, name: string, lines: string[], k: number, n: number, width: Widths): Planned {
+function plan(ctx: CanvasRenderingContext2D, name: string, profile: string, lines: string[], k: number, n: number, width: Widths): Planned {
   const { size: nameSize, lines: nameLines } = planName(ctx, name, k, width.name)
+  const profSize = Math.round(PROF_PX * k)
+  ctx.font = `600 ${profSize}px ${FONT}`
+  const prof = profile.trim() ? wrap(ctx, profile.trim(), width.name) : []
   const lineSize = Math.round(LINE_PX * k)
   ctx.font = `700 ${lineSize}px ${FONT}`
   const body = lines.slice(0, n).map((l) => wrap(ctx, l, width.body))
-  return { nameLines, body, nameSize, lineSize, h: blockH({ nameLines, body, nameSize, lineSize }) }
+  return { nameLines, prof, profSize, body, nameSize, lineSize, h: blockH({ nameLines, prof, profSize, body, nameSize, lineSize }) }
 }
 const rowsOf = (body: string[][]) => body.reduce((a, b) => a + b.length, 0)
-function nameH(p: Pick<Planned, 'nameLines' | 'nameSize'>) {
-  return p.nameLines.length * p.nameSize * NAME_LH
+// 名前と、その下の年齢・性別の1行（案Bでは上の帯に入る）
+function nameH(p: Pick<Planned, 'nameLines' | 'nameSize' | 'prof' | 'profSize'>) {
+  return p.nameLines.length * p.nameSize * NAME_LH + (p.prof.length ? PROF_GAP + p.prof.length * p.profSize * PROF_LH : 0)
 }
 // 「いいところ」の項目と項目のあいだは、少し空ける（折り返した行と、次の項目を見分けやすくするため。#10）⚙
 const ITEM_GAP = 0.35 // 行の高さに対する割合
@@ -171,6 +183,7 @@ function blockH(p: Omit<Planned, 'h'>) {
 function choose(
   ctx: CanvasRenderingContext2D,
   name: string,
+  profile: string,
   lines: string[],
   k: number,
   width: Widths,
@@ -178,12 +191,36 @@ function choose(
 ): { p: Planned; scale: number; fits: boolean } {
   for (let n = lines.length; n >= 0; n--) {
     for (const s of SCALES) {
-      const p = plan(ctx, name, lines, k * s, n, width)
-      if (p.nameLines.length <= 3 && ok(p)) return { p, scale: s, fits: true }
+      const p = plan(ctx, name, profile, lines, k * s, n, width)
+      // カードの言葉は2行まで（SPEC 3.1。3秒〜4秒で読める長さ）
+      if (p.nameLines.length <= 3 && p.body.every((rows) => rows.length <= MAX_WORD_ROWS) && ok(p)) return { p, scale: s, fits: true }
     }
   }
   const s = SCALES[SCALES.length - 1]
-  return { p: plan(ctx, name, [], k * s, 0, width), scale: s, fits: false }
+  return { p: plan(ctx, name, profile, [], k * s, 0, width), scale: s, fits: false }
+}
+const MAX_WORD_ROWS = 2
+
+// カードの言葉を1つ選ぶ（SPEC 2.4・3.1。11/6 作る人の決定）
+// 「いいところ」の上の行から順に、ひとことカードに載せる文と同じ行は飛ばし、2行に入る最初の1行を使う。書き換えない。行の途中で切らない
+// 入る行がなければ、名前と年齢・性別だけにする（ツールが言葉を作らない）
+type WordPick = { chosen: { p: Planned; scale: number; fits: boolean }; word: string | null; wordIndex: number; skippedLong: number; skippedSame: number }
+const normWords = (t: string) => t.normalize('NFKC').replace(/[\s「」『』、。,.!！?？]/g, '')
+function pickWord(lines: string[], avoid: string | null | undefined, tryOne: (lines: string[]) => { p: Planned; scale: number; fits: boolean }): WordPick {
+  let skippedLong = 0
+  let skippedSame = 0
+  const av = avoid ? normWords(avoid) : ''
+  for (let i = 0; i < lines.length; i++) {
+    const w = normWords(lines[i])
+    if (av && w && av.includes(w)) {
+      skippedSame++
+      continue
+    }
+    const chosen = tryOne([lines[i]])
+    if (chosen.p.body.length === 1) return { chosen, word: lines[i], wordIndex: i, skippedLong, skippedSame }
+    skippedLong++
+  }
+  return { chosen: tryOne([]), word: null, wordIndex: -1, skippedLong, skippedSame }
 }
 
 function drawCover(ctx: CanvasRenderingContext2D, img: Img, x: number, y: number, w: number, h: number) {
@@ -236,6 +273,18 @@ function drawText(
       widest = Math.max(widest, ctx.measureText(l).width)
       y += p.nameSize * NAME_LH
     }
+    // 年齢と性別の1行（例「推定2歳・男の子」）。名前より小さく、少しだけ薄く
+    if (p.prof.length) {
+      y += PROF_GAP
+      ctx.font = `600 ${p.profSize}px ${FONT}`
+      ctx.globalAlpha = 0.92
+      for (const l of p.prof) {
+        ctx.fillText(l, x, y + p.profSize * 0.1)
+        widest = Math.max(widest, ctx.measureText(l).width)
+        y += p.profSize * PROF_LH
+      }
+      ctx.globalAlpha = 1
+    }
     if (parts === 'all' && p.body.length) y += GAP
   }
   if (parts !== 'name') {
@@ -276,14 +325,16 @@ type Opts = {
   photo: Img | null
   logo: Img | null
   name: string
-  lines: string[] // カードの言葉（「いいところ」の行をそのまま）
+  profile?: string // 年齢と性別の1行（例「推定2歳・男の子」。不明な項目は入れない。両方不明なら空）
+  lines: string[] // カードの言葉の候補（「いいところ」の行をそのまま。この中から1つだけ載せる）
+  avoid?: string | null // ひとことカードに載せる文（同じ行はカードの言葉に使わない）
   theme: string
   position: TextPosition
   framing?: Framing // 写真の位置（#29。案Aだけ）
 }
 
 export function drawCatCard(ctx: CanvasRenderingContext2D, opts: Opts): CardLayout {
-  const lines = opts.lines.map((l) => l.trim()).filter(Boolean).slice(0, 3)
+  const lines = opts.lines.map((l) => l.trim()).filter(Boolean)
   ctx.clearRect(0, 0, CARD_W, CARD_H)
   return designFor(opts.photo) === 'B' ? drawB(ctx, opts, lines) : drawA(ctx, opts, lines)
 }
@@ -299,7 +350,9 @@ function drawA(ctx: CanvasRenderingContext2D, opts: Opts, lines: string[]): Card
 
   const bottom = CARD_H - SAFE.bottom - A_LIFT[opts.position]
   const w = widthFor(bottom)
-  const { p, scale, fits } = choose(ctx, opts.name, lines, 1, { name: w, body: w }, (p) => p.h <= A_MAX_H)
+  const profile = opts.profile ?? ''
+  const pick = pickWord(lines, opts.avoid, (ls) => choose(ctx, opts.name, profile, ls, 1, { name: w, body: w }, (p) => p.h <= A_MAX_H))
+  const { p, scale, fits } = pick.chosen
   const top = bottom - p.h
 
   // 暗くする強さ：文字の後ろの明るい所でも、白い文字が読める（見やすさ4.5以上）まで。最低0.35、最大0.85
@@ -325,13 +378,22 @@ function drawA(ctx: CanvasRenderingContext2D, opts: Opts, lines: string[]): Card
     design: 'A',
     fits: fits && t.widest <= w + 0.5 && top >= SAFE.top + 120 && t.bottom <= bottom + 1,
     scale,
-    linesShown: p.body.length,
-    linesTotal: lines.length,
+    ...wordInfo(pick, p, lines),
     contrast: round1(ratio(1, after(darken))),
     darken: round1(darken * 100) / 100,
     framing: used,
   }
 }
+
+const wordInfo = (pick: WordPick, p: Planned, lines: string[]) => ({
+  linesShown: p.body.length,
+  linesTotal: lines.length,
+  word: pick.word,
+  wordIndex: pick.wordIndex,
+  wordRows: p.body[0]?.length ?? 0,
+  skippedLong: pick.skippedLong,
+  skippedSame: pick.skippedSame,
+})
 
 // 帯の色と文字の色を決める
 function bandColors(theme: string): { band: string; color: string; contrast: number } {
@@ -353,11 +415,11 @@ function bandColors(theme: string): { band: string; color: string; contrast: num
   return { band: hex, color: useWhite ? WHITE : INK, contrast: ratio(textLum, lum(c[0], c[1], c[2])) }
 }
 
-// 案B：上下にテーマ色の帯。帯の中に大きな文字。写真は切らずに真ん中に
+// 案B：上下にテーマ色の帯。上の帯に大きな文字（名前・年齢と性別・カードの言葉）。写真は切らずに、帯のあいだに
 const B_PAD = 36 // 帯の中の、文字の上下の余白
 const B_LOGO = 90 // 案Bのロゴは少し小さく（帯を低くするため）
 const B_MIN_PHOTO = 700 // 写真に残す高さの下限 ⚙
-// 「いいところ」が2つ以上あるのに1つしか入らないときだけ、写真をここまで小さくしてよい（できるだけ2つ載せるため。#10）⚙
+// カードの言葉がふつうの写真の高さでは入らないときだけ、写真をここまで小さくしてよい（できるだけ言葉を載せるため。#10）⚙
 const B_MIN_PHOTO_TWO = 560
 
 function drawB(ctx: CanvasRenderingContext2D, opts: Opts, lines: string[]): CardLayout {
@@ -367,26 +429,25 @@ function drawB(ctx: CanvasRenderingContext2D, opts: Opts, lines: string[]): Card
   const { band, color, contrast } = bandColors(opts.theme)
   const logoH = opts.logo ? B_LOGO + 14 : 0
 
-  const bands = (p: Planned) => {
-    const topH = SAFE.top + logoH + nameH(p) + B_PAD
-    const b = bodyH(p)
-    const botH = b ? B_PAD + b + SAFE.bottom : 0
-    return { topH, botH }
-  }
-  // 名前は上の帯（広い横幅）。いいところは下の帯で、右下のボタンの高さにかかる。
-  // 名前と中心をそろえるため、右のボタンを避ける幅を左右どちらも空けて、真ん中に置く（11/5 見直し①の5番。作る人の決定）
-  const bodyW = widthFor(CARD_H - SAFE.bottom) === WIDE_W ? WIDE_W : CARD_W - SAFE.cornerRight * 2
+  // 文字はすべて上の帯に、上から「名前 → 年齢と性別 → カードの言葉」（11/6 作る人の決定）。
+  // 下の帯はInstagramの表示（説明文・ボタン）で隠れやすいので、文字を置かない。写真も下300には入れない
+  const bands = (p: Planned) => ({ topH: SAFE.top + logoH + p.h + B_PAD, botH: SAFE.bottom })
+  // 上の帯の文字は、右下のボタンの高さ（下から540）より上に収める。そこまでは左右64だけ空ければよい
   const roomFor = (minPhoto: number) => (p: Planned) => {
     const { topH, botH } = bands(p)
-    return CARD_H - topH - botH >= minPhoto
+    return CARD_H - topH - botH >= minPhoto && topH - B_PAD <= CORNER_TOP
   }
-  let chosen = choose(ctx, opts.name, lines, 1, { name: WIDE_W, body: bodyW }, roomFor(B_MIN_PHOTO))
-  // 2つ以上あるのに1つしか入らなかったときだけ、写真を少し小さくして2つ載せる
-  if (lines.length >= 2 && chosen.p.body.length < 2) {
-    const two = choose(ctx, opts.name, lines.slice(0, 2), 1, { name: WIDE_W, body: bodyW }, roomFor(B_MIN_PHOTO_TWO))
-    if (two.fits && two.p.body.length === 2) chosen = two
-  }
-  const { p, scale, fits } = chosen
+  const profile = opts.profile ?? ''
+  // 言葉が入らないときだけ、写真を少し小さくしてでも載せる
+  const pick = pickWord(lines, opts.avoid, (ls) => {
+    const c = choose(ctx, opts.name, profile, ls, 1, { name: WIDE_W, body: WIDE_W }, roomFor(B_MIN_PHOTO))
+    if (ls.length && c.p.body.length < ls.length) {
+      const more = choose(ctx, opts.name, profile, ls, 1, { name: WIDE_W, body: WIDE_W }, roomFor(B_MIN_PHOTO_TWO))
+      if (more.fits && more.p.body.length === ls.length) return more
+    }
+    return c
+  })
+  const { p, scale, fits } = pick.chosen
   const { topH, botH } = bands(p)
 
   ctx.fillStyle = band
@@ -394,21 +455,13 @@ function drawB(ctx: CanvasRenderingContext2D, opts: Opts, lines: string[]): Card
   if (opts.photo) drawContain(ctx, opts.photo, 0, topH, CARD_W, CARD_H - topH - botH)
 
   drawLogo(ctx, opts.logo, SAFE.left, SAFE.top, B_LOGO)
-  const n = drawText(ctx, p, SAFE.left + WIDE_W / 2, SAFE.top + logoH, color, 'center', false, 'name')
-  let bodyOk = true
-  let lastBottom = n.bottom
-  if (p.body.length) {
-    const t = drawText(ctx, p, CARD_W / 2, CARD_H - botH + B_PAD, color, 'center', false, 'body')
-    bodyOk = t.widest <= bodyW + 0.5
-    lastBottom = t.bottom
-  }
+  const t = drawText(ctx, p, SAFE.left + WIDE_W / 2, SAFE.top + logoH, color, 'center', false, 'all')
 
   return {
     design: 'B',
-    fits: fits && n.widest <= WIDE_W + 0.5 && bodyOk && n.bottom <= topH && lastBottom <= CARD_H - SAFE.bottom + 1,
+    fits: fits && t.widest <= WIDE_W + 0.5 && t.bottom <= topH && t.bottom <= CORNER_TOP + 1,
     scale,
-    linesShown: p.body.length,
-    linesTotal: lines.length,
+    ...wordInfo(pick, p, lines),
     contrast: round1(contrast),
     darken: 0,
   }
@@ -538,7 +591,7 @@ export function drawCoverCard(
     if (opts.photo) drawContain(ctx, opts.photo, 0, topH, CARD_W, CARD_H - topH - botH)
     drawLogo(ctx, opts.logo, SAFE.left, SAFE.top, B_LOGO)
     const gw = drawGreeting(ctx, gSize, textTop, color, false)
-    const p: Planned = { nameLines: lines, body: [], nameSize: size, lineSize: 0, h: 0 }
+    const p: Planned = { nameLines: lines, prof: [], profSize: 0, body: [], nameSize: size, lineSize: 0, h: 0 }
     const n = drawText(ctx, p, CARD_W / 2, nameTop, color, 'center', false, 'name')
     drawClover(ctx, CARD_W / 2, CARD_H - botH + 70, 40, COVER_CLOVER)
     return { design, fits: gw <= WIDE_W + 0.5 && n.widest <= WIDE_W + 0.5 && n.bottom <= topH, contrast: round1(contrast), nameSize: size }
@@ -570,7 +623,7 @@ export function drawCoverCard(
   ctx.fillRect(0, top - pad, CARD_W, h + pad * 2)
   drawLogo(ctx, opts.logo, SAFE.left, SAFE.top)
   const gw = drawGreeting(ctx, gSize, top, WHITE, true)
-  const p: Planned = { nameLines: lines, body: [], nameSize: size, lineSize: 0, h: nameH }
+  const p: Planned = { nameLines: lines, prof: [], profSize: 0, body: [], nameSize: size, lineSize: 0, h: nameH }
   const n = drawText(ctx, p, CARD_W / 2, top + gSize * 1.2 + GREET_GAP, WHITE, 'center', true, 'name')
   const cloverY = top - cloverR * 1.3 - 26
   drawClover(ctx, CARD_W / 2, cloverY, cloverR, COVER_CLOVER)
@@ -614,7 +667,7 @@ export function drawClipName(ctx: CanvasRenderingContext2D, name: string) {
   grad.addColorStop(1, 'rgba(0,0,0,0)')
   ctx.fillStyle = grad
   ctx.fillRect(0, top - pad, CARD_W, h + pad * 2)
-  const p: Planned = { nameLines: lines, body: [], nameSize: size, lineSize: 0, h }
+  const p: Planned = { nameLines: lines, prof: [], profSize: 0, body: [], nameSize: size, lineSize: 0, h }
   drawText(ctx, p, CARD_W / 2, top, WHITE, 'center', true, 'name')
 }
 

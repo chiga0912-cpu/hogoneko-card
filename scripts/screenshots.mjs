@@ -284,27 +284,87 @@ const seenWithoutScroll = async (p, loc) => {
     check((await a('data-design')) === 'B', `${label}の写真は、案B（上下に色の帯）になる`)
     check((await a('data-fits')) === '1', `${label}の写真（案B）でも、長い文字がはみ出さない（${Math.round(Number(await a('data-scale')) * 100)}%・${await a('data-lines-shown')}/${await a('data-lines-total')}行）`)
     if (label === '横') {
-      // #10：ふつうの長さの名前なら、長い「いいところ」でも2つは載る（名前が41字もあると、上の帯で場所を使うので1つになることがある）
-      const two = await p.evaluate(async () => {
+      // 猫カードの言葉（SPEC 2.4・3.1。11/6）：1つ・2行まで。長い行は飛ばして次の行。ひとことと同じ行は使わない。年齢と性別の1行
+      const r = await p.evaluate(async () => {
         try {
           const m = await import('/src/lib/card.ts')
+          const age = await import('/src/lib/age.ts')
           const c = document.createElement('canvas')
           c.width = 1080
           c.height = 1920
-          const ph = document.createElement('canvas')
-          ph.width = 800
-          ph.height = 600
-          const lines = ['（架空）朝はいちばんに起きてきて、台所の前でごはんの時間を知らせてくれる、とても几帳面な子です', '（架空）ほかの猫とも仲よくでき、子猫が来たときは毛づくろいをしてあげる、面倒見のよいお兄さんです', '（架空）抱っこはまだ少し苦手ですが、ひざの上には自分から乗ってきて、そのまま一時間でも眠っています']
-          const l = m.drawCatCard(c.getContext('2d'), { photo: ph, logo: null, name: 'テスト', lines, theme: '#e8826b', position: 'normal' })
-          return `${l.linesShown}/${l.linesTotal}/${l.fits ? 1 : 0}`
+          const tall = document.createElement('canvas')
+          tall.width = 600
+          tall.height = 800
+          const wide = document.createElement('canvas')
+          wide.width = 800
+          wide.height = 600
+          const long = '（架空）朝はいちばんに起きてきて、台所の前でごはんの時間を知らせてくれる、とても几帳面な子です'
+          const draw = (photo, lines, extra = {}) => {
+            const l = m.drawCatCard(c.getContext('2d'), { photo, logo: null, name: 'テスト', lines, theme: '#e8826b', position: 'normal', ...extra })
+            return { word: l.word, index: l.wordIndex, rows: l.wordRows, long: l.skippedLong, same: l.skippedSame, fits: l.fits }
+          }
+          const out = {}
+          for (const [k, photo] of [['A', tall], ['B', wide]]) {
+            out[k] = {
+              short: draw(photo, ['（架空）よく食べる', '（架空）人懐っこい']),
+              two: draw(photo, ['（架空）毎朝玄関までお迎えに来てくれる子']),
+              skip: draw(photo, [long, '（架空）なでると喉を鳴らす']),
+              none: draw(photo, [long]),
+              same: draw(photo, ['（架空）よく食べる', '（架空）人懐っこい'], { avoid: '（架空）よく食べる。' }),
+              empty: draw(photo, [], { profile: '推定2歳・男の子' }),
+            }
+          }
+          // 案Bでは、下の帯（下300）に文字も写真も置かない：その所が帯の色1色だけか
+          m.drawCatCard(c.getContext('2d'), { photo: wide, logo: null, name: 'テスト', profile: '推定2歳・男の子', lines: ['（架空）毎朝玄関までお迎えに来てくれる子'], theme: '#e8826b', position: 'normal' })
+          const d = c.getContext('2d').getImageData(0, 1920 - 300, 1080, 300).data
+          let other = 0
+          for (let i = 0; i < d.length; i += 4) if (d[i] !== d[0] || d[i + 1] !== d[1] || d[i + 2] !== d[2]) other++
+          out.bottomClean = other === 0
+          const birth = (months) => {
+            const d = new Date()
+            d.setMonth(d.getMonth() - months)
+            return { mode: 'birth', birthYear: d.getFullYear(), birthMonth: d.getMonth() + 1, estimated: true }
+          }
+          // 動画の中の猫カードの長さ：言葉が1行なら3秒、2行なら4秒（SPEC 3.2）
+          const reel = await import('/src/lib/reel.ts')
+          const types = await import('/src/types.ts')
+          const secOf = async (goodPoints) => {
+            const segs = await reel.buildSegments({ ...types.newCat(), name: 'テスト', goodPoints }, types.emptyShelter(), null, null)
+            return segs.find((x) => x.label === '猫カード')?.sec
+          }
+          out.sec = [await secOf(['（架空）よく食べる']), await secOf(['（架空）毎朝玄関までお迎えに来てくれる子']), await secOf([])]
+          out.profile = [
+            age.cardProfile(birth(26), 'オス'),
+            age.cardProfile(birth(3), 'メス'),
+            age.cardProfile({ mode: 'unknown' }, 'オス'),
+            age.cardProfile(birth(26), '未確認'),
+            age.cardProfile({ mode: 'unknown' }, '未確認'),
+          ]
+          return out
         } catch {
           return null // 本番と同じ作りでは、部品を直接読めない
         }
       })
-      if (two) check(two.startsWith('2/3') || two.startsWith('3/3'), `案B：ふつうの長さの名前なら、長い「いいところ」でも2つは載る（#10。${two}）`)
+      if (r) {
+        for (const k of ['A', 'B']) {
+          const t = r[k]
+          check(t.short.word === '（架空）よく食べる' && t.short.rows === 1 && t.short.fits, `案${k}：カードの言葉は「いいところ」の1行目を1つだけ（1行）`)
+          check(t.two.word && t.two.rows === 2 && t.two.fits, `案${k}：2行に入る言葉は2行で載せる（${t.two.rows}行）`)
+          check(t.skip.word === '（架空）なでると喉を鳴らす' && t.skip.index === 1 && t.skip.long === 1, `案${k}：長くて2行に入らない行は飛ばして、次の行を使う`)
+          check(t.none.word === null && t.none.long === 1 && t.none.fits, `案${k}：どの行も入らなければ、言葉を載せない（はみ出さない）`)
+          check(t.same.word === '（架空）人懐っこい' && t.same.same === 1, `案${k}：ひとことカードと同じ行は使わない`)
+          check(t.empty.word === null && t.empty.fits, `案${k}：言葉が空なら、名前と年齢・性別だけ（ツールは言葉を作らない）`)
+        }
+        check(r.bottomClean, '案B：言葉も上の帯に入り、下の帯（下300）には文字も写真も置かない')
+        check(JSON.stringify(r.sec) === '[3,4,3]', `動画の猫カードは、言葉が1行なら3秒、2行なら4秒（${JSON.stringify(r.sec)}）`)
+        check(
+          JSON.stringify(r.profile) === JSON.stringify(['推定2歳・男の子', '推定生後3か月・女の子', '男の子', '推定2歳', '']),
+          `年齢と性別の1行：「男の子」「女の子」と書き、不明な項目は出さない（${JSON.stringify(r.profile)}）`,
+        )
+      }
     }
     check(Number(await a('data-contrast')) >= 4.5, `${label}の写真（案B）：明るいテーマ色の帯でも、文字が読みやすい（見やすさ ${await a('data-contrast')}）`)
-    check(!(await p.getByRole('group', { name: '文字の位置' }).isVisible()) && (await p.getByText('文字は上下の色の帯に入ります').isVisible()), `${label}の写真（案B）では、文字の位置のボタンを出さず、そのわけを出す`)
+    check(!(await p.getByRole('group', { name: '文字の位置' }).isVisible()) && (await p.getByText('文字は上の色の帯に入ります').isVisible()), `${label}の写真（案B）では、文字の位置のボタンを出さず、そのわけを出す`)
     await p.screenshot({ path: join(outDir, `5h_猫カード_${label}_案B_長い文字_明るい色.png`), fullPage: true })
   }
   // 「いいところ」が空のとき
@@ -314,7 +374,10 @@ const seenWithoutScroll = async (p, loc) => {
   await p.getByRole('button', { name: '次へ' }).click()
   await p.waitForTimeout(400)
   check((await a('data-lines-total')) === '0' && (await a('data-lines-shown')) === '0' && (await a('data-fits')) === '1', '「いいところ」が空のときは、カードに空欄を作らない（名前だけ）')
+  check(await p.getByText('猫カードに載せる言葉がありません。「いいところ」を1行入れると、2枚目で新しく伝わります。').isVisible(), '「いいところ」が空のときは、確認画面で知らせる')
   await p.screenshot({ path: join(outDir, '5g_猫カード_いいところなし.png'), fullPage: true })
+  await p.locator('[data-notice="no-word"]').getByRole('button', { name: '入力に戻って書く' }).click()
+  check(await p.getByLabel('いいところ').isVisible(), '［入力に戻って書く］で入力画面に戻る')
   await ctx.close()
 }
 

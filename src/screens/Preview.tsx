@@ -16,6 +16,7 @@ import {
 } from '../lib/card'
 import * as db from '../db'
 import { nextEvent } from '../lib/events'
+import { cardProfile } from '../lib/age'
 import { clipTimeFor, photoIndex, type CardKey } from '../lib/photoPlan'
 import { TopBar } from './ShelterForm'
 import FramingEditor from './FramingEditor'
@@ -34,9 +35,11 @@ function CatCard({
   onLayout,
   onClick,
   still = null,
+  avoid = null,
 }: {
   cat: Cat
   shelter: Shelter
+  avoid?: string | null // ひとことカードに載せる文（同じ行は猫カードの言葉に使わない）
   className: string
   onLayout?: (l: CardLayout) => void
   onClick: () => void
@@ -59,7 +62,9 @@ function CatCard({
         photo: photo ?? still,
         logo,
         name: cat.name,
+        profile: cardProfile(cat.age, cat.sex),
         lines: cat.goodPoints,
+        avoid,
         theme: shelter.themeColor,
         position: cat.textPosition,
         framing: cat.framing.cat,
@@ -70,7 +75,7 @@ function CatCard({
     return () => {
       stop = true
     }
-  }, [photoBlob, still, shelter.logo, shelter.themeColor, cat.name, cat.goodPoints, cat.textPosition, cat.framing.cat, onLayout])
+  }, [photoBlob, still, shelter.logo, shelter.themeColor, cat.name, cat.age, cat.sex, cat.goodPoints, avoid, cat.textPosition, cat.framing.cat, onLayout])
   return (
     <canvas
       ref={ref}
@@ -83,6 +88,8 @@ function CatCard({
       data-scale={layout?.scale}
       data-lines-shown={layout?.linesShown}
       data-lines-total={layout?.linesTotal}
+      data-word={layout?.word ?? ''}
+      data-word-rows={layout?.wordRows}
       data-contrast={layout?.contrast}
       data-design={layout?.design}
       data-darken={layout?.darken}
@@ -240,7 +247,17 @@ export default function Preview({ shelter, cat, onCatChange, post, onPostChange,
     const logo = await img(shelter.logo)
     if (moving === 'cat') {
       const photo = (await img(catBlob)) ?? (clipBlob ? still : null)
-      return drawCatCard(ctx, { photo, logo, name: cat.name, lines: cat.goodPoints, theme: shelter.themeColor, position: cat.textPosition, framing: f }).framing ?? null
+      return drawCatCard(ctx, {
+        photo,
+        logo,
+        name: cat.name,
+        profile: cardProfile(cat.age, cat.sex),
+        lines: cat.goodPoints,
+        avoid: wordsOnCard,
+        theme: shelter.themeColor,
+        position: cat.textPosition,
+        framing: f,
+      }).framing ?? null
     }
     if (moving === 'words') {
       const photo = (await img(wordsBlob)) ?? (clipBlob ? (stills.words ?? null) : null)
@@ -268,7 +285,7 @@ export default function Preview({ shelter, cat, onCatChange, post, onPostChange,
             <figcaption>1 表紙</figcaption>
           </figure>
           <figure className="card-slot">
-            <CatCard cat={cat} shelter={shelter} still={clipBlob ? still : null} className="card-canvas" onLayout={setLayout} onClick={() => setFull('cat')} />
+            <CatCard cat={cat} shelter={shelter} avoid={wordsOnCard} still={clipBlob ? still : null} className="card-canvas" onLayout={setLayout} onClick={() => setFull('cat')} />
             <figcaption>2 猫カード</figcaption>
             {layout?.design === 'A' && hasPhotoFor('cat') && (
               <button className="btn btn-small move-photo" onClick={() => setMoving('cat')}>
@@ -325,20 +342,41 @@ export default function Preview({ shelter, cat, onCatChange, post, onPostChange,
             )}
           </div>
         )}
-        {layout && layout.linesShown < layout.linesTotal && (
-          <p className="notice">
-            いいところが長くて入りきらないので、最初の{layout.linesShown}行だけ載せました（行の途中では切っていません）。
+        {/* 猫カードの言葉（SPEC 3.1。1つ・2行まで。ツールは言葉を作らない） */}
+        {layout && !layout.word && layout.linesTotal === 0 && (
+          <div className="notice" data-notice="no-word">
+            <p>猫カードに載せる言葉がありません。「いいところ」を1行入れると、2枚目で新しく伝わります。</p>
+            <button className="btn btn-small" onClick={onBack}>
+              入力に戻って書く
+            </button>
+          </div>
+        )}
+        {layout && !layout.word && layout.linesTotal > 0 && (
+          <div className="notice" data-notice="word-too-long">
+            <p>
+              {layout.skippedLong > 0
+                ? '「いいところ」がどれも長くて、猫カードに入りません（1つを2行まで）。短い行を1つ足すか、短く直してください。'
+                : '「いいところ」が、ひとことカードと同じ文だけなので、猫カードには載せません。ほかの「いいところ」を1行足してください。'}
+            </p>
+            <button className="btn btn-small" onClick={onBack}>
+              入力に戻って書く
+            </button>
+          </div>
+        )}
+        {layout?.word && layout.wordIndex > 0 && (
+          <p className="notice" data-notice="word-next">
+            {layout.skippedLong > 0 ? '「いいところ」の上の行は長くて入らないので、' : 'ひとことカードと同じ文は使わないので、'}
+            {layout.wordIndex + 1}行目「{layout.word}」を猫カードに載せました（書き換えていません）。
           </p>
         )}
-        {layout && layout.linesTotal > 0 && layout.linesShown === layout.linesTotal && layout.scale < 1 && (
-          <p className="notice">いいところが長いので、カードの文字を少し小さくしました。</p>
-        )}
+        {layout?.word && layout.scale < 1 && <p className="notice">言葉が長いので、カードの文字を少し小さくしました。</p>}
+        {layout?.word && layout.wordRows === 2 && <p className="muted">言葉が2行なので、猫カードは4秒にします。</p>}
         {layout && !layout.fits && <p className="alert">名前が長くて、カードに入りきりません。</p>}
         {!coverFits && <p className="alert">名前が長くて、表紙に入りきりません。</p>}
         {!endFits && <p className="alert">連絡先や団体名が長くて、最後の1枚に入りきりません。シェルター情報で短くしてください。</p>}
 
         {layout?.design === 'B' && (
-          <p className="muted center">横長・正方形の写真なので、文字は上下の色の帯に入ります。縦長の写真なら、写真の上に文字が載ります</p>
+          <p className="muted center">横長・正方形の写真なので、文字は上の色の帯に入ります。縦長の写真なら、写真の上に文字が載ります</p>
         )}
         {/* カードを描き終わってから出す（開いた直後に、案Bでも一瞬出てしまわないように） */}
         {layout?.design === 'A' && (
@@ -386,7 +424,7 @@ export default function Preview({ shelter, cat, onCatChange, post, onPostChange,
 
       {full && (
         <div className="card-full" role="dialog" aria-label="カードを画面いっぱいに表示" onClick={() => setFull(null)}>
-          {full === 'cat' && <CatCard cat={cat} shelter={shelter} still={clipBlob ? still : null} className="card-full-canvas" onClick={() => setFull(null)} />}
+          {full === 'cat' && <CatCard cat={cat} shelter={shelter} avoid={wordsOnCard} still={clipBlob ? still : null} className="card-full-canvas" onClick={() => setFull(null)} />}
           {full === 'cover' && <PaintedCard paint={paintCover} deps={coverDeps} className="card-full-canvas" label="表紙" onClick={() => setFull(null)} />}
           {full === 'words' && wordsOnCard && <PaintedCard paint={paintWords} deps={wordsDeps} className="card-full-canvas" label="ひとこと" onClick={() => setFull(null)} />}
           {full === 'end' && <PaintedCard paint={paintEnd} deps={endDeps} className="card-full-canvas" label="最後の1枚" onClick={() => setFull(null)} />}

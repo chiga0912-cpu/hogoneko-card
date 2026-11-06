@@ -36,3 +36,9 @@ export function jpDate(ymd: string): string {
   const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(ymd)
   return m ? `${Number(m[2])}月${Number(m[3])}日` : ymd
 }
+
+// 猫カードの、名前の下の1行（例「推定2歳・男の子」）。不明な項目は出さない。両方不明なら空（SPEC 3.1。11/6 作る人の決定）
+export function cardProfile(age: Age, sex: string, today = new Date()): string {
+  const s = sex === 'オス' ? '男の子' : sex === 'メス' ? '女の子' : ''
+  return [ageText(age, today), s].filter(Boolean).join('・')
+}
