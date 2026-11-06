@@ -57,54 +57,11 @@ export type CardLayout = {
   framing?: Framing | null // 案A：実際に使った写真の位置（#29）
 }
 
+import { drawLogoCircle } from './logo.ts' // 拡張子つき：自動の確認（scripts/wrap-check.mjs）が Node でこのファイルを直接読むため
+
 type Img = CanvasImageSource & { width: number; height: number }
 
-// ── ロゴの描き方（11/6夜 作る人の決定）──
-// ツールはロゴの下に台を敷かない。背景が透明なロゴは、そのまま描く。
-// 背景があるロゴ（透明な所がない画像。白い背景など）は、白を自動で消さず、角を丸くして描く
-const logoClear = new WeakMap<object, boolean>()
-export function logoHasClear(img: Img): boolean {
-  const known = logoClear.get(img)
-  if (known !== undefined) return known
-  let clear = false
-  try {
-    const c = document.createElement('canvas')
-    c.width = 48
-    c.height = 48
-    const x = c.getContext('2d', { willReadFrequently: true })
-    if (x) {
-      x.drawImage(img, 0, 0, 48, 48)
-      const d = x.getImageData(0, 0, 48, 48).data
-      for (let i = 3; i < d.length; i += 4)
-        if (d[i] < 250) {
-          clear = true
-          break
-        }
-    }
-  } catch {
-    clear = false // 調べられないときは、背景があるとみなして角を丸くする
-  }
-  logoClear.set(img, clear)
-  return clear
-}
-export function drawLogo(ctx: CanvasRenderingContext2D, img: Img, x: number, y: number, w: number, h: number) {
-  if (logoHasClear(img)) {
-    ctx.drawImage(img, x, y, w, h)
-    return
-  }
-  const r = Math.min(w, h) * 0.16 // 角の丸さ ⚙
-  ctx.save()
-  ctx.beginPath()
-  ctx.moveTo(x + r, y)
-  ctx.arcTo(x + w, y, x + w, y + h, r)
-  ctx.arcTo(x + w, y + h, x, y + h, r)
-  ctx.arcTo(x, y + h, x, y, r)
-  ctx.arcTo(x, y, x + w, y, r)
-  ctx.closePath()
-  ctx.clip()
-  ctx.drawImage(img, x, y, w, h)
-  ctx.restore()
-}
+// ロゴは丸いアイコン（Instagramのアイコンと同じ。src/lib/logo.ts。11/7 作る人の決定）
 
 // 日本語を、幅に収まるように折り返す（「、」「。」などで行を始めない）
 const NO_START = '、。，．,.）」』】〕！？!?ーぁぃぅぇぉっゃゅょァィゥェォッャュョ・'
@@ -672,7 +629,7 @@ export function drawCoverCard(
     const textTop = SAFE.top
     const nameTop = textTop + gSize * 1.2 + GREET_GAP
     const markTop = nameTop + lines.length * size * NAME_LH + MARK_GAP
-    const mark = planMark(ctx, opts.logo, org, CARD_H - SAFE.bottom - markTop - B_PAD - B_MIN_PHOTO_TWO)
+    const mark = planMark(ctx, opts.logo, org, CARD_H - SAFE.bottom - markTop - B_PAD - B_MIN_PHOTO_TWO, opts.theme)
     const topH = markTop + mark.h + (mark.h ? B_PAD : B_PAD - MARK_GAP)
     const botH = SAFE.bottom
     paintBand(ctx, band, opts.pattern)
@@ -704,7 +661,7 @@ export function drawCoverCard(
   const top = CORNER_TOP - 10 - h
   const markTop = top + h + MARK_GAP
   // ロゴか団体名は名前の下。下の隠れる所（下300）には入れない（入らないときはロゴを小さくする）
-  const mark = planMark(ctx, opts.logo, org, CARD_H - SAFE.bottom - markTop)
+  const mark = planMark(ctx, opts.logo, org, CARD_H - SAFE.bottom - markTop, opts.theme)
   const bottom = markTop + mark.h
   // 言葉・名前・ロゴか団体名の後ろだけを、境目のないグラデーションで暗くする（ほかのカードと同じ。11/6夜）
   const shade = shadeBehind(ctx, top, bottom)
@@ -724,22 +681,16 @@ export function drawCoverCard(
 }
 
 // 表紙の、名前の下のロゴか団体名（差出人のように）。11/6 作者の決定
-// ロゴ：220px の正方形と同じくらいの大きさ（高さ220まで、横長は幅396まで）。白い背景も含め、ロゴの画像をそのまま描く（切り抜かない）
+// ロゴ：直径220pxの丸いアイコン（真ん中を丸く切り抜く。11/7 作る人の決定。src/lib/logo.ts）
 // 団体名：言葉と同じ60px（遠くから読めるように）。長いときは2行・小さくする
 const MARK_LOGO = 220
 const MARK_GAP = 22
 const ORG_PX = 60
-type Mark = { kind: 'logo' | 'org' | 'none'; h: number; logo?: Img; w?: number; lines?: string[]; size?: number }
-function planMark(ctx: CanvasRenderingContext2D, logo: Img | null, org: string, room: number): Mark {
+type Mark = { kind: 'logo' | 'org' | 'none'; h: number; logo?: Img; w?: number; lines?: string[]; size?: number; theme?: string }
+function planMark(ctx: CanvasRenderingContext2D, logo: Img | null, org: string, room: number, theme: string): Mark {
   if (logo && logo.width > 0 && logo.height > 0) {
-    const r = logo.width / logo.height
-    let w = MARK_LOGO * Math.sqrt(r)
-    let h = MARK_LOGO / Math.sqrt(r)
-    if (h > MARK_LOGO) [w, h] = [MARK_LOGO * r, MARK_LOGO]
-    const maxW = Math.min(MARK_LOGO * 1.8, WIDE_W)
-    if (w > maxW) [w, h] = [maxW, maxW / r]
-    if (h > room && room > 40) [w, h] = [(w * room) / h, room] // 隠れる所に入らないように小さくする
-    return { kind: 'logo', h: Math.round(h), w: Math.round(w), logo }
+    const d = Math.round(room > 40 ? Math.min(MARK_LOGO, room) : MARK_LOGO) // 隠れる所に入らないように小さくする
+    return { kind: 'logo', h: d, w: d, logo, theme }
   }
   if (org) {
     for (const s of [1, 0.9, 0.8, 0.7]) {
@@ -753,7 +704,7 @@ function planMark(ctx: CanvasRenderingContext2D, logo: Img | null, org: string, 
 }
 function drawMark(ctx: CanvasRenderingContext2D, m: Mark, y: number, color: string, shadow: boolean): number {
   if (m.kind === 'logo' && m.logo && m.w) {
-    drawLogo(ctx, m.logo, CARD_W / 2 - m.w / 2, y, m.w, m.h)
+    drawLogoCircle(ctx, m.logo, CARD_W / 2 - m.w / 2, y, m.w, m.theme ?? '#888888')
     return m.w
   }
   if (m.kind === 'org' && m.lines && m.size) {
@@ -891,7 +842,7 @@ function paintPhoto(ctx: CanvasRenderingContext2D, design: CardDesign, photo: Im
 }
 
 // 文字の行（帯の上なら真ん中にそろえ、写真の上なら左にそろえて影を付ける）
-type TextRow = { lines: string[]; px: number; weight: number; lh: number; gap: number; alpha?: number; logo?: { img: Img; w: number; h: number } }
+type TextRow = { lines: string[]; px: number; weight: number; lh: number; gap: number; alpha?: number; logo?: { img: Img; w: number; h: number; theme: string } }
 const rowsH = (rows: TextRow[]) => rows.reduce((y, r) => y + r.gap + (r.logo ? r.logo.h : r.lines.length * r.px * r.lh), 0)
 function drawRows(ctx: CanvasRenderingContext2D, rows: TextRow[], top: number, design: CardDesign, color: string): { widest: number; bottom: number } {
   const center = design === 'B'
@@ -910,10 +861,10 @@ function drawRows(ctx: CanvasRenderingContext2D, rows: TextRow[], top: number, d
   for (const r of rows) {
     y += r.gap
     if (r.logo) {
-      // ロゴは台を敷かずに描く。透明なロゴはそのまま、背景があるロゴは白を消さずに角を丸く（drawLogo）。影は付けない
+      // ロゴは丸いアイコン（台を足さない。透明なロゴはテーマ色の丸の上。src/lib/logo.ts）。影は付けない
       ctx.save()
       ctx.shadowColor = 'transparent'
-      drawLogo(ctx, r.logo.img, center ? CARD_W / 2 - r.logo.w / 2 : SAFE.left, y, r.logo.w, r.logo.h)
+      drawLogoCircle(ctx, r.logo.img, center ? CARD_W / 2 - r.logo.w / 2 : SAFE.left, y, r.logo.w, r.logo.theme)
       ctx.restore()
       widest = Math.max(widest, r.logo.w)
       y += r.logo.h
@@ -1041,9 +992,8 @@ export function drawEndCard(
     }
     const g = opts.event ? 40 * k : 0
     if (logo) {
-      const h = (opts.event ? 150 : 200) * k
-      const w = Math.min(width, h * 2.4, (h * logo.width) / logo.height)
-      rows.push({ lines: [], px: 0, weight: 0, lh: 1, gap: g, logo: { img: logo, w, h: (w * logo.height) / logo.width } })
+      const d = (opts.event ? 150 : 200) * k // 丸いアイコンの直径
+      rows.push({ lines: [], px: 0, weight: 0, lh: 1, gap: g, logo: { img: logo, w: d, h: d, theme: opts.theme } })
     }
     if (opts.shelterName.trim()) rows.push(text(opts.shelterName.trim(), (logo ? 54 : 76) * k, 800, logo ? 16 * k : g, undefined, true))
     contact.forEach((c, i) => rows.push(text(c, Math.max(CONTACT_MIN_PX, 40 * k), 600, (i ? 2 : 12) * k)))

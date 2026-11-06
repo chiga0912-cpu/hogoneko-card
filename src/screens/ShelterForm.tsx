@@ -102,7 +102,7 @@ export default function ShelterForm({ initial, first, needName = false, onSave, 
 
       <div className="field">
         <span>ロゴ</span>
-        <p className="muted" data-logo-hint>背景が透明なロゴだと、きれいに出ます</p>
+        <p className="muted" data-logo-hint>Instagramのアイコンと同じ画像を入れると、きれいに出ます。丸く切り抜いて表示します</p>
         {logoFailed && <p className="alert">ロゴを読み込めませんでした。もう一度選んでください。</p>}
         <div className="logo-row">
           {logoUrl && <img className="logo-thumb" src={logoUrl} alt="ロゴ" />}

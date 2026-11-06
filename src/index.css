@@ -210,11 +210,11 @@ input[type='color'] {
   background: var(--surface);
 }
 .logo-thumb {
+  /* 選んだ画像をそのまま小さく見せる。白い台は敷かない（11/7） */
   width: 56px;
   height: 56px;
   object-fit: contain;
   border-radius: 10px;
-  background: var(--surface);
   border: 2px solid var(--line);
 }
 
@@ -375,11 +375,10 @@ input[type='color'] {
   margin: 0;
 }
 .hero-logo {
+  /* 丸いアイコン（カードと同じ作り方で描いた絵）。白い台は敷かない（11/7） */
   width: 36px;
   height: 36px;
-  object-fit: contain;
-  border-radius: 8px;
-  background: var(--surface);
+  border-radius: 50%;
 }
 .count {
   font-size: 13px;

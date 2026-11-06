@@ -1,6 +1,6 @@
 import type { Screen } from '../App'
 import type { Shelter } from '../types'
-import { useBlobUrl } from '../lib/useBlobUrls'
+import { useLogoIcon } from '../lib/useLogoIcon'
 
 type Props = {
   shelter: Shelter
@@ -27,7 +27,7 @@ export default function Home({
   onContinue,
   go,
 }: Props) {
-  const logoUrl = useBlobUrl(shelter.logo)
+  const logoUrl = useLogoIcon(shelter.logo, shelter.themeColor, 36) // 丸いアイコン（カードと同じ。11/7）
   return (
     <main className="screen">
       <header className="hero">

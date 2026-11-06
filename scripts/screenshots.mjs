@@ -1482,30 +1482,41 @@ console.log('表示:', await page.locator('.status-line').innerText())
         }
       }
       out.bands = ['#e8826b', '#5a9e6f', '#f5d547', '#ffffff', '#ffe4ec'].map((t) => m.bandColors(t))
-      // ロゴ（11/6夜 作者の決定）：ツールは台を敷かない。透明なロゴはそのまま、背景があるロゴは白を消さずに角を丸く
-      const clearLogo = cv()
-      clearLogo.width = 400
-      clearLogo.height = 400
-      const cx = clearLogo.getContext('2d')
-      cx.fillStyle = 'rgb(255,0,255)'
-      cx.beginPath()
-      cx.arc(200, 200, 120, 0, Math.PI * 2)
-      cx.fill()
-      const whiteLogo = pic(400, 400, '#ffffff')
-      const wx = whiteLogo.getContext('2d')
-      wx.fillStyle = 'rgb(255,0,255)'
-      wx.beginPath()
-      wx.arc(200, 200, 120, 0, Math.PI * 2)
-      wx.fill()
+      // ロゴ（11/7 作者の決定）：Instagramのアイコンと同じく、丸い枠で真ん中をそのまま切り取るだけ（白い余白は詰めない）。
+      // 台を足さない。透明なロゴはテーマ色の丸の上
+      const MAGENTA = 'rgb(255,0,255)'
+      const logoOn = (bg, draw) => {
+        const c = cv()
+        c.width = 400
+        c.height = 400
+        const x = c.getContext('2d')
+        if (bg) {
+          x.fillStyle = bg
+          x.fillRect(0, 0, 400, 400)
+        }
+        x.fillStyle = MAGENTA
+        draw(x)
+        return c
+      }
+      const L = {
+        透明: logoOn(null, (x) => { x.beginPath(); x.arc(200, 200, 120, 0, Math.PI * 2); x.fill() }),
+        白い背景: logoOn('#ffffff', (x) => { x.beginPath(); x.arc(200, 200, 120, 0, Math.PI * 2); x.fill() }),
+        写真: pic(400, 400, MAGENTA),
+        縦長: logoOn(null, (x) => { x.fillRect(0, 0, 400, 400) }),
+      }
+      L.縦長.width = 200
+      L.縦長.height = 400
+      L.縦長.getContext('2d').fillStyle = MAGENTA
+      L.縦長.getContext('2d').fillRect(0, 0, 200, 400)
       const px = (c, x, y) => [...c.getContext('2d').getImageData(x, y, 1, 1).data].slice(0, 3).join(',')
       const band = m.bandColors('#e8826b').band
-      const bandRgb = [1, 3, 5].map((i) => parseInt(band.slice(i, i + 2), 16)).join(',')
-      out.logo = { clear: m.logoHasClear(clearLogo), white: m.logoHasClear(whiteLogo), band: bandRgb }
-      for (const [k, logo] of [['透明', clearLogo], ['白い背景', whiteLogo]]) {
-        // 横の写真の最後の1枚（譲渡会なし）：ロゴは上の帯の真ん中、220から高さ200
+      const rgb = (h) => [1, 3, 5].map((i) => parseInt(h.slice(i, i + 2), 16)).join(',')
+      out.logo = { band: rgb(band), theme: rgb('#e8826b'), prep: {} }
+      for (const [k, logo] of Object.entries(L)) {
+        // 横の写真の最後の1枚（譲渡会なし）：丸いアイコンは上の帯の真ん中、x 440〜640・y 220〜420（直径200）
         const c = cv()
         m.drawEndCard(c.getContext('2d'), { logo, shelterName: '（架空）テスト保護猫の会', contact: '', event: null, theme: '#e8826b', photo: wide })
-        out.logo[k] = { corner: px(c, 441, 221), edge: px(c, 442, 320), center: px(c, 540, 320) }
+        out.logo.prep[k] = { corner: px(c, 441, 221), edge: px(c, 443, 320), center: px(c, 540, 320), top: px(c, 540, 223) }
       }
       return out
     } catch (e) {
@@ -1538,22 +1549,26 @@ console.log('表示:', await page.locator('.status-line').innerText())
     check(ends.every((c) => c.contact >= 36), `最後の1枚：譲渡会ありでも、連絡先はスマホで読める大きさ（36px＝スマホで約13px以上。最小 ${Math.min(...ends.map((c) => c.contact))}px）`)
     check(r.cards.filter((c) => c.kind === 'ひとこと').every((c) => c.logo === 0 && c.lines === 3 && c.sec === 5), 'ひとこと：改行どおり3行、5秒（ロゴは入れない）')
     check(r.orphan.every((o) => o.ok), `団体名の最後の1文字だけが、次の行に落ちない（${r.orphan.filter((o) => !o.ok).map((o) => o.px + 'px・' + o.n + '字').join('、') || 'すべてOK'}）`)
-    check(r.logo.clear && !r.logo.white, 'ロゴの背景が透明か、背景があるかを見分ける')
-    check(r.logo['透明'].corner === r.logo.band && r.logo['透明'].edge === r.logo.band && r.logo['透明'].center === '255,0,255', `透明なロゴは、台を敷かずにそのまま出る（ロゴの四角の角・端が帯の色 ${r.logo['透明'].corner}／${r.logo['透明'].edge}）`)
-    check(r.logo['白い背景'].corner === r.logo.band && r.logo['白い背景'].edge === '255,255,255' && r.logo['白い背景'].center === '255,0,255', `白い背景のロゴは、白を消さずに角を丸くする（角 ${r.logo['白い背景'].corner}・端 ${r.logo['白い背景'].edge}）`)
+    const lp = r.logo.prep
+    check(Object.values(lp).every((q) => q.corner === r.logo.band), `ロゴは丸い枠で切り取り、丸の外（四角の角）には何も足さない（帯の色のまま。${Object.entries(lp).map(([k, q]) => k + ' ' + q.corner).join('・')}）`)
+    check(lp['透明'].edge === r.logo.theme && lp['透明'].center === '255,0,255', `透明なロゴは、テーマ色の丸の上に出る（丸のふち ${lp['透明'].edge}・まん中 ${lp['透明'].center}）`)
+    check(lp['白い背景'].edge === '255,255,255' && lp['白い背景'].center === '255,0,255', `白い背景のロゴは、白い余白を詰めずに、そのまま丸く切り取る（丸のふち ${lp['白い背景'].edge}）`)
+    check(lp['写真'].edge === '255,0,255' && lp['写真'].top === '255,0,255', '余白のない画像（写真など）は、丸いっぱいに真ん中を切り取る')
+    check(lp['縦長'].edge === '255,0,255' && lp['縦長'].top === '255,0,255', '縦長の画像も、丸いっぱいに真ん中を切り取る（すき間を作らない）')
     check(r.bands.every((b) => b.color === '#ffffff' && b.contrast >= 4.5), `帯の文字はいつも白。明るいテーマ色でも、帯を濃くして見やすさ4.5以上（${r.bands.map((b) => b.band + ' ' + Math.round(b.contrast * 10) / 10).join('・')}）`)
   }
   await ctx.close()
 }
 
-// シェルター情報のロゴの欄（11/6夜 作者の決定）：「背景が透明なロゴだと、きれいに出ます」。試し用では確認用の仮のロゴ（透明・透明で暗い色・白い背景）を入れられる
+// シェルター情報のロゴの欄（11/7 作者の決定）：「Instagramのアイコンと同じ画像を入れると、きれいに出ます。丸く切り抜いて表示します」。
+// 試し用では確認用の仮のロゴ（透明・透明で暗い色・白い背景）を入れられる。ロゴの見本にも、ホームの丸いアイコンにも、白い台を足さない
 {
   const ctx = await browser.newContext({ ...phone })
   const p = await ctx.newPage()
   await p.goto(url + '/?sizes=1')
   await p.getByText('はじめに').waitFor()
   await p.getByRole('button', { name: '追加せずに、このまま使う' }).click()
-  check(await p.getByText('背景が透明なロゴだと、きれいに出ます').isVisible(), 'ロゴの欄に「背景が透明なロゴだと、きれいに出ます」と出る')
+  check(await p.getByText('Instagramのアイコンと同じ画像を入れると、きれいに出ます。丸く切り抜いて表示します').isVisible(), 'ロゴの欄に「Instagramのアイコンと同じ画像を入れると、きれいに出ます。丸く切り抜いて表示します」と出る')
   const testMode = (await p.locator('[data-test-logos]').count()) === 1
   if (testMode) {
     await p.locator('[data-test-logos]').getByRole('button', { name: '透明', exact: true }).click()
@@ -1568,7 +1583,27 @@ console.log('表示:', await page.locator('.status-line').innerText())
       return [x.getImageData(0, 0, 1, 1).data[3], x.getImageData(200, 250, 1, 1).data[3]]
     })
     check(a[0] === 0 && a[1] === 255, `確認用の仮のロゴ（透明）を入れられる（角は透明・まん中は色。${a.join('/')}）`)
+    check((await p.locator('[data-test-logos] button').count()) === 3, '確認用の仮のロゴは3種類（透明・透明で暗い色・白い背景）')
+    const thumbBg = await p.locator('.logo-thumb').evaluate((el) => getComputedStyle(el).backgroundColor)
+    check(thumbBg === 'rgba(0, 0, 0, 0)' || thumbBg === 'transparent', `ロゴの小さな見本に、白い台を敷かない（${thumbBg}）`)
     await p.screenshot({ path: join(outDir, '1c_シェルター_仮のロゴ.png'), fullPage: true })
+    // ホームの上のロゴは、丸いアイコン（透明なロゴはテーマ色の丸の上。丸の外は透明で、白い台を足さない）
+    await p.getByLabel('団体名').fill('（架空）テスト保護猫の会')
+    await p.getByRole('button', { name: '登録して始める' }).click()
+    await p.locator('.hero-logo').waitFor({ timeout: 5000 }).catch(() => {})
+    const h = await p.locator('.hero-logo').evaluate(async (img) => {
+      await img.decode()
+      const c = document.createElement('canvas')
+      c.width = img.naturalWidth
+      c.height = img.naturalHeight
+      const x = c.getContext('2d')
+      x.drawImage(img, 0, 0)
+      const at = (u, v) => [...x.getImageData(Math.round(u * c.width), Math.round(v * c.height), 1, 1).data]
+      const st = getComputedStyle(img)
+      return { corner: at(0.02, 0.02)[3], edge: at(0.04, 0.5), bg: st.backgroundColor, radius: st.borderRadius }
+    }).catch(() => null)
+    check(h && h.corner === 0 && h.edge.slice(0, 3).join(',') === '232,130,107' && (h.bg === 'rgba(0, 0, 0, 0)' || h.bg === 'transparent'), `ホームの上のロゴは丸いアイコン（丸の外は透明・透明なロゴはテーマ色の丸の上・白い台なし。${JSON.stringify(h)}）`)
+    await p.screenshot({ path: join(outDir, '1d_ホーム_丸いロゴ.png') })
   } else check(true, '本番と同じ作りでは、確認用の仮のロゴのボタンは出ない')
   await ctx.close()
 }
