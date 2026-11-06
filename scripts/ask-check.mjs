@@ -172,6 +172,72 @@ for (const [label, ans] of [
   await ctx.close()
 }
 
+// ── #19 カードの言葉の案（窓口の答えをすりかえる）──
+{
+  const LONG = '（架空）人が帰ってくると玄関までお迎えに来て、足元にすりすりしてくれて、そのあとひざに乗ってくる'
+  const { ctx, p } = await setup(Q)
+  const sentWords = []
+  const sentChecks = []
+  await p.route('**/api/words', async (route) => {
+    sentWords.push(JSON.parse(route.request().postData() ?? '{}'))
+    return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ items: [{ line: LONG, proposals: ['玄関までお迎え', '毎日玄関でお出迎え'] }] }) })
+  })
+  await p.route('**/api/check', async (route) => {
+    const b = JSON.parse(route.request().postData() ?? '{}')
+    sentChecks.push(b)
+    // 2つ目の案は「毎日」がメモにないので、根拠なしにする
+    return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ results: b.sentences.map((t, i) => ({ i, ok: !t.includes('毎日'), cites: [], reason: t.includes('毎日') ? '毎日' : '' })) }) })
+  })
+  const dummy = { name: 'p.svg', mimeType: 'image/svg+xml', buffer: Buffer.from('<svg xmlns="http://www.w3.org/2000/svg" width="600" height="800"><rect width="600" height="800" fill="#8fa9a3"/></svg>') }
+  await p.locator('input[type=file][accept="image/*"]').setInputFiles(dummy)
+  await p.locator('.photo img').first().waitFor()
+  await p.getByLabel('名前').fill('ポン')
+  await p.getByLabel('預かりさんからのメッセージ・メモ').fill('（架空）ポンは人が帰ってくると玄関までお迎えに来て、足元にすりすりしてくれて、そのあとひざに乗ってきます。連絡は 090-0000-0000')
+  await p.getByLabel('いいところ').fill(LONG)
+  await p.getByRole('button', { name: '次へ' }).click()
+  await p.locator('.card-canvas[data-drawn="1"]').waitFor({ timeout: 8000 })
+  const ideas = p.locator('[data-word-ideas]')
+  ok(await ideas.isVisible(), '長くて猫カードに入らない行があると、短い言葉の案の欄が出る')
+  ok(sentWords.length === 0, '押すまでは、Claudeに案を作らせない')
+  await p.getByRole('button', { name: '短い言葉の案を出す' }).click()
+  await p.getByRole('button', { name: '「玄関までお迎え」を使う' }).waitFor({ timeout: 5000 }).catch(() => {})
+  ok(sentWords.length === 1 && JSON.stringify(sentWords[0].lines) === JSON.stringify([LONG]) && !sentWords[0].memo.includes('090-0000-0000'), '入らなかった行だけを、伏せたメモと一緒に送る')
+  ok(sentChecks.length === 1 && JSON.stringify(sentChecks[0].sentences) === JSON.stringify(['玄関までお迎え', '毎日玄関でお出迎え']), '案は、本文と同じ根拠の確認にかける')
+  ok(await p.getByRole('button', { name: '「玄関までお迎え」を使う' }).isVisible(), '根拠の確認を通った案は出る')
+  ok((await p.getByRole('button', { name: '「毎日玄関でお出迎え」を使う' }).count()) === 0, 'メモにない言葉が入った案は出さない')
+  ok((await p.locator('.card-canvas').getAttribute('data-word')) === '', '選ぶまでは、カードも「いいところ」も変えない')
+  await p.screenshot({ path: join(outDir, '4c_カードの言葉の案.png'), fullPage: true })
+  await p.getByRole('button', { name: '「玄関までお迎え」を使う' }).click()
+  await p.waitForTimeout(800)
+  ok((await p.locator('.card-canvas').getAttribute('data-word')) === '玄関までお迎え', '選んだ案が、猫カードの言葉になる')
+  ok(await ideas.getByText('「玄関までお迎え」に置きかえました').isVisible(), '置きかえたことを知らせる')
+  await p.getByRole('button', { name: '元に戻す' }).click()
+  await p.waitForTimeout(800)
+  ok((await p.locator('.card-canvas').getAttribute('data-word')) === '', '［元に戻す］で、元の行に戻る')
+  await p.getByRole('button', { name: '戻る' }).click()
+  ok((await p.getByLabel('いいところ').inputValue()) === LONG, '元に戻したあとは、「いいところ」も元の行のまま')
+  await ctx.close()
+}
+
+// 案を出せないとき（確かめられない・全部メモにない）
+{
+  const LONG = '（架空）人が帰ってくると玄関までお迎えに来て、足元にすりすりしてくれて、そのあとひざに乗ってくる'
+  const { ctx, p } = await setup(Q)
+  await p.route('**/api/words', (route) => route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ items: [{ line: LONG, proposals: ['玄関までお迎え'] }] }) }))
+  await p.route('**/api/check', (route) => route.fulfill({ status: 502, contentType: 'application/json', body: JSON.stringify({ error: 'api' }) }))
+  const dummy = { name: 'p.svg', mimeType: 'image/svg+xml', buffer: Buffer.from('<svg xmlns="http://www.w3.org/2000/svg" width="600" height="800"><rect width="600" height="800" fill="#8fa9a3"/></svg>') }
+  await p.locator('input[type=file][accept="image/*"]').setInputFiles(dummy)
+  await p.locator('.photo img').first().waitFor()
+  await p.getByLabel('名前').fill('ポン')
+  await p.getByLabel('いいところ').fill(LONG)
+  await p.getByRole('button', { name: '次へ' }).click()
+  await p.locator('.card-canvas[data-drawn="1"]').waitFor({ timeout: 8000 })
+  await p.getByRole('button', { name: '短い言葉の案を出す' }).click()
+  await p.getByText('案の根拠を確かめられなかったので').waitFor({ timeout: 5000 }).catch(() => {})
+  ok((await p.getByText('案の根拠を確かめられなかったので、案は出しません').isVisible()) && (await p.getByRole('button', { name: /を使う/ }).count()) === 0, '案の根拠を確かめられないときは、案を出さない')
+  await ctx.close()
+}
+
 await browser.close()
-console.log(failures ? `確認NGが${failures}こあります` : '聞き返しの確認：全部OK')
+console.log(failures ? `確認NGが${failures}こあります` : '聞き返し・カードの言葉の案の確認：全部OK')
 process.exit(failures ? 1 : 0)

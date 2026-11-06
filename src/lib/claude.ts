@@ -20,7 +20,7 @@ export function deviceId(): string {
 
 export type ClaudeAnswer<T> = { ok: true; body: T } | { ok: false; error: string }
 
-export async function callClaude<T>(path: '/api/read' | '/api/post' | '/api/check' | '/api/ask', payload: unknown): Promise<ClaudeAnswer<T>> {
+export async function callClaude<T>(path: '/api/read' | '/api/post' | '/api/check' | '/api/ask' | '/api/words', payload: unknown): Promise<ClaudeAnswer<T>> {
   try {
     const res = await fetch(path, {
       method: 'POST',

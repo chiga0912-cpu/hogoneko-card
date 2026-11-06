@@ -27,6 +27,8 @@ import { cardProfile } from '../lib/age'
 import { clipTimeFor, photoIndex, type CardKey } from '../lib/photoPlan'
 import { TopBar } from './ShelterForm'
 import FramingEditor from './FramingEditor'
+import WordIdeas from './WordIdeas'
+import { replaceLine } from '../lib/words'
 
 const POSITIONS: [TextPosition, string][] = [
   ['up', '少し上'],
@@ -178,6 +180,7 @@ export default function Preview({ shelter, cat, onCatChange, post, onPostChange,
 
   const [full, setFull] = useState<'cover' | 'cat' | 'words' | 'end' | null>(null)
   const [layout, setLayout] = useState<CardLayout | null>(null)
+  const [wordSwap, setWordSwap] = useState<{ from: string; to: string } | null>(null) // カードの言葉の案を使ったとき（#19。［元に戻す］のため）
   const [event, setEvent] = useState<AdoptionEvent | null>(null)
   const [eventsRead, setEventsRead] = useState(false) // 譲渡会を読み終えるまで［動画を作る］を押せなくする（読み終える前だと譲渡会なしで作られるため）
   const [coverFits, setCoverFits] = useState(true)
@@ -421,6 +424,22 @@ export default function Preview({ shelter, cat, onCatChange, post, onPostChange,
               : 'ひとことカードと同じ文は使わないので、'}
             {layout.wordIndexes.map((i) => i + 1).join('・')}行目「{layout.words.join('」「')}」を猫カードに載せました（書き換えていません）。
           </p>
+        )}
+        {/* カードの言葉の案（#19）。長くて入らなかった行があるときだけ。人が選んだときだけ使う */}
+        {layout && (layout.longLines.length > 0 || wordSwap) && (
+          <WordIdeas
+            cat={cat}
+            longLines={layout.longLines}
+            used={wordSwap}
+            onUse={(from, to) => {
+              onCatChange((c) => ({ ...c, goodPoints: replaceLine(c.goodPoints, from, to) }))
+              setWordSwap({ from, to })
+            }}
+            onUndo={() => {
+              if (wordSwap) onCatChange((c) => ({ ...c, goodPoints: replaceLine(c.goodPoints, wordSwap.to, wordSwap.from) }))
+              setWordSwap(null)
+            }}
+          />
         )}
         {layout?.word && layout.scale < 1 && <p className="notice">言葉が長いので、カードの文字を少し小さくしました。</p>}
         {layout && layout.words.length === 2 && <p className="muted">言葉が2つなので、猫カードは5秒にします。</p>}

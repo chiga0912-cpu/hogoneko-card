@@ -51,6 +51,7 @@ export type CardLayout = {
   wordIndexes: number[] // それぞれが「いいところ」の何行目か
   wordRows: number // 1つ目の言葉の行数（折り返し。2まで）
   skippedLong: number // 長くて2行に入らない（または文字が多くて入らない）ので、飛ばした行の数
+  longLines: string[] // その行（元のまま）
   skippedSame: number // ひとことカードに載せる文と同じなので、飛ばした行の数
   contrast: number // 文字と、その後ろの色の見やすさ（4.5以上なら読みやすい）。案Aは写真の明るい所で測る
   darken: number // 案A：写真の下のほうを暗くした強さ（0〜1）
@@ -231,7 +232,7 @@ const MAX_WORD_ROWS = 2
 // 「いいところ」の上の行から順に、ひとことカードに載せる文と同じ行は飛ばし、1つ2行までで入る行を足していく。書き換えない。行の途中で切らない
 // 入らない行（長い・文字が多くて顔にかかる）は飛ばして、画面で知らせる。入る行がなければ、名前と年齢・性別だけにする（ツールが言葉を作らない）
 const MAX_WORDS = 2
-type WordPick = { chosen: { p: Planned; scale: number; fits: boolean }; words: string[]; indexes: number[]; skippedLong: number; skippedSame: number }
+type WordPick = { chosen: { p: Planned; scale: number; fits: boolean }; words: string[]; indexes: number[]; skippedLong: number; skippedSame: number; longLines: string[] }
 const normWords = (t: string) => t.normalize('NFKC').replace(/[\s「」『』、。,.!！?？]/g, '')
 function pickWords(lines: string[], avoid: string | null | undefined, tryWith: (lines: string[]) => { p: Planned; scale: number; fits: boolean }): WordPick {
   let skippedLong = 0
@@ -239,6 +240,7 @@ function pickWords(lines: string[], avoid: string | null | undefined, tryWith: (
   const av = avoid ? normWords(avoid) : ''
   let words: string[] = []
   let indexes: number[] = []
+  const longLines: string[] = [] // 長くて（または文字が多くて）入らなかった行（#19 の短い言葉の案に使う）
   let chosen = tryWith([])
   for (let i = 0; i < lines.length && words.length < MAX_WORDS; i++) {
     const w = normWords(lines[i])
@@ -251,9 +253,12 @@ function pickWords(lines: string[], avoid: string | null | undefined, tryWith: (
       words = [...words, lines[i]]
       indexes = [...indexes, i]
       chosen = t
-    } else skippedLong++
+    } else {
+      skippedLong++
+      longLines.push(lines[i])
+    }
   }
-  return { chosen, words, indexes, skippedLong, skippedSame }
+  return { chosen, words, indexes, skippedLong, skippedSame, longLines }
 }
 
 function drawCover(ctx: CanvasRenderingContext2D, img: Img, x: number, y: number, w: number, h: number) {
@@ -411,6 +416,7 @@ const wordInfo = (pick: WordPick, p: Planned, lines: string[]) => ({
   wordRows: p.body[0]?.length ?? 0,
   skippedLong: pick.skippedLong,
   skippedSame: pick.skippedSame,
+  longLines: pick.longLines,
 })
 
 // 帯の色と文字の色を決める
