@@ -1,7 +1,8 @@
 // 1匹の紹介の順番（SPEC 3.2）に、カードと撮った動画を並べる
 //   1 表紙 3秒 → 2 撮った動画（選んだ5秒。なければ飛ばす）→ 3 猫カード 3秒（言葉が2行なら4秒）→ 4 ひとこと 3〜5秒（なければ飛ばす）→ 5 最後の1枚 4秒
 import type { AdoptionEvent, Cat, Shelter } from '../types'
-import { CARD_H, CARD_W, drawCatCard, drawClipName, drawCoverCard, drawEndCard, drawWordsCard, loadImage, wordsSec } from './card'
+import { bandColors, CARD_H, CARD_W, drawCatCard, drawClipName, drawCoverCard, drawEndCard, drawWordsCard, loadImage, paintBand, wordsSec } from './card'
+import { loadBandPattern } from './band'
 import { clipFrame, type Segment } from './video'
 import { cardProfile } from './age'
 import { clipTimeFor, photoIndex, type CardKey } from './photoPlan'
@@ -18,6 +19,7 @@ export async function buildSegments(cat: Cat, shelter: Shelter, event: AdoptionE
   // カードごとの写真（SPEC 3.2 の表）。写真がなく動画だけのときは、選んだ5秒のコマを使う
   const imgs = await Promise.all(cat.photos.map((b) => loadImage(b).catch(() => null)))
   const logo = shelter.logo ? await loadImage(shelter.logo).catch(() => null) : null
+  const pattern = await loadBandPattern() // 帯の柄（なければ null＝テーマ色の無地。SPEC 3.1）
   const frames = new Map<CardKey, HTMLCanvasElement | null>()
   const pick = async (key: CardKey) => {
     const i = photoIndex(imgs.length, key)
@@ -33,7 +35,7 @@ export async function buildSegments(cat: Cat, shelter: Shelter, event: AdoptionE
   const endPhoto = await pick('end')
 
   const cover = canvas()
-  drawCoverCard(cover.getContext('2d')!, { photo: coverPhoto, logo, name: cat.name, theme: shelter.themeColor, shelterName: shelter.name })
+  drawCoverCard(cover.getContext('2d')!, { photo: coverPhoto, logo, name: cat.name, theme: shelter.themeColor, shelterName: shelter.name, pattern })
   const catCard = canvas()
   const catLayout = drawCatCard(catCard.getContext('2d')!, {
     photo: catPhoto,
@@ -45,9 +47,15 @@ export async function buildSegments(cat: Cat, shelter: Shelter, event: AdoptionE
     theme: shelter.themeColor,
     position: cat.textPosition,
     framing: cat.framing.cat,
+    pattern,
   })
   const end = canvas()
   drawEndCard(end.getContext('2d')!, { logo, shelterName: shelter.name, contact: shelter.contact, event, theme: shelter.themeColor, photo: endPhoto, framing: cat.framing.end })
+
+  // 横・正方形の動画の帯（黒をやめ、写真のカードと同じテーマ色・柄。SPEC 3.1。11/6 作者の決定）
+  const { band, color: bandText } = bandColors(shelter.themeColor)
+  const clipBand = canvas()
+  paintBand(clipBand.getContext('2d')!, band, pattern)
 
   const segs: Segment[] = [{ kind: 'card', label: '表紙', sec: 3, image: cover }] // 表紙は3秒（11/5夜 作者の決定。SPEC 3.2）
   if (cat.clip)
@@ -57,7 +65,8 @@ export async function buildSegments(cat: Cat, shelter: Shelter, event: AdoptionE
       blob: cat.clip.blob,
       start: cat.clip.start,
       length: cat.clip.length,
-      overlay: (ctx, area) => drawClipName(ctx, cat.name, area),
+      overlay: (ctx, area) => drawClipName(ctx, cat.name, area, { text: bandText, pattern: !!pattern }),
+      background: clipBand,
     })
   // 言葉が2行のときだけ4秒（3秒で読める長さの目安。SPEC 3.2。11/6 作る人の決定）
   segs.push({ kind: 'card', label: '猫カード', sec: catLayout.wordRows === 2 ? 4 : 3, image: catCard })

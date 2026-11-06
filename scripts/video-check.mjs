@@ -244,6 +244,41 @@ ok((await p.getByText('5秒より短い動画なので、全部使います').is
   ok(Number(await shown()) > 2.9 && !(await p3.getByText('選んだ動画を残せていませんでした').isVisible()), '名簿の子を開いてすぐ閉じたときは、名簿の動画をそのまま使う')
   await ctx3.close()
 }
+// 横の動画の帯：黒をやめ、テーマ色にする（柄の画像がないとき。SPEC 3.1。11/6 作者の決定）
+{
+  const ctx4 = await b.newContext({ ...phone })
+  const p4 = await ctx4.newPage()
+  p4.on('dialog', (d) => d.accept())
+  await p4.goto(url + '/?sizes=1')
+  await p4.getByText('はじめに').waitFor()
+  await p4.getByRole('button', { name: '追加せずに、このまま使う' }).click()
+  await p4.getByLabel('団体名').fill('テスト保護猫の会')
+  await p4.locator('input[type=color]').fill('#3f6f9a')
+  await p4.getByRole('button', { name: '登録して始める' }).click()
+  await p4.getByRole('button', { name: '新しい子を紹介' }).click()
+  await p4.locator('input[type=file][accept="video/*"]').setInputFiles(join(FAKE, 'wide3.mp4'))
+  await p4.locator('.clip-time').waitFor()
+  await p4.getByLabel('名前').fill('テスト')
+  await p4.getByRole('button', { name: '次へ' }).click()
+  await p4.getByRole('button', { name: '動画を作る' }).click()
+  await p4.locator('.reel-video').waitFor({ timeout: 90000 })
+  // 表紙3秒のあとが撮った動画（3〜6秒）。4秒のところの、映像の上と下の帯の色を見る
+  const px = await p4.locator('.reel-video').evaluate(async (v) => {
+    if (!v.duration) await new Promise((r) => v.addEventListener('loadedmetadata', r, { once: true }))
+    v.currentTime = 4
+    await new Promise((r) => v.addEventListener('seeked', r, { once: true }))
+    const c = document.createElement('canvas')
+    c.width = v.videoWidth
+    c.height = v.videoHeight
+    const x = c.getContext('2d')
+    x.drawImage(v, 0, 0)
+    const at = (y) => [...x.getImageData(Math.round(c.width / 2), Math.round(y * c.height), 1, 1).data.slice(0, 3)]
+    return { top: at(0.05), bottom: at(0.95) }
+  })
+  const near = (c) => Math.abs(c[0] - 0x3f) < 30 && Math.abs(c[1] - 0x6f) < 30 && Math.abs(c[2] - 0x9a) < 30
+  ok(near(px.top) && near(px.bottom), `横の動画の帯は、黒ではなくテーマ色（上 ${px.top.join(',')}・下 ${px.bottom.join(',')}／テーマ色 63,111,154）`)
+  await ctx4.close()
+}
 await b.close()
 console.log(failures ? `確認NG が ${failures} こ` : '動画の確認：全部OK')
 process.exit(failures ? 1 : 0)

@@ -1422,6 +1422,46 @@ console.log('表示:', await page.locator('.status-line').innerText())
   await ctx.close()
 }
 
+// 帯の枠（SPEC 3.1）：public/band.png があれば白黒の画像にテーマ色を重ねて敷く。なければテーマ色の無地。柄の画像はまだ入れていないので、仮の縞（灰色）ですりかえて試す
+for (const withPattern of [false, true]) {
+  const ctx = await browser.newContext({ ...phone })
+  const p = await ctx.newPage()
+  await p.route('**/band.png', (route) =>
+    withPattern
+      ? route.fulfill({
+          status: 200,
+          contentType: 'image/svg+xml',
+          body: '<svg xmlns="http://www.w3.org/2000/svg" width="1080" height="1920"><rect width="1080" height="1920" fill="#ffffff"/>' + Array.from({ length: 24 }, (_, i) => `<rect y="${i * 80}" width="1080" height="40" fill="#9a9a9a"/>`).join('') + '</svg>',
+        })
+      : route.fulfill({ status: 404, body: '' }),
+  )
+  await p.goto(url)
+  const r = await p.evaluate(async () => {
+    try {
+      const m = await import('/src/lib/card.ts')
+      const band = await import('/src/lib/band.ts')
+      const pattern = await band.loadBandPattern()
+      const c = document.createElement('canvas')
+      c.width = 1080
+      c.height = 1920
+      const wide = document.createElement('canvas')
+      wide.width = 800
+      wide.height = 600
+      const l = m.drawCatCard(c.getContext('2d'), { photo: wide, logo: null, name: 'テスト', lines: ['よく食べる'], theme: '#e8826b', position: 'normal', pattern })
+      const x = c.getContext('2d')
+      const at = (y) => [...x.getImageData(20, y, 1, 1).data.slice(0, 3)].join(',')
+      return { pattern: !!pattern, fits: l.fits, a: at(1650), b: at(1690), contrast: l.contrast }
+    } catch {
+      return null // 本番と同じ作りでは、部品を直接読めない
+    }
+  })
+  if (r) {
+    if (withPattern) check(r.pattern && r.a !== r.b && r.fits, `帯の画像があると、白黒の画像にテーマ色を重ねて敷く（縞の2か所の色 ${r.a} と ${r.b}）`)
+    else check(!r.pattern && r.a === r.b && r.fits, `帯の画像がないときは、テーマ色の無地（${r.a}）`)
+  }
+  await ctx.close()
+}
+
 // 新しい版の知らせ（SPEC 2.9）：公開されている版（version.json）が、開いている画面の版と違うときだけ出す
 {
   const ctx = await browser.newContext({ ...phone })

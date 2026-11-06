@@ -16,6 +16,7 @@ import {
 } from '../lib/card'
 import * as db from '../db'
 import { nextEvent } from '../lib/events'
+import { loadBandPattern } from '../lib/band'
 import { cardProfile } from '../lib/age'
 import { clipTimeFor, photoIndex, type CardKey } from '../lib/photoPlan'
 import { TopBar } from './ShelterForm'
@@ -52,9 +53,10 @@ function CatCard({
   useEffect(() => {
     let stop = false
     ;(async () => {
-      const [photo, logo] = await Promise.all([
+      const [photo, logo, pattern] = await Promise.all([
         photoBlob ? loadImage(photoBlob).catch(() => null) : null,
         shelter.logo ? loadImage(shelter.logo).catch(() => null) : null,
+        loadBandPattern(),
       ])
       const ctx = ref.current?.getContext('2d')
       if (stop || !ctx) return
@@ -68,6 +70,7 @@ function CatCard({
         theme: shelter.themeColor,
         position: cat.textPosition,
         framing: cat.framing.cat,
+        pattern,
       })
       setLayout(l)
       onLayout?.(l)
@@ -181,11 +184,12 @@ export default function Preview({ shelter, cat, onCatChange, post, onPostChange,
   const endBlob = blobFor('end')
   const photoFor = async (key: CardKey, blob: Blob | null) => (blob ? await loadImage(blob).catch(() => null) : clipBlob ? (stills[key] ?? null) : null)
   const paintCover: Painter = async (ctx) => {
-    const [photo, logo] = await Promise.all([
+    const [photo, logo, pattern] = await Promise.all([
       photo1 ? loadImage(photo1).catch(() => null) : null,
       shelter.logo ? loadImage(shelter.logo).catch(() => null) : null,
+      loadBandPattern(),
     ])
-    const l = drawCoverCard(ctx, { photo: photo ?? (clipBlob ? still : null), logo, name: cat.name, theme: shelter.themeColor, shelterName: shelter.name })
+    const l = drawCoverCard(ctx, { photo: photo ?? (clipBlob ? still : null), logo, name: cat.name, theme: shelter.themeColor, shelterName: shelter.name, pattern })
     setCoverFits(l.fits)
     return { fits: l.fits, design: l.design, contrast: l.contrast, mark: l.mark, markbottom: l.markBottom }
   }
@@ -257,6 +261,7 @@ export default function Preview({ shelter, cat, onCatChange, post, onPostChange,
         theme: shelter.themeColor,
         position: cat.textPosition,
         framing: f,
+        pattern: await loadBandPattern(),
       }).framing ?? null
     }
     if (moving === 'words') {

@@ -336,6 +336,7 @@ type Opts = {
   theme: string
   position: TextPosition
   framing?: Framing // 写真の位置（#29。案Aだけ）
+  pattern?: Img | null // 帯の柄（SPEC 3.1。案Bだけ。なければテーマ色の無地）
 }
 
 export function drawCatCard(ctx: CanvasRenderingContext2D, opts: Opts): CardLayout {
@@ -401,7 +402,50 @@ const wordInfo = (pick: WordPick, p: Planned, lines: string[]) => ({
 })
 
 // 帯の色と文字の色を決める
-function bandColors(theme: string): { band: string; color: string; contrast: number } {
+// 帯を描く（SPEC 3.1）。柄の画像（白黒）があれば画面いっぱいに敷き、テーマ色を乗算で重ねる。なければテーマ色の無地
+// 写真・動画はこのあと上に置くので、すき間が帯になる
+export function paintBand(ctx: CanvasRenderingContext2D, band: string, pattern: Img | null | undefined) {
+  ctx.fillStyle = band
+  ctx.fillRect(0, 0, CARD_W, CARD_H)
+  if (!pattern || !pattern.width || !pattern.height) return
+  ctx.save()
+  const s = Math.max(CARD_W / pattern.width, CARD_H / pattern.height)
+  ctx.drawImage(pattern, (CARD_W - pattern.width * s) / 2, (CARD_H - pattern.height * s) / 2, pattern.width * s, pattern.height * s)
+  ctx.globalCompositeOperation = 'multiply'
+  ctx.fillStyle = band
+  ctx.fillRect(0, 0, CARD_W, CARD_H)
+  ctx.restore()
+}
+// 柄の上に文字を置くときだけ、文字の後ろの明るさ（または暗さ）を測り、読める濃さ（見やすさ4.5以上）まで、
+// 白い文字なら暗く、濃い文字なら明るく、文字の後ろだけを重ねる（無地のときは帯の色ですでに4.5以上）
+export function readableOnBand(ctx: CanvasRenderingContext2D, x: number, y: number, w: number, h: number, textColor: string) {
+  const X = Math.max(0, Math.floor(x))
+  const Y = Math.max(0, Math.floor(y))
+  const W = Math.min(CARD_W - X, Math.ceil(w))
+  const H = Math.min(CARD_H - Y, Math.ceil(h))
+  if (W <= 0 || H <= 0) return
+  let d: Uint8ClampedArray
+  try {
+    d = ctx.getImageData(X, Y, W, H).data
+  } catch {
+    return
+  }
+  const lums: number[] = []
+  for (let i = 0; i < d.length; i += 4 * 7) lums.push(lum(d[i], d[i + 1], d[i + 2]))
+  lums.sort((a, b) => a - b)
+  const white = textColor === WHITE
+  const worst = white ? lums[Math.floor(lums.length * 0.9)] ?? 0 : lums[Math.floor(lums.length * 0.1)] ?? 1
+  const textLum = white ? 1 : hexLum(textColor)
+  let a = 0
+  const after = (k: number) => (white ? worst * (1 - k) : worst + (1 - worst) * k)
+  while (a < 0.9 && ratio(textLum, after(a)) < 4.5) a = Math.min(0.9, a + 0.05)
+  if (a <= 0) return
+  const pad = 24
+  ctx.fillStyle = white ? `rgba(0,0,0,${a})` : `rgba(255,255,255,${a})`
+  ctx.fillRect(X - pad, Y - pad, W + pad * 2, H + pad * 2)
+}
+
+export function bandColors(theme: string): { band: string; color: string; contrast: number } {
   const n = parseInt(theme.replace('#', '').padEnd(6, '0').slice(0, 6), 16)
   const rgb = [(n >> 16) & 255, (n >> 8) & 255, n & 255]
   const inkLum = hexLum(INK)
@@ -459,9 +503,9 @@ function drawB(ctx: CanvasRenderingContext2D, opts: Opts, lines: string[]): Card
   const { p, scale, fits } = pick.chosen
   const { topH, botH } = bands(p)
 
-  ctx.fillStyle = band
-  ctx.fillRect(0, 0, CARD_W, CARD_H)
+  paintBand(ctx, band, opts.pattern)
   if (opts.photo) drawContain(ctx, opts.photo, 0, topH, CARD_W, CARD_H - topH - botH)
+  if (opts.pattern) readableOnBand(ctx, SAFE.left, SAFE.top, WIDE_W, p.h, color)
 
   // ロゴは表紙と最後の1枚だけ（猫カード・ひとことカードには入れない。11/6 作者の決定）
   const t = drawText(ctx, p, SAFE.left + WIDE_W / 2, SAFE.top + logoH, color, 'center', false, 'all')
@@ -580,7 +624,7 @@ function drawGreeting(ctx: CanvasRenderingContext2D, size: number, y: number, co
 
 export function drawCoverCard(
   ctx: CanvasRenderingContext2D,
-  opts: { photo: Img | null; logo: Img | null; name: string; theme: string; shelterName?: string },
+  opts: { photo: Img | null; logo: Img | null; name: string; theme: string; shelterName?: string; pattern?: Img | null },
 ): CoverLayout {
   ctx.clearRect(0, 0, CARD_W, CARD_H)
   const design = designFor(opts.photo)
@@ -597,9 +641,9 @@ export function drawCoverCard(
     const mark = planMark(ctx, opts.logo, org, CARD_H - SAFE.bottom - markTop - B_PAD - B_MIN_PHOTO_TWO)
     const topH = markTop + mark.h + (mark.h ? B_PAD : B_PAD - MARK_GAP)
     const botH = SAFE.bottom
-    ctx.fillStyle = band
-    ctx.fillRect(0, 0, CARD_W, CARD_H)
+    paintBand(ctx, band, opts.pattern)
     if (opts.photo) drawContain(ctx, opts.photo, 0, topH, CARD_W, CARD_H - topH - botH)
+    if (opts.pattern) readableOnBand(ctx, SAFE.left, textTop, WIDE_W, markTop + mark.h - textTop, color)
     const gw = drawGreeting(ctx, gSize, textTop, color, false)
     const p: Planned = { nameLines: lines, prof: [], profSize: 0, body: [], nameSize: size, lineSize: 0, h: 0 }
     const n = drawText(ctx, p, CARD_W / 2, nameTop, color, 'center', false, 'name')
@@ -732,7 +776,13 @@ const PAPER = '#fbf6ee'
 // area：横・正方形の動画を帯つきで置いたときの、映像の上下（縦の動画は画面いっぱいなので null）
 // 横の動画では、名前が映像の下の端をまたぐと切れて見えるので、表紙の案Bと同じく映像の上の帯に置く（11/6 作者が見本で気づいた）。
 // 上の帯に入らないとき（正方形に近い動画）は、映像の中の下のほうに収める
-export function drawClipName(ctx: CanvasRenderingContext2D, name: string, area: { top: number; bottom: number } | null = null): { top: number; bottom: number } | null {
+// bandText：帯の上に置くときの文字の色（明るいテーマ色の帯では濃い色）。pattern：帯に柄があるか（あれば文字の後ろを読める濃さに）
+export function drawClipName(
+  ctx: CanvasRenderingContext2D,
+  name: string,
+  area: { top: number; bottom: number } | null = null,
+  band: { text: string; pattern: boolean } = { text: WHITE, pattern: false },
+): { top: number; bottom: number } | null {
   if (!name.trim()) return null
   const { size, lines } = planName(ctx, name, 0.8, WIDE_W)
   const h = lines.length * size * NAME_LH
@@ -745,7 +795,8 @@ export function drawClipName(ctx: CanvasRenderingContext2D, name: string, area: 
   }
   const p: Planned = { nameLines: lines, prof: [], profSize: 0, body: [], nameSize: size, lineSize: 0, h }
   if (onBand) {
-    drawText(ctx, p, CARD_W / 2, top, WHITE, 'center', true, 'name')
+    if (band.pattern) readableOnBand(ctx, SAFE.left, top, WIDE_W, h, band.text)
+    drawText(ctx, p, CARD_W / 2, top, band.text, 'center', band.text === WHITE, 'name')
     return { top, bottom: top + h }
   }
   const pad = 160
