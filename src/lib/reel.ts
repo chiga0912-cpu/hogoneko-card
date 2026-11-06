@@ -65,7 +65,7 @@ export async function buildSegments(cat: Cat, shelter: Shelter, event: AdoptionE
       blob: cat.clip.blob,
       start: cat.clip.start,
       length: cat.clip.length,
-      overlay: (ctx, area) => drawClipName(ctx, cat.name, area, { text: bandText, pattern: !!pattern }),
+      overlay: (ctx, area) => drawClipName(ctx, cat.name, area, { text: bandText, pattern: !!pattern }, cardProfile(cat.age, cat.sex)),
       background: clipBand,
     })
   // 言葉が2行のときだけ4秒（3秒で読める長さの目安。SPEC 3.2。11/6 作る人の決定）

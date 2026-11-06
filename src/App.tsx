@@ -83,6 +83,9 @@ export default function App() {
   const [loadMs, setLoadMs] = useState<number | null>(null) // 名簿を読むのにかかった時間（確認モードで出す）
   const [migrateFailed, setMigrateFailed] = useState(0) // 移し替えられなかった子の数（確認モードで出す）
   const migrating = useRef(false)
+  // 団体名が空のまま残っている（前の版で作ったデータなど）。シェルター情報を先に出し、入れるまでほかの画面へ進ませない（11/6 作者の決定・案1）
+  // 入れたあとは、本当は開くはずだった画面（入力の途中ならその画面）へ進む
+  const [needName, setNeedName] = useState<Screen | null>(null)
   const [clipLost, setClipLost] = useState(false) // 途中の動画を残せていなかった
   const [stalePhotos, setStalePhotos] = useState<Blob[] | null>(null) // 前の写真の組に戻っているかもしれないとき、その組（#44）
   const [reelWords, setReelWords] = useState<string | null>(null) // ひとことカードに載せる文（確認画面で決めたもの）
@@ -133,6 +136,14 @@ export default function App() {
           return
         }
         setShelter(s)
+        // 団体名が空なら、途中も名簿も消さずに読み込んだうえで、シェルター情報を先に出す
+        const nameMissing = !s.name.trim()
+        const open = (next: Screen) => {
+          if (nameMissing) {
+            setNeedName(next)
+            setScreen('shelter')
+          } else setScreen(next)
+        }
         if (saved === 'unreadable') {
           setDraftUnreadable(true)
         } else if (saved) {
@@ -164,7 +175,7 @@ export default function App() {
               // 名簿の写真・動画が読めないまま開くと、保存したときに名簿の写真や動画が消える。
               // 途中の写真があってもなくても開かずに、ホームで知らせる（途中は消さない）
               setDraftUnreadable(true)
-              setScreen('home')
+              open('home')
               return
             }
           }
@@ -177,10 +188,10 @@ export default function App() {
           setPost(saved.draft.post)
           setPostEdited(saved.draft.postEdited)
           setHasDraft(true)
-          setScreen(saved.draft.screen)
+          open(saved.draft.screen)
           return
         }
-        setScreen('home')
+        open('home')
       } catch (e) {
         setError(e instanceof db.OpenError ? 'open' : String(e))
       }
@@ -329,7 +340,9 @@ export default function App() {
     await db.saveShelter(s)
     setShelter(s)
     void db.requestPersist()
-    go('home')
+    const next = needName ?? 'home'
+    setNeedName(null)
+    go(next)
   }
 
   // ［動画を作る］：名簿を新しくしてから、保存の画面で動画を作る（SPEC 2.5「保存したら、名簿の内容も新しくする」）
@@ -412,6 +425,7 @@ export default function App() {
         <ShelterForm
           initial={shelter}
           first={screen === 'welcome'}
+          needName={!!needName && screen === 'shelter'}
           onSave={saveShelter}
           onBack={() => go('home')}
         />

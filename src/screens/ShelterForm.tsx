@@ -10,11 +10,12 @@ import { useBlobUrl } from '../lib/useBlobUrls'
 type Props = {
   initial: Shelter | null
   first: boolean // 初めての登録か（戻るボタンを出さない）
+  needName?: boolean // 団体名が空のまま残っていて、入れるまで先へ進めない（戻るボタンを出さない。11/6 作者の決定・案1）
   onSave: (s: Shelter) => void | Promise<void>
   onBack: () => void
 }
 
-export default function ShelterForm({ initial, first, onSave, onBack }: Props) {
+export default function ShelterForm({ initial, first, needName = false, onSave, onBack }: Props) {
   const [s, setS] = useState<Shelter>(initial ?? emptyShelter())
   const [tagsText, setTagsText] = useState((initial?.hashtags ?? []).join(' '))
   const [venuesText, setVenuesText] = useState((initial?.venues ?? []).join('\n'))
@@ -68,8 +69,18 @@ export default function ShelterForm({ initial, first, onSave, onBack }: Props) {
           <h1>シェルター登録</h1>
           <p className="hero-lead">最初に一度だけ。必ず入れるのは団体名だけです。ほかは、あとからでも入れられます。</p>
         </header>
+      ) : needName ? (
+        <header className="hero hero-small">
+          <h1>シェルター情報</h1>
+        </header>
       ) : (
         <TopBar title="シェルター情報" onBack={onBack} />
+      )}
+
+      {needName && (
+        <p className="alert" role="alert" data-need-name="1">
+          団体名が入っていません。動画の表紙と最後の1枚に使うので、団体名を入れて［保存する］を押してください。入力の途中や名簿は、そのまま残っています。
+        </p>
       )}
 
       {showError && <p className="alert">団体名を入れてください</p>}
