@@ -284,7 +284,7 @@ const seenWithoutScroll = async (p, loc) => {
     check((await a('data-design')) === 'B', `${label}の写真は、案B（上下に色の帯）になる`)
     check((await a('data-fits')) === '1', `${label}の写真（案B）でも、長い文字がはみ出さない（${Math.round(Number(await a('data-scale')) * 100)}%・${await a('data-lines-shown')}/${await a('data-lines-total')}行）`)
     if (label === '横') {
-      // 猫カードの言葉（SPEC 2.4・3.1。11/6）：1つ・2行まで。長い行は飛ばして次の行。ひとことと同じ行は使わない。年齢と性別の1行
+      // 猫カードの言葉（SPEC 2.4・3.1。11/6夜）：2つまで・1つ2行まで。長い行は飛ばして次の行。ひとことと同じ行は使わない。年齢と性別の1行
       const r = await p.evaluate(async () => {
         try {
           const m = await import('/src/lib/card.ts')
@@ -301,12 +301,13 @@ const seenWithoutScroll = async (p, loc) => {
           const long = '（架空）朝はいちばんに起きてきて、台所の前でごはんの時間を知らせてくれる、とても几帳面な子です'
           const draw = (photo, lines, extra = {}) => {
             const l = m.drawCatCard(c.getContext('2d'), { photo, logo: null, name: 'テスト', lines, theme: '#e8826b', position: 'normal', ...extra })
-            return { word: l.word, index: l.wordIndex, rows: l.wordRows, long: l.skippedLong, same: l.skippedSame, fits: l.fits }
+            return { word: l.word, words: l.words, index: l.wordIndex, rows: l.wordRows, long: l.skippedLong, same: l.skippedSame, fits: l.fits, contrast: l.contrast }
           }
           const out = {}
           for (const [k, photo] of [['A', tall], ['B', wide]]) {
             out[k] = {
               short: draw(photo, ['（架空）よく食べる', '（架空）人懐っこい']),
+              three: draw(photo, ['（架空）よく食べる', '（架空）人懐っこい', '（架空）よく遊ぶ']),
               two: draw(photo, ['（架空）毎朝玄関までお迎えに来てくれる子']),
               skip: draw(photo, [long, '（架空）なでると喉を鳴らす']),
               none: draw(photo, [long]),
@@ -325,14 +326,14 @@ const seenWithoutScroll = async (p, loc) => {
             d.setMonth(d.getMonth() - months)
             return { mode: 'birth', birthYear: d.getFullYear(), birthMonth: d.getMonth() + 1, estimated: true }
           }
-          // 動画の中の猫カードの長さ：言葉が1行なら3秒、2行なら4秒（SPEC 3.2）
+          // 動画の中の猫カードの長さ：言葉が1つなら4秒、2つなら5秒、なければ3秒（SPEC 3.2。11/6夜）
           const reel = await import('/src/lib/reel.ts')
           const types = await import('/src/types.ts')
           const secOf = async (goodPoints) => {
             const segs = await reel.buildSegments({ ...types.newCat(), name: 'テスト', goodPoints }, types.emptyShelter(), null, null)
             return segs.find((x) => x.label === '猫カード')?.sec
           }
-          out.sec = [await secOf(['（架空）よく食べる']), await secOf(['（架空）毎朝玄関までお迎えに来てくれる子']), await secOf([])]
+          out.sec = [await secOf(['（架空）よく食べる']), await secOf(['（架空）毎朝玄関までお迎えに来てくれる子']), await secOf([]), await secOf(['（架空）よく食べる', '（架空）人懐っこい'])]
           out.profile = [
             age.cardProfile(birth(26), 'オス'),
             age.cardProfile(birth(3), 'メス'),
@@ -348,15 +349,17 @@ const seenWithoutScroll = async (p, loc) => {
       if (r) {
         for (const k of ['A', 'B']) {
           const t = r[k]
-          check(t.short.word === '（架空）よく食べる' && t.short.rows === 1 && t.short.fits, `案${k}：カードの言葉は「いいところ」の1行目を1つだけ（1行）`)
+          check(JSON.stringify(t.short.words) === JSON.stringify(['（架空）よく食べる', '（架空）人懐っこい']) && t.short.fits, `案${k}：カードの言葉は「いいところ」の上から2つ（${JSON.stringify(t.short.words)}）`)
+          check(t.three.words.length === 2 && t.three.fits, `案${k}：「いいところ」が3行あっても、カードの言葉は2つまで`)
+          check(t.short.contrast >= 4.5, `案${k}：白い文字の見やすさは4.5以上（${t.short.contrast}）`)
           check(t.two.word && t.two.rows === 2 && t.two.fits, `案${k}：2行に入る言葉は2行で載せる（${t.two.rows}行）`)
           check(t.skip.word === '（架空）なでると喉を鳴らす' && t.skip.index === 1 && t.skip.long === 1, `案${k}：長くて2行に入らない行は飛ばして、次の行を使う`)
           check(t.none.word === null && t.none.long === 1 && t.none.fits, `案${k}：どの行も入らなければ、言葉を載せない（はみ出さない）`)
-          check(t.same.word === '（架空）人懐っこい' && t.same.same === 1, `案${k}：ひとことカードと同じ行は使わない`)
+          check(t.same.word === '（架空）人懐っこい' && t.same.words.length === 1 && t.same.same === 1, `案${k}：ひとことカードと同じ行は使わない`)
           check(t.empty.word === null && t.empty.fits, `案${k}：言葉が空なら、名前と年齢・性別だけ（ツールは言葉を作らない）`)
         }
         check(r.bottomClean, '案B：言葉も上の帯に入り、下の帯（下300）には文字も写真も置かない')
-        check(JSON.stringify(r.sec) === '[3,4,3]', `動画の猫カードは、言葉が1行なら3秒、2行なら4秒（${JSON.stringify(r.sec)}）`)
+        check(JSON.stringify(r.sec) === '[4,4,3,5]', `動画の猫カードは、言葉が1つなら4秒、2つなら5秒、なければ3秒（${JSON.stringify(r.sec)}）`)
         check(
           JSON.stringify(r.profile) === JSON.stringify(['推定2歳・男の子', '推定生後3か月・女の子', '男の子', '推定2歳', '']),
           `年齢と性別の1行：「男の子」「女の子」と書き、不明な項目は出さない（${JSON.stringify(r.profile)}）`,
@@ -883,7 +886,7 @@ console.log('表示:', await page.locator('.status-line').innerText())
   await p6.getByRole('button', { name: '動画を作る' }).click()
   await p6.locator('.reel-video').waitFor({ timeout: 60000 })
   const d1 = await p6.locator('.reel-video').evaluate(async (v) => (v.duration || (await new Promise((r) => v.addEventListener('loadedmetadata', () => r(v.duration), { once: true })))))
-  check(Math.abs(d1 - 13) < 0.2, `動画に、ひとことカードが入る（表紙3＋猫カード3＋ひとこと3＋最後の1枚4＝13秒。${d1}秒）`)
+  check(Math.abs(d1 - 14) < 0.2, `動画に、ひとことカードが入る（表紙3＋猫カード3＋ひとこと2行で4秒＋最後の1枚4＝14秒。${d1}秒）`)
   // 長いひとこと
   await p6.getByRole('button', { name: '名簿を見る' }).click()
   await p6.getByText('テスト').first().click()
@@ -898,6 +901,11 @@ console.log('表示:', await page.locator('.status-line').innerText())
   check((await boxes.count()) === 14, `載せる文を、文ごとに選べる（${await boxes.count()}文）`)
   await boxes.nth(0).check()
   await boxes.nth(2).check()
+  await p6.waitForTimeout(500)
+  check((await p6.getByText('選んだ文も、まだ入りきりません').isVisible()) && (await p6.locator('.card-words').count()) === 0, '選んだ文が4行を超えるときは、まだ入らないと知らせる（カードには載せない）')
+  await boxes.nth(0).uncheck()
+  await boxes.nth(2).uncheck()
+  await boxes.nth(0).check()
   await p6.locator('.card-words[data-drawn="1"]').waitFor({ timeout: 5000 }).catch(() => {})
   check((await p6.locator('.card-words').count()) === 1 && (await p6.locator('.card-words').getAttribute('data-fits')) === '1', '選んだ文だけでカードに入る')
   await p6.screenshot({ path: join(outDir, '5q_ひとこと_文を選んだ.png'), fullPage: true })
@@ -907,7 +915,7 @@ console.log('表示:', await page.locator('.status-line').innerText())
   await ctx6.close()
 }
 
-// 便箋のカード（ひとこと・最後の1枚。11/5夜 作者の決定）：写真の使い分け・譲渡会なし・ロゴあり・ひとことの長さ
+// ひとこと・最後の1枚（11/6夜 作者の決定：便箋なし。縦の写真は写真の上に白い文字、横・正方形は帯）：写真の使い分け・譲渡会なし・ロゴあり・ひとことの長さ
 {
   const ctx7 = await browser.newContext({ ...phone })
   const p7 = await ctx7.newPage()
@@ -939,13 +947,13 @@ console.log('表示:', await page.locator('.status-line').innerText())
     return `${await words.getAttribute('data-photo')}/${await end.getAttribute('data-photo')}`
   }
   check((await look()) === '0/0', '写真1枚：ひとことも最後の1枚も1枚目')
-  // 上の写真が、ぼかしではなく、そのままの色で描かれているか（写真A＝#c9b8a6。11/6 境目をなめらかにしたときに写真が消えた失敗を受けて足した）
+  // 写真が、ぼかしではなく、そのままの色で描かれているか（写真A＝#c9b8a6。11/6 境目をなめらかにしたときに写真が消えた失敗を受けて足した）
   for (const [name, loc] of [['ひとこと', words], ['最後の1枚', end]]) {
     const px = await loc.evaluate((c) => [...c.getContext('2d').getImageData(200, 500, 1, 1).data].slice(0, 3))
     check(Math.abs(px[0] - 0xc9) <= 6 && Math.abs(px[1] - 0xb8) <= 6 && Math.abs(px[2] - 0xa6) <= 6, `${name}の上に、写真がそのままの色で描かれる（${px.join(',')}）`)
   }
   check((await end.getAttribute('data-event')) === '0' && (await end.getAttribute('data-fits')) === '1', '譲渡会がなく、ロゴと長い団体名・3行の連絡先でも、最後の1枚がはみ出さない')
-  await p7.screenshot({ path: join(outDir, '5r_便箋_写真1枚.png') })
+  await p7.screenshot({ path: join(outDir, '5r_ひとこと最後_写真1枚.png') })
   await end.click()
   await p7.locator('.card-full .card-full-canvas[data-drawn="1"]').waitFor()
   await p7.screenshot({ path: join(outDir, '5s_最後の1枚_ロゴ_譲渡会なし.png') })
@@ -959,7 +967,7 @@ console.log('表示:', await page.locator('.status-line').innerText())
   await p7.locator('input[type=file][accept="image/*"]').setInputFiles(dummy('#b3a0c9', '写真C'))
   await p7.locator('.photo img').nth(2).waitFor()
   check((await look()) === '2/0', '写真3枚：ひとことは3枚目、最後の1枚は1枚目')
-  // ひとことの長さ：80字ほどは46px、100字ほどは小さくして入る、それより長いと知らせる
+  // ひとことの長さ：4行まで（11/6夜 作者の決定）。60字ほどは46px、75字ほどは小さくして入る、それより長いと知らせる
   await p7.getByRole('button', { name: '戻る' }).click()
   const len = async (n) => {
     const t = ('（架空）' + 'まいにちげんかんまでおむかえにきてくれます。'.repeat(10)).slice(0, n - 1) + '。'
@@ -970,12 +978,27 @@ console.log('表示:', await page.locator('.status-line').innerText())
     await p7.getByRole('button', { name: '戻る' }).click()
     return r
   }
-  const r80 = await len(80)
-  check(r80.startsWith('46px'), `ひとこと80字は、46pxで入る（${r80}）`)
+  const r60 = await len(60)
+  check(r60.startsWith('46px'), `ひとこと60字は、46pxで入る（${r60}）`)
+  const r75 = await len(75)
+  check(/^4[24]px・4行/.test(r75), `ひとこと75字は、小さくして4行で入る（${r75}）`)
   const r100 = await len(100)
-  check(/^4[24]px/.test(r100), `ひとこと100字は、小さくして入る（${r100}）`)
-  const r140 = await len(140)
-  check(r140 === 'カードなし・知らせあり', `ひとこと140字は、カードに載せず知らせる（${r140}）`)
+  check(r100 === 'カードなし・知らせあり', `ひとこと100字は、カードに載せず知らせる（${r100}）`)
+  // 改行はそのまま生かす。4行までなら入り、5行なら知らせる
+  const rows = async (n) => {
+    await p7.getByLabel(/ひとこと/).fill(Array.from({ length: n }, (_, i) => `（架空）${i + 1}行目です`).join('\n'))
+    await p7.getByRole('button', { name: '次へ' }).click()
+    await p7.waitForTimeout(700)
+    const r = (await words.count()) ? `${await words.getAttribute('data-lines')}行・${await words.getAttribute('data-sec')}秒` : 'カードなし'
+    await p7.getByRole('button', { name: '戻る' }).click()
+    return r
+  }
+  const k4 = await rows(4)
+  check(k4 === '4行・6秒', `改行した4行は、4行のまま入り、6秒（${k4}）`)
+  const k1 = await rows(1)
+  check(k1 === '1行・3秒', `1行なら3秒（${k1}）`)
+  const k5 = await rows(5)
+  check(k5 === 'カードなし', `改行した5行は、カードに載せず知らせる（${k5}）`)
   await ctx7.close()
 }
 
@@ -1320,18 +1343,20 @@ console.log('表示:', await page.locator('.status-line').innerText())
       out.tall = m.drawClipName(x, 'ミント', null)
       out.tallP = m.drawClipName(x, 'ミント', null, undefined, '推定2歳・男の子')
       out.tallE = m.drawClipName(x, 'ミント', null, undefined, '')
-      // 黄色の帯：年齢と性別も帯の文字の色（濃い色）で描かれる
+      // 明るい黄色のテーマ色：帯は白い文字が読める濃さまで暗くし、年齢と性別も白い文字で描かれる（11/6夜 作者の決定）
+      const yb = m.bandColors('#f5d547')
       const y = document.createElement('canvas')
       y.width = 1080
       y.height = 1920
       const yx = y.getContext('2d')
-      yx.fillStyle = '#f2d16b'
+      yx.fillStyle = yb.band
       yx.fillRect(0, 0, 1080, 1920)
-      const yr = m.drawClipName(yx, 'ミント', { top: 660, bottom: 1260 }, { text: '#3a2e26', pattern: false }, '推定2歳・男の子')
+      const yr = m.drawClipName(yx, 'ミント', { top: 660, bottom: 1260 }, { text: yb.color, pattern: false }, '推定2歳・男の子')
       const d = yx.getImageData(0, Math.round(yr.bottom - 50), 1080, 50).data
-      let dark = 0
-      for (let i = 0; i < d.length; i += 4) if (d[i] < 120 && d[i + 1] < 120) dark++
-      out.yellowProf = dark
+      let white = 0
+      for (let i = 0; i < d.length; i += 4) if (d[i] > 235 && d[i + 1] > 235 && d[i + 2] > 235) white++
+      out.yellowProf = white
+      out.yellowBand = yb
       return out
     } catch {
       return null // 本番と同じ作りでは、部品を直接読めない
@@ -1348,13 +1373,13 @@ console.log('表示:', await page.locator('.status-line').innerText())
     }
     check(r.tallP.bottom <= 1380 && r.tallP.top >= 220 && r.tallP.bottom - r.tallP.top > r.tall.bottom - r.tall.top + 40, `縦の動画：名前の下に年齢と性別が入る（${Math.round(r.tallP.top)}〜${Math.round(r.tallP.bottom)}）`)
     check(r.tallE.bottom - r.tallE.top === r.tall.bottom - r.tall.top, '年齢も性別も不明なら、名前の下の行は出さない')
-    check(r.yellowProf > 200, `明るい黄色の帯でも、年齢と性別は濃い色で描かれる（${r.yellowProf}）`)
+    check(r.yellowProf > 200 && r.yellowBand.color === '#ffffff' && r.yellowBand.contrast >= 4.5, `明るい黄色でも、帯を濃くして、年齢と性別まで白い文字で描く（帯 ${r.yellowBand.band}・見やすさ ${Math.round(r.yellowBand.contrast * 10) / 10}）`)
     check(r.tall && r.tall.bottom <= 1380 && r.tall.top >= 220, '縦の動画の名前は、今までどおり下のほう（右下のボタンより上）')
   }
   await ctx.close()
 }
 
-// 表紙：名前の下にロゴか団体名（クローバー・左上のロゴなし）。猫カードにはロゴを入れない。便箋（ひとこと・最後の1枚）は切手の中だけ（11/6 作者の決定）
+// 表紙：名前の下にロゴか団体名（クローバー・左上のロゴなし）。猫カードにはロゴを入れない（11/6 作者の決定）。ひとこと・最後の1枚は便箋なし（11/6夜 作者の決定）
 {
   const ctx = await browser.newContext({ ...phone })
   const p = await ctx.newPage()
@@ -1421,46 +1446,50 @@ console.log('表示:', await page.locator('.status-line').innerText())
       const catB = cv()
       m.drawCatCard(catB.getContext('2d'), { photo: wide, logo: round, name: 'テスト', lines: ['よく食べる'], theme: '#e8826b', position: 'normal' })
       out.noLogo = [magenta(cat).n, magenta(catB).n]
-      // 便箋：ロゴは切手の中だけ（左上には出ない）。ロゴなしなら切手の中はクローバー（緑）。ロゴは切らずに全体が入る
+      // ひとこと・最後の1枚（11/6夜 作者の決定）：便箋・切手・クローバーなし。縦の写真は写真の上に白い文字、横・正方形は上の帯に白い文字
       const ev = { date: '2026-11-15', startTime: '13:00', endTime: '16:00', venue: '（架空）会場' }
-      const green = (c, x0, y0, x1, y1) => {
-        const d = c.getContext('2d').getImageData(x0, y0, x1 - x0, y1 - y0).data
+      const green = (c) => {
+        const d = c.getContext('2d').getImageData(0, 0, 1080, 1920).data
         let n = 0
         for (let i = 0; i < d.length; i += 4) if (Math.abs(d[i] - 0x5f) < 10 && Math.abs(d[i + 1] - 0x9e) < 10 && Math.abs(d[i + 2] - 0x5a) < 10) n++
         return n
       }
-      out.stamps = []
-      for (const [lk, logo] of [['丸', round], ['横長', long], ['なし', null]]) {
-        for (const kind of ['ひとこと', '最後の1枚']) {
+      out.cards = []
+      for (const theme of ['#e8826b', '#5a9e6f', '#f5d547']) {
+        for (const [pk, photo] of [['縦', tall], ['横', wide], ['正方形', square]]) {
+          for (const [lk, logo] of [['丸', round], ['横長', long], ['なし', null]]) {
+            for (const [ek, event] of [['譲渡会なし', null], ['譲渡会あり', ev]]) {
+              const c = cv()
+              const l = m.drawEndCard(c.getContext('2d'), { logo, shelterName: '（架空）テスト保護猫の会', contact: '（架空）Instagramのメッセージでどうぞ\n（架空）test@example.com', event, theme, photo })
+              const mg = magenta(c)
+              out.cards.push({ kind: '最後の1枚', theme, pk, lk, ek, fits: l.fits, design: l.design, top: l.textTop, bottom: l.textBottom, contrast: l.contrast, contact: l.contactPx, logo: mg.n, logoH: mg.bottom - mg.top, clover: green(c) })
+            }
+          }
           const c = cv()
-          const l = kind === 'ひとこと'
-            ? m.drawWordsCard(c.getContext('2d'), { text: 'よく食べます。', logo, theme: '#e8826b', photo: tall })
-            : m.drawEndCard(c.getContext('2d'), { logo, shelterName: '（架空）テスト保護猫の会', contact: '（架空）DMでどうぞ', event: ev, theme: '#e8826b', photo: tall })
-          const mg = magenta(c)
-          // 切手のあたり：右の端から、便箋の上の端のまわり
-          const inStamp = magenta(c, Math.max(0, l.letterTop - 80), l.letterTop + 100)
-          out.stamps.push({ lk, kind, n: mg.n, inStamp: inStamp.n, h: mg.bottom - mg.top, clover: green(c, 860, Math.max(0, l.letterTop - 80), 1016, l.letterTop + 100) })
+          const l = m.drawWordsCard(c.getContext('2d'), { text: '（架空）甘えん坊です。\n抱っこも好き。\n夜は一緒に寝ています。', theme, photo })
+          out.cards.push({ kind: 'ひとこと', theme, pk, lk: 'なし', ek: '', fits: l.fits, design: l.design, top: l.textTop, bottom: l.textBottom, contrast: l.contrast, lines: l.lines, sec: l.sec, logo: magenta(c).n, clover: green(c) })
         }
       }
-      // 便箋の高さ：中身が少ないと低く、多いと高い（下の端は1600のまま。上の端は1000〜1300）
-      const top = (f) => { const c = cv(); return f(c.getContext('2d')).letterTop }
-      out.tops = {
-        wShort: top((x) => m.drawWordsCard(x, { text: 'よく食べます。', logo: null, theme: '#e8826b', photo: tall })),
-        wLong: top((x) => m.drawWordsCard(x, { text: '（架空）うちに来たばかりのころは、ケージの奥から出てきませんでした。今では朝になると枕元に来て、ふみふみしながら起こしてくれます。この子を大切にしてくれるおうちに行ってほしいです。', logo: null, theme: '#e8826b', photo: tall })),
-        eName: top((x) => m.drawEndCard(x, { logo: null, shelterName: '（架空）テスト保護猫の会', contact: '', event: null, theme: '#e8826b', photo: tall })),
-        eContact: top((x) => m.drawEndCard(x, { logo: null, shelterName: '（架空）テスト保護猫の会', contact: '（架空）DMでどうぞ', event: null, theme: '#e8826b', photo: tall })),
-        eEvent: top((x) => m.drawEndCard(x, { logo: null, shelterName: '（架空）テスト保護猫の会', contact: '（架空）DMでどうぞ', event: ev, theme: '#e8826b', photo: tall })),
+      // 団体名の最後の1文字だけが次の行に落ちない（11/6夜 作者の決定）
+      const x = cv().getContext('2d')
+      out.orphan = []
+      for (const px of [76, 54, 60]) {
+        x.font = `800 ${px}px sans-serif`
+        for (let n = 8; n <= 40; n++) {
+          const name = '（架空）' + 'ひだまり保護猫のおうち探しの会'.repeat(3).slice(0, n)
+          const lines = m.wrapName(x, name, 836)
+          out.orphan.push({ px, n, ok: lines.join('') === name && (lines.length < 2 || [...lines[lines.length - 1]].length >= 2) })
+        }
       }
-      // 横・正方形の写真は、便箋が低いほど高く入る（便箋の上の端の少し下まで。正方形で確かめる）
-      const wideH = (ev2) => { const c = cv(); const l = m.drawEndCard(c.getContext('2d'), { logo: null, shelterName: '（架空）テスト保護猫の会', contact: '', event: ev2, theme: '#e8826b', photo: square }); const d = c.getContext('2d').getImageData(540, 0, 1, 1920).data; let last = -1; for (let y = 0; y < 1920; y++) if (Math.abs(d[y * 4] - 0x8f) < 4 && Math.abs(d[y * 4 + 1] - 0xa9) < 4 && Math.abs(d[y * 4 + 2] - 0xa3) < 4) last = y; return { last, top: l.letterTop } }
-      out.wideLow = wideH(null)
-      out.wideHigh = wideH(ev)
+      out.bands = ['#e8826b', '#5a9e6f', '#f5d547', '#ffffff', '#ffe4ec'].map((t) => m.bandColors(t))
       return out
     } catch (e) {
-      return null // 本番と同じ作りでは、部品を直接読めない
+      // 本番と同じ作りでは、部品を直接読めない（そのときだけ飛ばす。ほかのまちがいは確認NGにする）
+      return String(e).includes('import') || String(e).includes('Failed to fetch') || String(e).includes('Importing') ? null : { error: String(e) }
     }
   })
-  if (r) {
+  if (r?.error) check(false, `表紙・ひとこと・最後の1枚の確認が途中で止まった（${r.error}）`)
+  if (r && !r.error) {
     for (const k of ['縦', '横', '正方形']) {
       for (const lk of ['丸', '横長']) {
         const t = r[`${k}・${lk}`]
@@ -1472,14 +1501,19 @@ console.log('表示:', await page.locator('.status-line').innerText())
     check(r['縦・丸'].mg.bottom - r['縦・丸'].mg.top >= 210, `表紙のロゴは220pxくらいの大きさ（丸いロゴの高さ ${r['縦・丸'].mg.bottom - r['縦・丸'].mg.top + 1}px）`)
     check(r.sameTop, '表紙の言葉と名前は、ロゴがあってもなくても同じ位置（ロゴのために上げない）')
     check(r.noLogo.every((n) => n === 0), `猫カード（縦・横）には、ロゴを入れない（${r.noLogo.join('/')}）`)
-    for (const s of r.stamps) {
-      if (s.lk === 'なし') check(s.n === 0 && s.clover > 30, `${s.kind}（ロゴなし）：切手の中はクローバー（緑 ${s.clover}）`)
-      else check(s.n > 0 && s.n === s.inStamp && s.h >= 20 && s.h <= 112 && s.clover === 0, `${s.kind}（${s.lk}のロゴ）：ロゴは切手の中だけに、切らずに入る（ロゴ ${s.n}・高さ ${s.h}）`)
-    }
-    const t = r.tops
-    check(Object.values(t).every((v) => v >= 1000 && v <= 1300), `便箋の上の端は1000〜1300（${Object.entries(t).map(([k, v]) => k + ' ' + v).join('・')}）`)
-    check(t.wShort > t.wLong && t.eName >= t.eContact && t.eContact > t.eEvent, '便箋の高さは中身に合わせる（短いひとこと・団体名だけは低く、長いひとこと・譲渡会ありは高く）')
-    check(r.wideLow.top > r.wideHigh.top && r.wideLow.last > r.wideHigh.last && r.wideLow.last <= r.wideLow.top + 40, `横・正方形の写真は、便箋が低いと高く入る（写真の下の端 ${r.wideLow.last}／${r.wideHigh.last}）`)
+    const bad = (f) => r.cards.filter(f).map((c) => `${c.kind}・${c.theme}・${c.pk}・${c.lk}・${c.ek}`)
+    check(bad((c) => !c.fits).length === 0, `ひとこと・最後の1枚：3色×縦・横・正方形×ロゴ×譲渡会のすべてで入る（入らない：${bad((c) => !c.fits).join('、') || 'なし'}）`)
+    check(bad((c) => c.clover > 0).length === 0, 'ひとこと・最後の1枚：クローバー（切手・消印）は描かない')
+    check(bad((c) => c.contrast < 4.5).length === 0, `白い文字の見やすさは、すべて4.5以上（最小 ${Math.min(...r.cards.map((c) => c.contrast))}）`)
+    check(bad((c) => c.design === 'A' && (c.top < 800 || c.bottom > 1620)).length === 0, `縦の写真：文字は顔にかからない高さ（800より下）から、下300の隠れる所より上（${bad((c) => c.design === 'A' && (c.top < 800 || c.bottom > 1620)).join('、') || 'すべてOK'}）`)
+    check(bad((c) => c.design === 'B' && (c.top !== 220 || c.bottom > 1380)).length === 0, '横・正方形の写真：文字は上の帯（上220より下、右下のボタンの高さより上）')
+    check(r.cards.filter((c) => c.pk === '縦').every((c) => c.design === 'A') && r.cards.filter((c) => c.pk !== '縦').every((c) => c.design === 'B'), '縦の写真は写真の上に文字、横・正方形の写真は帯')
+    const ends = r.cards.filter((c) => c.kind === '最後の1枚')
+    check(ends.filter((c) => c.lk !== 'なし').every((c) => c.logo > 0 && c.logoH >= 60) && ends.filter((c) => c.lk === 'なし').every((c) => c.logo === 0), '最後の1枚：ロゴがあれば大きめに入る（ロゴがなければ入らない）')
+    check(ends.every((c) => c.contact >= 36), `最後の1枚：譲渡会ありでも、連絡先はスマホで読める大きさ（36px＝スマホで約13px以上。最小 ${Math.min(...ends.map((c) => c.contact))}px）`)
+    check(r.cards.filter((c) => c.kind === 'ひとこと').every((c) => c.logo === 0 && c.lines === 3 && c.sec === 5), 'ひとこと：改行どおり3行、5秒（ロゴは入れない）')
+    check(r.orphan.every((o) => o.ok), `団体名の最後の1文字だけが、次の行に落ちない（${r.orphan.filter((o) => !o.ok).map((o) => o.px + 'px・' + o.n + '字').join('、') || 'すべてOK'}）`)
+    check(r.bands.every((b) => b.color === '#ffffff' && b.contrast >= 4.5), `帯の文字はいつも白。明るいテーマ色でも、帯を濃くして見やすさ4.5以上（${r.bands.map((b) => b.band + ' ' + Math.round(b.contrast * 10) / 10).join('・')}）`)
   }
   await ctx.close()
 }

@@ -141,6 +141,9 @@ export default function Preview({ shelter, cat, onCatChange, post, onPostChange,
   const [eventsRead, setEventsRead] = useState(false) // 譲渡会を読み終えるまで［動画を作る］を押せなくする（読み終える前だと譲渡会なしで作られるため）
   const [coverFits, setCoverFits] = useState(true)
   const [endFits, setEndFits] = useState(true)
+  // ひとこと・最後の1枚の形（縦の写真＝A なら写真を指で動かせる。横・正方形＝B は帯のあいだに全体を入れるので動かさない）
+  const [wordsDesign, setWordsDesign] = useState<'A' | 'B'>('A')
+  const [endDesign, setEndDesign] = useState<'A' | 'B'>('A')
   const [showEvent, setShowEvent] = useState(true) // 最後の1枚に譲渡会を入れるか（確認画面で外せる）
   useEffect(() => {
     db.loadEvents().then(
@@ -195,10 +198,11 @@ export default function Preview({ shelter, cat, onCatChange, post, onPostChange,
   }
   const usedEvent = showEvent ? event : null
   const paintEnd: Painter = async (ctx) => {
-    const [logo, photo] = await Promise.all([shelter.logo ? loadImage(shelter.logo).catch(() => null) : null, photoFor('end', endBlob)])
-    const l = drawEndCard(ctx, { logo, shelterName: shelter.name, contact: shelter.contact, event: usedEvent, theme: shelter.themeColor, photo, framing: cat.framing.end })
+    const [logo, photo, pattern] = await Promise.all([shelter.logo ? loadImage(shelter.logo).catch(() => null) : null, photoFor('end', endBlob), loadBandPattern()])
+    const l = drawEndCard(ctx, { logo, shelterName: shelter.name, contact: shelter.contact, event: usedEvent, theme: shelter.themeColor, photo, framing: cat.framing.end, pattern })
     setEndFits(l.fits)
-    return { fits: l.fits, scale: l.scale, event: l.hasEvent, photo: photoIndex(cat.photos.length, 'end') ?? (clipBlob ? 'clip' : 'none') }
+    setEndDesign(l.design)
+    return { fits: l.fits, scale: l.scale, event: l.hasEvent, design: l.design, contrast: l.contrast, contact: l.contactPx, top: l.textTop, photo: photoIndex(cat.photos.length, 'end') ?? (clipBlob ? 'clip' : 'none') }
   }
   const coverDeps = [photo1, still, clipBlob, shelter.logo, shelter.themeColor, shelter.name, cat.name]
   const endDeps = [shelter.logo, shelter.name, shelter.contact, shelter.themeColor, usedEvent, endBlob, stills, cat.framing.end]
@@ -224,16 +228,17 @@ export default function Preview({ shelter, cat, onCatChange, post, onPostChange,
     c.width = CARD_W
     c.height = CARD_H
     const ctx = c.getContext('2d')
-    return ctx ? drawWordsCard(ctx, { text: t, logo: null, theme: shelter.themeColor }).fits : true
+    return ctx ? drawWordsCard(ctx, { text: t, theme: shelter.themeColor }).fits : true
   }
   const wholeFits = useMemo(() => (words ? fitsText(words) : true), [words, shelter.themeColor]) // eslint-disable-line react-hooks/exhaustive-deps
   const wordsText = !words ? null : picked === null ? (wholeFits ? words : null) : picked.length ? pickedText(picked) : null
   const pickedFits = useMemo(() => (wordsText && picked !== null ? fitsText(wordsText) : true), [wordsText, picked]) // eslint-disable-line react-hooks/exhaustive-deps
   const wordsOnCard = wordsText !== null && pickedFits ? wordsText : null
   const paintWords: Painter = async (ctx) => {
-    const [logo, photo] = await Promise.all([shelter.logo ? loadImage(shelter.logo).catch(() => null) : null, photoFor('words', wordsBlob)])
-    const l = drawWordsCard(ctx, { text: wordsOnCard ?? '', logo, theme: shelter.themeColor, photo, framing: cat.framing.words })
-    return { fits: l.fits, sec: l.sec, size: l.size, lines: l.lines, photo: photoIndex(cat.photos.length, 'words') ?? (clipBlob ? 'clip' : 'none') }
+    const [photo, pattern] = await Promise.all([photoFor('words', wordsBlob), loadBandPattern()])
+    const l = drawWordsCard(ctx, { text: wordsOnCard ?? '', theme: shelter.themeColor, photo, framing: cat.framing.words, pattern })
+    setWordsDesign(l.design)
+    return { fits: l.fits, sec: l.sec, size: l.size, lines: l.lines, design: l.design, contrast: l.contrast, top: l.textTop, photo: photoIndex(cat.photos.length, 'words') ?? (clipBlob ? 'clip' : 'none') }
   }
   const wordsDeps = [wordsOnCard, shelter.logo, shelter.themeColor, wordsBlob, stills, cat.framing.words]
 
@@ -266,7 +271,7 @@ export default function Preview({ shelter, cat, onCatChange, post, onPostChange,
     }
     if (moving === 'words') {
       const photo = (await img(wordsBlob)) ?? (clipBlob ? (stills.words ?? null) : null)
-      return drawWordsCard(ctx, { text: wordsOnCard ?? '', logo, theme: shelter.themeColor, photo, framing: f }).framing
+      return drawWordsCard(ctx, { text: wordsOnCard ?? '', theme: shelter.themeColor, photo, framing: f }).framing
     }
     const photo = (await img(endBlob)) ?? (clipBlob ? (stills.end ?? null) : null)
     return drawEndCard(ctx, { logo, shelterName: shelter.name, contact: shelter.contact, event: usedEvent, theme: shelter.themeColor, photo, framing: f }).framing
@@ -302,7 +307,7 @@ export default function Preview({ shelter, cat, onCatChange, post, onPostChange,
             <figure className="card-slot">
               <PaintedCard paint={paintWords} deps={wordsDeps} className="card-thumb card-words" label="ひとことカード（押すと画面いっぱいに出ます）" onClick={() => setFull('words')} />
               <figcaption>3 ひとこと</figcaption>
-              {hasPhotoFor('words') && (
+              {hasPhotoFor('words') && wordsDesign === 'A' && (
                 <button className="btn btn-small move-photo" onClick={() => setMoving('words')}>
                   写真を動かす
                 </button>
@@ -312,7 +317,7 @@ export default function Preview({ shelter, cat, onCatChange, post, onPostChange,
           <figure className="card-slot">
             <PaintedCard paint={paintEnd} deps={endDeps} className="card-thumb card-end" label="最後の1枚（押すと画面いっぱいに出ます）" onClick={() => setFull('end')} />
             <figcaption>{wordsOnCard ? 4 : 3} 最後の1枚</figcaption>
-            {hasPhotoFor('end') && (
+            {hasPhotoFor('end') && endDesign === 'A' && (
               <button className="btn btn-small move-photo" onClick={() => setMoving('end')}>
                 写真を動かす
               </button>
@@ -323,7 +328,7 @@ export default function Preview({ shelter, cat, onCatChange, post, onPostChange,
         {words && !wholeFits && (
           <div className="notice words-pick" data-picked={picked?.length ?? 0}>
             <p>
-              ひとことが長くて、カードに入りきりません（書き換えはしません）。
+              ひとことが長くて、カードに入りきりません（カードは4行まで。書き換えはしません）。
               {wordsOnCard ? '選んだ文をカードに載せます。' : '今は、投稿文にだけ載せます。'}
               カードにも載せるときは、載せる文を選んでください（文の途中では切りません）。
             </p>
@@ -347,7 +352,7 @@ export default function Preview({ shelter, cat, onCatChange, post, onPostChange,
             )}
           </div>
         )}
-        {/* 猫カードの言葉（SPEC 3.1。1つ・2行まで。ツールは言葉を作らない） */}
+        {/* 猫カードの言葉（SPEC 3.1。2つまで・1つ2行まで。ツールは言葉を作らない） */}
         {layout && !layout.word && layout.linesTotal === 0 && (
           <div className="notice" data-notice="no-word">
             <p>猫カードに載せる言葉がありません。「いいところ」を1行入れると、2枚目で新しく伝わります。</p>
@@ -360,7 +365,7 @@ export default function Preview({ shelter, cat, onCatChange, post, onPostChange,
           <div className="notice" data-notice="word-too-long">
             <p>
               {layout.skippedLong > 0
-                ? '「いいところ」がどれも長くて、猫カードに入りません（1つを2行まで）。短い行を1つ足すか、短く直してください。'
+                ? '「いいところ」がどれも長くて、猫カードに入りません（1つ2行まで）。短い行を1つ足すか、短く直してください。'
                 : '「いいところ」が、ひとことカードと同じ文だけなので、猫カードには載せません。ほかの「いいところ」を1行足してください。'}
             </p>
             <button className="btn btn-small" onClick={onBack}>
@@ -368,17 +373,23 @@ export default function Preview({ shelter, cat, onCatChange, post, onPostChange,
             </button>
           </div>
         )}
-        {layout?.word && layout.wordIndex > 0 && (
+        {layout?.word && (layout.skippedLong > 0 || layout.wordIndex > 0) && (
           <p className="notice" data-notice="word-next">
-            {layout.skippedLong > 0 ? '「いいところ」の上の行は長くて入らないので、' : 'ひとことカードと同じ文は使わないので、'}
-            {layout.wordIndex + 1}行目「{layout.word}」を猫カードに載せました（書き換えていません）。
+            {layout.skippedLong > 0
+              ? `「いいところ」のうち${layout.skippedLong}行は、長いか文字が多くて猫カードに入らないので、載せていません（顔にかからないようにしています）。`
+              : 'ひとことカードと同じ文は使わないので、'}
+            {layout.wordIndexes.map((i) => i + 1).join('・')}行目「{layout.words.join('」「')}」を猫カードに載せました（書き換えていません）。
           </p>
         )}
         {layout?.word && layout.scale < 1 && <p className="notice">言葉が長いので、カードの文字を少し小さくしました。</p>}
-        {layout?.word && layout.wordRows === 2 && <p className="muted">言葉が2行なので、猫カードは4秒にします。</p>}
+        {layout && layout.words.length === 2 && <p className="muted">言葉が2つなので、猫カードは5秒にします。</p>}
         {layout && !layout.fits && <p className="alert">名前が長くて、カードに入りきりません。</p>}
         {!coverFits && <p className="alert">名前が長くて、表紙に入りきりません。</p>}
-        {!endFits && <p className="alert">連絡先や団体名が長くて、最後の1枚に入りきりません。シェルター情報で短くしてください。</p>}
+        {!endFits && (
+          <p className="alert">
+            最後の1枚の文字が多くて入りきりません（写真の顔にかからないようにし、連絡先は読める大きさより小さくしません）。シェルター情報の団体名や連絡先を短くするか、譲渡会を入れないでください。
+          </p>
+        )}
 
         {layout?.design === 'B' && (
           <p className="muted center">横長・正方形の写真なので、文字は上の色の帯に入ります。縦長の写真なら、写真の上に文字が載ります</p>

@@ -1,7 +1,7 @@
 // 1匹の紹介の順番（SPEC 3.2）に、カードと撮った動画を並べる
 //   1 表紙 3秒 → 2 撮った動画（選んだ5秒。なければ飛ばす）→ 3 猫カード 3秒（言葉が2行なら4秒）→ 4 ひとこと 3〜5秒（なければ飛ばす）→ 5 最後の1枚 4秒
 import type { AdoptionEvent, Cat, Shelter } from '../types'
-import { bandColors, CARD_H, CARD_W, drawCatCard, drawClipName, drawCoverCard, drawEndCard, drawWordsCard, loadImage, paintBand, wordsSec } from './card'
+import { bandColors, CARD_H, CARD_W, drawCatCard, drawClipName, drawCoverCard, drawEndCard, drawWordsCard, loadImage, paintBand } from './card'
 import { loadBandPattern } from './band'
 import { clipFrame, type Segment } from './video'
 import { cardProfile } from './age'
@@ -50,7 +50,7 @@ export async function buildSegments(cat: Cat, shelter: Shelter, event: AdoptionE
     pattern,
   })
   const end = canvas()
-  drawEndCard(end.getContext('2d')!, { logo, shelterName: shelter.name, contact: shelter.contact, event, theme: shelter.themeColor, photo: endPhoto, framing: cat.framing.end })
+  drawEndCard(end.getContext('2d')!, { logo, shelterName: shelter.name, contact: shelter.contact, event, theme: shelter.themeColor, photo: endPhoto, framing: cat.framing.end, pattern })
 
   // 横・正方形の動画の帯（黒をやめ、写真のカードと同じテーマ色・柄。SPEC 3.1。11/6 作者の決定）
   const { band, color: bandText } = bandColors(shelter.themeColor)
@@ -68,12 +68,14 @@ export async function buildSegments(cat: Cat, shelter: Shelter, event: AdoptionE
       overlay: (ctx, area) => drawClipName(ctx, cat.name, area, { text: bandText, pattern: !!pattern }, cardProfile(cat.age, cat.sex)),
       background: clipBand,
     })
-  // 言葉が2行のときだけ4秒（3秒で読める長さの目安。SPEC 3.2。11/6 作る人の決定）
-  segs.push({ kind: 'card', label: '猫カード', sec: catLayout.wordRows === 2 ? 4 : 3, image: catCard })
+  // 言葉が2つなら5秒、1つなら4秒、なければ3秒（SPEC 3.2。11/6夜 作る人の決定）
+  const catWords = catLayout.words.length
+  segs.push({ kind: 'card', label: '猫カード', sec: catWords >= 2 ? 5 : catWords === 1 ? 4 : 3, image: catCard })
   if (words?.trim()) {
     const wc = canvas()
-    drawWordsCard(wc.getContext('2d')!, { text: words, logo, theme: shelter.themeColor, photo: wordsPhoto, framing: cat.framing.words })
-    segs.push({ kind: 'card', label: 'ひとこと', sec: wordsSec(words), image: wc })
+    // 秒数は行数で決める（1行3秒〜4行6秒。SPEC 3.2。11/6夜 作る人の決定）
+    const wl = drawWordsCard(wc.getContext('2d')!, { text: words, theme: shelter.themeColor, photo: wordsPhoto, framing: cat.framing.words, pattern })
+    segs.push({ kind: 'card', label: 'ひとこと', sec: wl.sec, image: wc })
   }
   segs.push({ kind: 'card', label: '最後の1枚', sec: 4, image: end })
   return segs
