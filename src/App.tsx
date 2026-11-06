@@ -7,6 +7,7 @@ import { makeFixedPost } from './lib/post'
 import { makeCover } from './lib/shrink'
 import { migrateOldCats } from './lib/migrate'
 import { askConfirm, ConfirmHost } from './lib/confirm'
+import { newerVersion } from './lib/update'
 import InstallGuide, { GUIDE_SKIPPED_KEY } from './screens/InstallGuide'
 import Home from './screens/Home'
 import ShelterForm from './screens/ShelterForm'
@@ -255,6 +256,35 @@ export default function App() {
     }
   }, [flush])
 
+  // 新しい版の知らせ（SPEC 2.9）。アプリに戻ってきたとき・開いたとき・開いている間は5分ごとに確かめる。
+  // 勝手には読み込み直さない（動画を作っている途中などで止めないため）。押したら、入力の途中を書いてから読み込み直す
+  const [update, setUpdate] = useState<string | null>(null)
+  useEffect(() => {
+    let stop = false
+    const check = () => {
+      if (document.visibilityState !== 'visible') return
+      void newerVersion().then((v) => {
+        if (!stop && v) setUpdate(v)
+      })
+    }
+    const first = window.setTimeout(check, 1500)
+    const every = window.setInterval(check, 5 * 60 * 1000)
+    document.addEventListener('visibilitychange', check)
+    window.addEventListener('focus', check)
+    return () => {
+      stop = true
+      window.clearTimeout(first)
+      window.clearInterval(every)
+      document.removeEventListener('visibilitychange', check)
+      window.removeEventListener('focus', check)
+    }
+  }, [])
+  const reloadNow = async () => {
+    window.clearTimeout(timer.current)
+    if (latest.current) await db.saveDraft(latest.current).catch(() => {})
+    window.location.reload()
+  }
+
   const startNew = async () => {
     if (hasDraft && !(await askConfirm('入力の途中の内容があります。消して、新しく始めますか？', { yes: '消して新しく始める' }))) return
     await discardDraft()
@@ -350,6 +380,14 @@ export default function App() {
   return (
     <div className="app" style={{ ['--theme' as string]: themeColor }}>
       {CHECK_MODE && <p className="check-mode">確認モード・版 {APP_VERSION}</p>}
+      {update && (
+        <div className="update-bar" role="status">
+          <p>新しい版があります。</p>
+          <button className="btn btn-small btn-primary" onClick={() => void reloadNow()}>
+            読み込み直す
+          </button>
+        </div>
+      )}
       <ConfirmHost />
       {screen === 'loading' &&
         (blocked ? (

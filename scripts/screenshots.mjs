@@ -1296,6 +1296,44 @@ console.log('表示:', await page.locator('.status-line').innerText())
   await ctx4.close()
 }
 
+// 新しい版の知らせ（SPEC 2.9）：公開されている版（version.json）が、開いている画面の版と違うときだけ出す
+{
+  const ctx = await browser.newContext({ ...phone })
+  const p = await ctx.newPage()
+  let served = 'same' // same：開いている画面と同じ版 ／ new：新しい版 ／ none：読めない
+  await p.route('**/version.json', async (route) => {
+    if (served === 'none') return route.fulfill({ status: 404, body: '' })
+    if (served === 'new') return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ version: 'zzzzzzz' }) })
+    return route.continue()
+  })
+  await p.goto(url)
+  await p.getByRole('button', { name: '追加せずに、このまま使う' }).click()
+  await p.getByLabel('団体名').fill('テスト保護猫の会')
+  await p.getByRole('button', { name: '登録して始める' }).click()
+  await p.getByRole('button', { name: '新しい子を紹介' }).click()
+  await p.getByLabel('名前').fill('版の知らせの子')
+  await p.waitForTimeout(2500)
+  check(!(await p.locator('.update-bar').isVisible()), '開いている画面と同じ版なら、知らせは出ない')
+  served = 'none'
+  await p.evaluate(() => window.dispatchEvent(new Event('focus')))
+  await p.waitForTimeout(800)
+  check(!(await p.locator('.update-bar').isVisible()), '版が読めないとき（電波がないなど）は、知らせは出ない')
+  served = 'new'
+  // LINEなどから戻ってきたとき
+  await p.evaluate(() => window.dispatchEvent(new Event('focus')))
+  await p.locator('.update-bar').waitFor({ timeout: 3000 }).catch(() => {})
+  check(await p.getByText('新しい版があります。').isVisible(), '新しい版が公開されていると、戻ってきたときに「新しい版があります。」と出る')
+  check((await p.getByLabel('名前').inputValue()) === '版の知らせの子', '知らせが出ても、勝手に読み込み直さない（入力はそのまま）')
+  await p.screenshot({ path: join(outDir, '11_新しい版の知らせ.png') })
+  served = 'same'
+  await Promise.all([p.waitForEvent('load', { timeout: 8000 }).catch(() => {}), p.getByRole('button', { name: '読み込み直す' }).click()])
+  await p.getByLabel('名前').waitFor({ timeout: 8000 }).catch(() => {})
+  check((await p.getByLabel('名前').inputValue().catch(() => '')) === '版の知らせの子', '［読み込み直す］を押すと読み込み直し、入力の途中のまま開き直す')
+  check(!(await p.locator('.update-bar').isVisible()), '読み込み直したあとは、知らせは出ない（同じ版になった）')
+  check((await p.evaluate(() => window.__browserDialogs)) === 0, '知らせでブラウザの確認の窓は出ない')
+  await ctx.close()
+}
+
 await browser.close()
 console.log(failures ? `確認NGが${failures}こあります` : 'すべて確認OK')
 process.exit(failures ? 1 : 0)

@@ -1,6 +1,6 @@
 import react from '@vitejs/plugin-react'
 import { execSync } from 'node:child_process'
-import { defineConfig } from 'vite'
+import { defineConfig, type Plugin } from 'vite'
 
 // 動画テスト用のページ（test.html）は、ふだんは公開に含めない。
 // - 手元で使う：npm run dev を動かして http://localhost:5173/test.html を開く（いつでも使える）
@@ -23,9 +23,24 @@ const appVersion = (() => {
   }
 })()
 
+// 新しい版の知らせ（SPEC 2.9）のための version.json（版の番号だけ）。公開するときに作り、手元の開発用サーバーでも返す
+const versionFile = (): Plugin => ({
+  name: 'version-file',
+  generateBundle() {
+    this.emitFile({ type: 'asset', fileName: 'version.json', source: JSON.stringify({ version: appVersion }) })
+  },
+  configureServer(server) {
+    server.middlewares.use('/version.json', (_req, res) => {
+      res.setHeader('content-type', 'application/json')
+      res.setHeader('cache-control', 'no-store')
+      res.end(JSON.stringify({ version: appVersion }))
+    })
+  },
+})
+
 // https://vite.dev/config/
 export default defineConfig({
-  plugins: [react()],
+  plugins: [react(), versionFile()],
   define: {
     'import.meta.env.VITE_SHOW_CHECK': JSON.stringify(showCheck ? '1' : '0'),
     'import.meta.env.VITE_APP_VERSION': JSON.stringify(appVersion),
