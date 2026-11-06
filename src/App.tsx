@@ -16,6 +16,7 @@ import Roster from './screens/Roster'
 import CatForm from './screens/CatForm'
 import Preview from './screens/Preview'
 import Save from './screens/Save'
+import { themeInk } from './lib/themeInk'
 
 export type Screen = 'loading' | 'guide' | 'welcome' | 'home' | 'shelter' | 'roster' | 'cat' | 'preview' | 'save'
 
@@ -395,9 +396,11 @@ export default function App() {
   }
 
   const themeColor = shelter?.themeColor ?? '#e8826b'
+  // 画面の文字・ボタンには、テーマ色を読める濃さにした色を使う（入力された色とカードの帯は変えない。11/7）
+  const ink = themeInk(themeColor)
 
   return (
-    <div className="app" style={{ ['--theme' as string]: themeColor }}>
+    <div className="app" style={{ ['--theme' as string]: themeColor, ['--theme-text' as string]: ink.text, ['--theme-strong' as string]: ink.strong }}>
       {CHECK_MODE && <p className="check-mode">確認モード・版 {APP_VERSION}</p>}
       {update && (
         <div className="update-bar" role="status">

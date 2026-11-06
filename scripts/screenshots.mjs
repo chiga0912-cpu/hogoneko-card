@@ -1608,6 +1608,34 @@ console.log('表示:', await page.locator('.status-line').innerText())
   await ctx.close()
 }
 
+// 画面の文字・ボタンのテーマ色（11/7 作者の指示）：テーマ色を文字やボタンに使うときだけ、読める濃さ（見やすさ4.5以上）にする。
+// 入力されたテーマ色そのものと、カードの帯は変えない
+for (const theme of ['#e8826b', '#f5d547']) {
+  const ctx = await browser.newContext({ ...phone })
+  const p = await ctx.newPage()
+  await p.goto(url + '/?sizes=1')
+  await p.getByText('はじめに').waitFor()
+  await p.getByRole('button', { name: '追加せずに、このまま使う' }).click()
+  await p.getByLabel('団体名').fill('（架空）テスト保護猫の会')
+  await p.locator('input[type=color]').fill(theme)
+  await p.getByRole('button', { name: '登録して始める' }).click()
+  await p.getByText('新しい子を紹介').waitFor()
+  const r = await p.evaluate(() => {
+    const rgb = (s) => (s.match(/[0-9.]+/g) ?? []).slice(0, 3).map(Number)
+    const lin = (c) => { c /= 255; return c <= 0.03928 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4 }
+    const lum = ([r, g, b]) => 0.2126 * lin(r) + 0.7152 * lin(g) + 0.0722 * lin(b)
+    const ratio = (a, b) => { const [x, y] = [lum(a), lum(b)].sort((m, n) => n - m); return Math.round(((x + 0.05) / (y + 0.05)) * 10) / 10 }
+    const bg = rgb(getComputedStyle(document.body).backgroundColor)
+    const sub = document.querySelector('.hero-sub')
+    const btn = document.querySelector('.btn-primary')
+    return { sub: ratio(rgb(getComputedStyle(sub).color), bg), btn: btn ? ratio(rgb(getComputedStyle(btn).backgroundColor), [255, 255, 255]) : null, theme: getComputedStyle(document.querySelector('.app')).getPropertyValue('--theme').trim() }
+  })
+  check(r.sub >= 4.5 && (r.btn === null || r.btn >= 4.5), `テーマ色 ${theme}：ホームの団体名とボタンの文字は見やすさ4.5以上（団体名 ${r.sub}・ボタン ${r.btn}）`)
+  check(r.theme.toLowerCase() === theme, `テーマ色 ${theme}：入力されたテーマ色はそのまま（${r.theme}）`)
+  await p.screenshot({ path: join(outDir, `1e_ホーム_テーマ色${theme.slice(1)}.png`) })
+  await ctx.close()
+}
+
 // 帯の枠（SPEC 3.1）：public/band.png があれば白黒の画像にテーマ色を重ねて敷く。なければテーマ色の無地。柄の画像はまだ入れていないので、仮の縞（灰色）ですりかえて試す
 for (const withPattern of [false, true]) {
   const ctx = await browser.newContext({ ...phone })

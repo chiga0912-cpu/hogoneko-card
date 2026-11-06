@@ -5,6 +5,9 @@
   --muted: #8a7a70;
   --line: #e4d8cc;
   --theme: #e8826b;
+  /* 画面の文字・ボタンに使うテーマ色（読める濃さ）。App.tsx が、入力されたテーマ色から作って入れる（11/7） */
+  --theme-text: #9e5849;
+  --theme-strong: #ac604f;
   font-family: system-ui, -apple-system, 'Hiragino Sans', 'Noto Sans JP', sans-serif;
   color: var(--text);
   background: var(--bg);
@@ -46,7 +49,7 @@ h3 {
 }
 .hero-sub {
   margin: 0 0 6px;
-  color: var(--theme);
+  color: var(--theme-text, var(--theme));
   font-weight: 700;
 }
 .hero-lead {
@@ -88,8 +91,8 @@ h3 {
   font-size: 15px;
 }
 .btn-primary {
-  background: var(--theme);
-  border-color: var(--theme);
+  background: var(--theme-strong, var(--theme));
+  border-color: var(--theme-strong, var(--theme));
   color: #fff;
 }
 .btn-ghost {
@@ -123,7 +126,7 @@ h3 {
   padding: 0 10px 0 0;
   border: 0;
   background: none;
-  color: var(--theme);
+  color: var(--theme-text, var(--theme));
   font: inherit;
   font-size: 16px;
   font-weight: 700;
@@ -149,7 +152,7 @@ h3 {
 .section {
   margin: 28px 0 12px;
   font-size: 15px;
-  color: var(--theme);
+  color: var(--theme-text, var(--theme));
 }
 
 /* 入力欄 */
@@ -236,8 +239,8 @@ input[type='color'] {
   font-weight: 700;
 }
 .chip-on {
-  background: var(--theme);
-  border-color: var(--theme);
+  background: var(--theme-strong, var(--theme));
+  border-color: var(--theme-strong, var(--theme));
   color: #fff;
 }
 .toggle {
@@ -251,7 +254,7 @@ input[type='color'] {
 .toggle input {
   width: 22px;
   height: 22px;
-  accent-color: var(--theme);
+  accent-color: var(--theme-strong, var(--theme));
 }
 
 /* 写真 */
@@ -302,7 +305,7 @@ input[type='color'] {
   bottom: 4px;
   padding: 2px 8px;
   border-radius: 99px;
-  background: var(--theme);
+  background: var(--theme-strong, var(--theme));
   color: #fff;
   font-size: 12px;
   font-weight: 700;
@@ -386,7 +389,7 @@ input[type='color'] {
 }
 .btn-continue {
   border-color: var(--theme);
-  color: var(--theme);
+  color: var(--theme-text, var(--theme));
 }
 
 /* ホーム画面に追加する案内 */
@@ -415,7 +418,7 @@ input[type='color'] {
   width: 26px;
   height: 26px;
   border-radius: 99px;
-  background: var(--theme);
+  background: var(--theme-strong, var(--theme));
   color: #fff;
   font-weight: 700;
   text-align: center;
@@ -450,7 +453,7 @@ input[type='color'] {
   margin-left: 4px;
   padding: 1px 6px;
   border-radius: 6px;
-  background: var(--theme);
+  background: var(--theme-strong, var(--theme));
   color: #fff;
   font-size: 11px;
   font-style: normal;
