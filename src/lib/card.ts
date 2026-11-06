@@ -59,7 +59,7 @@ export type CardLayout = {
 type Img = CanvasImageSource & { width: number; height: number }
 
 // 日本語を、幅に収まるように折り返す（「、」「。」などで行を始めない）
-const NO_START = '、。，．,.）」』】〕！？!?ーぁぃぅぇぉっゃゅょァィゥェォッャュョ'
+const NO_START = '、。，．,.）」』】〕！？!?ーぁぃぅぇぉっゃゅょァィゥェォッャュョ・'
 // 言葉のまとまりに分ける（issue #10：「教えてく／れる」のように言葉の途中で折らないため）
 // ブラウザの言葉の区切り（Intl.Segmenter）は「教え|て|くれる」のように細かいので、
 // ひらがなで始まる部分（て・を・くれる など）・閉じかっこ・句読点・「〜」は前にくっつけ、開きかっこのあとは次にくっつける。
@@ -68,7 +68,8 @@ const segmenter =
   typeof Intl !== 'undefined' && 'Segmenter' in Intl ? new Intl.Segmenter('ja', { granularity: 'word' }) : null
 const ATTACH_BEFORE = /^[\p{Script=Hiragana}ー、。，．,.）」』】〕！？!?…〜~・：:]/u
 const OPEN = /[（「『【〔(〜~]$/
-export function wordUnits(text: string): string[] {
+// loose：「・」の後ろの言葉をつなげない（とても長い名前が3行に入らないときだけ。前の折り方）
+export function wordUnits(text: string, loose = false): string[] {
   if (!segmenter) return text.match(/[A-Za-z0-9@.:/_~+-]+|./gsu) ?? []
   const segs = [...segmenter.segment(text)].map((x) => x.segment)
   const units: string[] = []
@@ -85,16 +86,16 @@ export function wordUnits(text: string): string[] {
       segment !== '\n' &&
       !afterStop && // 「、」「。」のあとでは分ける
       !honor &&
-      (ATTACH_BEFORE.test(segment) || OPEN.test(prev) || (/[0-9０-９]$/.test(prev) && [...segment].length === 1 && !/\s/.test(segment)) || (/[0-9０-９:：]$/.test(prev) && /^[0-9０-９]/.test(segment)))
+      (ATTACH_BEFORE.test(segment) || OPEN.test(prev) || (!loose && /・$/.test(prev)) || (/[0-9０-９]$/.test(prev) && [...segment].length === 1 && !/\s/.test(segment)) || (/[0-9０-９:：]$/.test(prev) && /^[0-9０-９]/.test(segment)))
     if (glue) units[units.length - 1] = prev + segment
     else units.push(segment)
   }
   return units
 }
 
-function wrap(ctx: CanvasRenderingContext2D, text: string, width: number): string[] {
+function wrap(ctx: CanvasRenderingContext2D, text: string, width: number, loose = false): string[] {
   // 言葉のまとまりの途中では折らない（入りきらないほど長いまとまりだけ、文字で折る）
-  const units = wordUnits(text)
+  const units = wordUnits(text, loose)
   const lines: string[] = []
   let cur = ''
   const pushChars = (u: string) => {
@@ -103,6 +104,10 @@ function wrap(ctx: CanvasRenderingContext2D, text: string, width: number): strin
       else if (NO_START.includes(ch) && cur.length > 1) {
         lines.push(cur.slice(0, -1))
         cur = cur.slice(-1) + ch
+      } else if (cur.endsWith('・') && cur.length > 2) {
+        // 「・」で行を終えない（前の1文字ごと次の行へ）
+        lines.push(cur.slice(0, -2))
+        cur = cur.slice(-2) + ch
       } else {
         lines.push(cur)
         cur = ch
@@ -149,13 +154,19 @@ function planName(ctx: CanvasRenderingContext2D, name: string, k: number, width:
     const size = Math.round(NAME_PX * k * s)
     ctx.font = `800 ${size}px ${FONT}`
     const lines = wrap(ctx, name, width)
-    if (lines.length <= 2 || s === NAME_SCALES[NAME_SCALES.length - 1]) return { size, lines }
+    if (lines.length <= 2) return { size, lines }
+    if (s === NAME_SCALES[NAME_SCALES.length - 1]) {
+      // いちばん小さくしても3行に入らない、とても長い名前だけ、「・」の後ろでも折る（前の折り方）
+      const loose = lines.length > 3 ? wrap(ctx, name, width, true) : lines
+      return { size, lines: loose.length < lines.length ? loose : lines }
+    }
   }
   return { size: Math.round(NAME_PX * k * 0.5), lines: [name] }
 }
 
-function plan(ctx: CanvasRenderingContext2D, name: string, profile: string, lines: string[], k: number, n: number, width: Widths): Planned {
-  const { size: nameSize, lines: nameLines } = planName(ctx, name, k, width.name)
+// nk：名前だけの大きさの係数（長い名前のとき、名前だけを先に小さくして、言葉と写真の大きさを保つため）
+function plan(ctx: CanvasRenderingContext2D, name: string, profile: string, lines: string[], k: number, n: number, width: Widths, nk = k): Planned {
+  const { size: nameSize, lines: nameLines } = planName(ctx, name, nk, width.name)
   const profSize = Math.round(PROF_PX * k)
   ctx.font = `600 ${profSize}px ${FONT}`
   const prof = profile.trim() ? wrap(ctx, profile.trim(), width.name) : []
@@ -371,7 +382,7 @@ function drawA(ctx: CanvasRenderingContext2D, opts: Opts, lines: string[]): Card
   ctx.fillStyle = `rgba(0,0,0,${darken})`
   ctx.fillRect(0, top, CARD_W, CARD_H - top)
 
-  drawLogo(ctx, opts.logo, SAFE.left, SAFE.top)
+  // ロゴは表紙と最後の1枚だけ（猫カード・ひとことカードには入れない。11/6 作者の決定）
   const t = drawText(ctx, p, SAFE.left, top, WHITE, 'left', true)
 
   return {
@@ -427,7 +438,7 @@ function drawB(ctx: CanvasRenderingContext2D, opts: Opts, lines: string[]): Card
   // どちらも見やすさ4.5に届かない中くらいの色のときは、帯の色だけを少し暗く（白い文字）か明るく（濃い文字）して4.5にそろえる。
   // テーマ色の設定は変えない（11/5 見直し①の1番。作る人の決定）
   const { band, color, contrast } = bandColors(opts.theme)
-  const logoH = opts.logo ? B_LOGO + 14 : 0
+  const logoH = 0 // 猫カードにはロゴを入れない（11/6 作者の決定）
 
   // 文字はすべて上の帯に、上から「名前 → 年齢と性別 → カードの言葉」（11/6 作る人の決定）。
   // 下の帯はInstagramの表示（説明文・ボタン）で隠れやすいので、文字を置かない。写真も下300には入れない
@@ -440,6 +451,11 @@ function drawB(ctx: CanvasRenderingContext2D, opts: Opts, lines: string[]): Card
   const profile = opts.profile ?? ''
   // 言葉が入らないときだけ、写真を少し小さくしてでも載せる
   const pick = pickWord(lines, opts.avoid, (ls) => {
+    // 長い名前やロゴで上の帯が高くなるときは、まず名前だけを小さくする（言葉はほかのカードと同じ大きさ・折り返しのまま、写真も小さくしすぎない。11/6 作者の指示）⚙
+    for (const nk of [1, 0.85, 0.72]) {
+      const p = plan(ctx, opts.name, profile, ls, 1, ls.length, { name: WIDE_W, body: WIDE_W }, nk)
+      if (p.nameLines.length <= 2 && p.body.every((rows) => rows.length <= MAX_WORD_ROWS) && roomFor(B_MIN_PHOTO)(p)) return { p, scale: 1, fits: true }
+    }
     const c = choose(ctx, opts.name, profile, ls, 1, { name: WIDE_W, body: WIDE_W }, roomFor(B_MIN_PHOTO))
     if (ls.length && c.p.body.length < ls.length) {
       const more = choose(ctx, opts.name, profile, ls, 1, { name: WIDE_W, body: WIDE_W }, roomFor(B_MIN_PHOTO_TWO))
@@ -454,7 +470,7 @@ function drawB(ctx: CanvasRenderingContext2D, opts: Opts, lines: string[]): Card
   ctx.fillRect(0, 0, CARD_W, CARD_H)
   if (opts.photo) drawContain(ctx, opts.photo, 0, topH, CARD_W, CARD_H - topH - botH)
 
-  drawLogo(ctx, opts.logo, SAFE.left, SAFE.top, B_LOGO)
+  // ロゴは表紙と最後の1枚だけ（猫カード・ひとことカードには入れない。11/6 作者の決定）
   const t = drawText(ctx, p, SAFE.left + WIDE_W / 2, SAFE.top + logoH, color, 'center', false, 'all')
 
   return {
@@ -654,11 +670,25 @@ const PAPER = '#fbf6ee'
 
 // ── 撮った動画に重ねる名前（SPEC 3.2 の2番目）──
 // 表紙と同じ置き方（下。右下のボタンの高さより上、真ん中にそろえる）で、少し小さく（11/5 作る人の決定）
-export function drawClipName(ctx: CanvasRenderingContext2D, name: string) {
-  if (!name.trim()) return
+// area：横・正方形の動画を帯つきで置いたときの、映像の上下（縦の動画は画面いっぱいなので null）
+// 横の動画では、名前が映像の下の端をまたぐと切れて見えるので、表紙の案Bと同じく映像の上の帯に置く（11/6 作者が見本で気づいた）。
+// 上の帯に入らないとき（正方形に近い動画）は、映像の中の下のほうに収める
+export function drawClipName(ctx: CanvasRenderingContext2D, name: string, area: { top: number; bottom: number } | null = null): { top: number; bottom: number } | null {
+  if (!name.trim()) return null
   const { size, lines } = planName(ctx, name, 0.8, WIDE_W)
   const h = lines.length * size * NAME_LH
-  const top = CORNER_TOP - 10 - h
+  let top = CORNER_TOP - 10 - h
+  let onBand = false // 映像の上の帯（無地）に置くときは、後ろを暗くしない（映像の上の端が暗くならないように）
+  if (area) {
+    const above = area.top - 28 - h
+    onBand = above >= SAFE.top
+    top = onBand ? above : Math.min(CORNER_TOP - 10, area.bottom - 28) - h
+  }
+  const p: Planned = { nameLines: lines, prof: [], profSize: 0, body: [], nameSize: size, lineSize: 0, h }
+  if (onBand) {
+    drawText(ctx, p, CARD_W / 2, top, WHITE, 'center', true, 'name')
+    return { top, bottom: top + h }
+  }
   const pad = 160
   const grad = ctx.createLinearGradient(0, top - pad, 0, top + h + pad)
   grad.addColorStop(0, 'rgba(0,0,0,0)')
@@ -667,8 +697,8 @@ export function drawClipName(ctx: CanvasRenderingContext2D, name: string) {
   grad.addColorStop(1, 'rgba(0,0,0,0)')
   ctx.fillStyle = grad
   ctx.fillRect(0, top - pad, CARD_W, h + pad * 2)
-  const p: Planned = { nameLines: lines, prof: [], profSize: 0, body: [], nameSize: size, lineSize: 0, h }
   drawText(ctx, p, CARD_W / 2, top, WHITE, 'center', true, 'name')
+  return { top, bottom: top + h }
 }
 
 // ── ひとことカード（SPEC 3.2 の4番目。issue #28）──
@@ -852,7 +882,7 @@ export function drawWordsCard(
 ): WordsLayout & { size: number; lines: number; framing: Framing | null } {
   ctx.clearRect(0, 0, CARD_W, CARD_H)
   const used = drawLetterPhoto(ctx, opts.photo ?? null, opts.framing ?? NO_FRAMING)
-  drawLogo(ctx, opts.logo, SAFE.left, SAFE.top)
+  // ロゴは表紙と最後の1枚だけ（猫カード・ひとことカードには入れない。11/6 作者の決定）
   drawLetterPaper(ctx, opts.theme)
   const L = LETTER
   ctx.fillStyle = inkOfTheme(opts.theme)

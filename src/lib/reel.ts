@@ -57,7 +57,7 @@ export async function buildSegments(cat: Cat, shelter: Shelter, event: AdoptionE
       blob: cat.clip.blob,
       start: cat.clip.start,
       length: cat.clip.length,
-      overlay: (ctx) => drawClipName(ctx, cat.name),
+      overlay: (ctx, area) => drawClipName(ctx, cat.name, area),
     })
   // 言葉が2行のときだけ4秒（3秒で読める長さの目安。SPEC 3.2。11/6 作る人の決定）
   segs.push({ kind: 'card', label: '猫カード', sec: catLayout.wordRows === 2 ? 4 : 3, image: catCard })

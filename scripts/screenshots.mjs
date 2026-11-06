@@ -1296,6 +1296,42 @@ console.log('表示:', await page.locator('.status-line').innerText())
   await ctx4.close()
 }
 
+// 横の動画に重ねる名前：映像の下の端をまたがず、上の帯に収める（11/6 作者が見本で気づいた）
+{
+  const ctx = await browser.newContext({ ...phone })
+  const p = await ctx.newPage()
+  await p.goto(url)
+  const r = await p.evaluate(async () => {
+    try {
+      const m = await import('/src/lib/card.ts')
+      const c = document.createElement('canvas')
+      c.width = 1080
+      c.height = 1920
+      const x = c.getContext('2d')
+      const out = {}
+      for (const [k, w, h] of [['16:9', 1920, 1080], ['4:3', 1440, 1080], ['正方形', 1080, 1080], ['ほぼ正方形', 1080, 1150]]) {
+        const dh = (1080 * h) / w
+        const area = { top: (1920 - dh) / 2, bottom: (1920 + dh) / 2 }
+        const n = m.drawClipName(x, 'とてもながいなまえのテストねこ', area)
+        out[k] = { area, n }
+      }
+      out.tall = m.drawClipName(x, 'ミント', null)
+      return out
+    } catch {
+      return null // 本番と同じ作りでは、部品を直接読めない
+    }
+  })
+  if (r) {
+    for (const k of ['16:9', '4:3', '正方形', 'ほぼ正方形']) {
+      const { area, n } = r[k]
+      const clear = n.bottom <= area.top || (n.top >= area.top && n.bottom <= area.bottom)
+      check(clear && n.top >= 220 && n.bottom <= 1380, `${k}の動画：名前が映像の端をまたがず、隠れる所にも入らない（名前 ${Math.round(n.top)}〜${Math.round(n.bottom)}・映像 ${Math.round(area.top)}〜${Math.round(area.bottom)}）`)
+    }
+    check(r.tall && r.tall.bottom <= 1380 && r.tall.top >= 220, '縦の動画の名前は、今までどおり下のほう（右下のボタンより上）')
+  }
+  await ctx.close()
+}
+
 // 新しい版の知らせ（SPEC 2.9）：公開されている版（version.json）が、開いている画面の版と違うときだけ出す
 {
   const ctx = await browser.newContext({ ...phone })

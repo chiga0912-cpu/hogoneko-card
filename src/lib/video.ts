@@ -22,7 +22,7 @@ export type Method = 'frames' | 'record' | 'image'
 // 1枚の絵（カード）を sec 秒見せる／撮った動画の start 秒から length 秒を使う
 export type Segment =
   | { kind: 'card'; label: string; sec: number; image: HTMLCanvasElement }
-  | { kind: 'clip'; label: string; blob: Blob; start: number; length: number; overlay: (ctx: CanvasRenderingContext2D) => void }
+  | { kind: 'clip'; label: string; blob: Blob; start: number; length: number; overlay: (ctx: CanvasRenderingContext2D, area: { top: number; bottom: number } | null) => void }
 
 export type Progress = (ratio: number) => void
 
@@ -89,6 +89,9 @@ async function makeByFrames(segs: Segment[], onProgress: Progress): Promise<Blob
       const first = await track.getFirstTimestamp()
       const tall = isTall(track.displayWidth, track.displayHeight)
       const sink = new CanvasSink(track, { width: CARD_W, height: CARD_H, fit: tall ? 'cover' : 'contain', poolSize: 2 })
+      // 帯つきで置いたときの映像の上下（名前を置く場所を決めるため）
+      const dh = Math.min(CARD_H, (CARD_W * track.displayHeight) / Math.max(1, track.displayWidth))
+      const area = tall ? null : { top: (CARD_H - dh) / 2, bottom: (CARD_H + dh) / 2 }
       const times = Array.from({ length: Math.round(g.length * FPS) }, (_, f) => first + g.start + f / FPS)
       let last: HTMLCanvasElement | OffscreenCanvas | null = null
       for await (const fr of sink.canvasesAtTimestamps(times)) {
@@ -97,7 +100,7 @@ async function makeByFrames(segs: Segment[], onProgress: Progress): Promise<Blob
         const c = fr?.canvas ?? last
         if (c) ctx.drawImage(c, 0, 0)
         if (fr) last = fr.canvas
-        g.overlay(ctx)
+        g.overlay(ctx, area)
         await add()
       }
     } finally {
@@ -137,8 +140,7 @@ async function makeByRecording(segs: Segment[], onProgress: Progress): Promise<B
         try {
           await video.play()
           await playFor(g.length, () => {
-            drawVideo(ctx, video)
-            g.overlay(ctx)
+            g.overlay(ctx, drawVideo(ctx, video))
           })
         } finally {
           video.pause()
@@ -167,13 +169,16 @@ const playFor = (sec: number, draw: () => void) =>
     tick()
   })
 
-function drawVideo(ctx: CanvasRenderingContext2D, v: HTMLVideoElement) {
+// 映像を描き、帯つきのときは映像の上下を返す（縦の動画は null）
+function drawVideo(ctx: CanvasRenderingContext2D, v: HTMLVideoElement): { top: number; bottom: number } | null {
   const w = v.videoWidth || CARD_W
   const h = v.videoHeight || CARD_H
-  const s = isTall(w, h) ? Math.max(CARD_W / w, CARD_H / h) : Math.min(CARD_W / w, CARD_H / h)
+  const tall = isTall(w, h)
+  const s = tall ? Math.max(CARD_W / w, CARD_H / h) : Math.min(CARD_W / w, CARD_H / h)
   ctx.fillStyle = '#000'
   ctx.fillRect(0, 0, CARD_W, CARD_H)
   ctx.drawImage(v, (CARD_W - w * s) / 2, (CARD_H - h * s) / 2, w * s, h * s)
+  return tall ? null : { top: (CARD_H - h * s) / 2, bottom: (CARD_H + h * s) / 2 }
 }
 
 function openVideo(blob: Blob, start: number): Promise<HTMLVideoElement> {
