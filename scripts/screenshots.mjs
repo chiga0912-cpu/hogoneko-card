@@ -1481,7 +1481,7 @@ console.log('表示:', await page.locator('.status-line').innerText())
           out.orphan.push({ px, n, ok: lines.join('') === name && (lines.length < 2 || [...lines[lines.length - 1]].length >= 2) })
         }
       }
-      out.bands = ['#e8826b', '#5a9e6f', '#f5d547', '#ffffff', '#ffe4ec'].map((t) => m.bandColors(t))
+      out.bands = ['#e8826b', '#5a9e6f', '#f5d547', '#ffffff', '#ffe4ec', '#fff44f', '#d4a72c'].map((t) => m.bandColors(t))
       // ロゴ（11/7 作者の決定）：Instagramのアイコンと同じく、丸い枠で真ん中をそのまま切り取るだけ（白い余白は詰めない）。
       // 台を足さない。透明なロゴはテーマ色の丸の上
       const MAGENTA = 'rgb(255,0,255)'
@@ -1556,6 +1556,13 @@ console.log('表示:', await page.locator('.status-line').innerText())
     check(lp['写真'].edge === '255,0,255' && lp['写真'].top === '255,0,255', '余白のない画像（写真など）は、丸いっぱいに真ん中を切り取る')
     check(lp['縦長'].edge === '255,0,255' && lp['縦長'].top === '255,0,255', '縦長の画像も、丸いっぱいに真ん中を切り取る（すき間を作らない）')
     check(r.bands.every((b) => b.color === '#ffffff' && b.contrast >= 4.5), `帯の文字はいつも白。明るいテーマ色でも、帯を濃くして見やすさ4.5以上（${r.bands.map((b) => b.band + ' ' + Math.round(b.contrast * 10) / 10).join('・')}）`)
+    {
+      const hx = (h) => [1, 3, 5].map((i) => parseInt(h.slice(i, i + 2), 16))
+      const hu = ([r1, g1, b1]) => { const mx = Math.max(r1, g1, b1), mn = Math.min(r1, g1, b1), d = mx - mn; if (!d) return 0; const h = mx === r1 ? ((g1 - b1) / d + (g1 < b1 ? 6 : 0)) : mx === g1 ? (b1 - r1) / d + 2 : (r1 - g1) / d + 4; return Math.round(h * 60) }
+      const yl = r.bands.slice(5).concat([r.bands[2]])
+      check(yl.every((b) => hu(hx(b.band)) >= 36 && hu(hx(b.band)) <= 44), `黄色の仲間の帯は、からし色の方向へ濃くする（${yl.map((b) => b.band + ' ' + hu(hx(b.band)) + '°').join('・')}。11/7 作者の決定）`)
+      check(r.bands[0].band === '#ac604f' && r.bands[1].band === '#4a825b' && r.bands[4].band === '#7f7276', `黄色でない色の帯は、前と同じ（${r.bands[0].band}・${r.bands[1].band}・${r.bands[4].band}）`)
+    }
   }
   await ctx.close()
 }
@@ -1610,7 +1617,9 @@ console.log('表示:', await page.locator('.status-line').innerText())
 
 // 画面の文字・ボタンのテーマ色（11/7 作者の指示）：テーマ色を文字やボタンに使うときだけ、読める濃さ（見やすさ4.5以上）にする。
 // 入力されたテーマ色そのものと、カードの帯は変えない
-for (const theme of ['#e8826b', '#f5d547']) {
+// 黄色の仲間は、濃くするときに少しオレンジ寄りにして、からし色の方向へ（緑っぽいオリーブ色にしない。11/7 作者の決定）
+const hueOf = ([r, g, b]) => { const mx = Math.max(r, g, b), mn = Math.min(r, g, b), d = mx - mn; if (!d) return 0; const h = mx === r ? ((g - b) / d + (g < b ? 6 : 0)) : mx === g ? (b - r) / d + 2 : (r - g) / d + 4; return Math.round(h * 60) }
+for (const theme of ['#e8826b', '#f5d547', '#fff44f']) {
   const ctx = await browser.newContext({ ...phone })
   const p = await ctx.newPage()
   await p.goto(url + '/?sizes=1')
@@ -1628,8 +1637,10 @@ for (const theme of ['#e8826b', '#f5d547']) {
     const bg = rgb(getComputedStyle(document.body).backgroundColor)
     const sub = document.querySelector('.hero-sub')
     const btn = document.querySelector('.btn-primary')
-    return { sub: ratio(rgb(getComputedStyle(sub).color), bg), btn: btn ? ratio(rgb(getComputedStyle(btn).backgroundColor), [255, 255, 255]) : null, theme: getComputedStyle(document.querySelector('.app')).getPropertyValue('--theme').trim() }
+    return { sub: ratio(rgb(getComputedStyle(sub).color), bg), btn: btn ? ratio(rgb(getComputedStyle(btn).backgroundColor), [255, 255, 255]) : null, theme: getComputedStyle(document.querySelector('.app')).getPropertyValue('--theme').trim(), subRgb: rgb(getComputedStyle(sub).color), btnRgb: btn ? rgb(getComputedStyle(btn).backgroundColor) : null }
   })
+  if (theme === '#e8826b') check(r.btnRgb?.join() === '172,96,79' && r.subRgb.join() === '158,88,73', `オレンジのテーマ色は、黄色の直しの前と同じ色（ボタン ${r.btnRgb} ・団体名 ${r.subRgb}）`)
+  else check([r.subRgb, r.btnRgb].every((c) => c && hueOf(c) >= 36 && hueOf(c) <= 44), `黄色の仲間 ${theme}：団体名とボタンは、からし色の方向（色相 ${hueOf(r.subRgb)}°・${r.btnRgb && hueOf(r.btnRgb)}°。オリーブ色は50°くらい）`)
   check(r.sub >= 4.5 && (r.btn === null || r.btn >= 4.5), `テーマ色 ${theme}：ホームの団体名とボタンの文字は見やすさ4.5以上（団体名 ${r.sub}・ボタン ${r.btn}）`)
   check(r.theme.toLowerCase() === theme, `テーマ色 ${theme}：入力されたテーマ色はそのまま（${r.theme}）`)
   await p.screenshot({ path: join(outDir, `1e_ホーム_テーマ色${theme.slice(1)}.png`) })

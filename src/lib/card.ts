@@ -58,6 +58,7 @@ export type CardLayout = {
   framing?: Framing | null // 案A：実際に使った写真の位置（#29）
 }
 
+import { yellowInk } from './themeInk.ts' // 拡張子つき：logo.ts と同じ理由
 import { drawLogoCircle } from './logo.ts' // 拡張子つき：自動の確認（scripts/wrap-check.mjs）が Node でこのファイルを直接読むため
 
 type Img = CanvasImageSource & { width: number; height: number }
@@ -466,6 +467,12 @@ export function readableOnBand(ctx: CanvasRenderingContext2D, x: number, y: numb
 // 帯の文字はいつも白。明るいテーマ色でも、白い文字が読める（見やすさ4.5以上）濃さまで帯の色を暗くする（11/6夜 作者の決定）。
 // テーマ色の設定は変えない（帯の色だけ）
 export function bandColors(theme: string): { band: string; color: string; contrast: number } {
+  // 黄色の仲間は、画面の文字と同じく、からし色の方向へ濃くする（緑っぽく見えないように。11/7 作者の決定）
+  const y = yellowInk(theme, '#ffffff')
+  if (y) {
+    const [yr, yg, yb] = [1, 3, 5].map((i) => parseInt(y.slice(i, i + 2), 16))
+    return { band: y, color: WHITE, contrast: ratio(1, lum(yr, yg, yb)) }
+  }
   const n = parseInt(theme.replace('#', '').padEnd(6, '0').slice(0, 6), 16)
   const rgb = [(n >> 16) & 255, (n >> 8) & 255, n & 255]
   let t = 0
