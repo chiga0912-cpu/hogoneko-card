@@ -197,7 +197,7 @@ export default function Preview({ shelter, cat, onCatChange, post, onPostChange,
     checking === 'checking'
       ? { status: 'checking' }
       : memoStale
-        ? { status: 'stale', limit: checking === 'failed' ? checkLimit : null }
+        ? { status: 'stale', failed: checking === 'failed', limit: checking === 'failed' ? checkLimit : null }
         : story?.check
           ? { status: 'done', ...story.check }
           : { status: 'failed', limit: checkLimit }
@@ -596,7 +596,9 @@ export default function Preview({ shelter, cat, onCatChange, post, onPostChange,
             {checkState.status === 'checking'
               ? '本文の根拠を確かめています…'
               : checkState.status === 'stale'
-                ? 'メモが変わりました。上の［もう一度確かめる］を押してください。'
+                ? checkState.limit
+                  ? '回数の上限で、本文の根拠を確かめ直せません。上の［本文を外して、決まった形に戻す］を押すと、動画を作れます。'
+                  : 'メモが変わりました。上の［もう一度確かめる］を押してください。'
               : checkState.status === 'failed'
                 ? checkLimit
                   ? '回数の上限で、本文の根拠を確かめられません。上の［本文を外して、決まった形に戻す］を押すと、動画を作れます。'

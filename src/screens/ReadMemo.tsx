@@ -1,5 +1,5 @@
 import { callClaude, limitText } from '../lib/claude'
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import type { Cat } from '../types'
 import { cleanLine } from '../lib/lineText'
 import { maskContacts, type Extracted } from '../lib/extract'
@@ -28,8 +28,12 @@ export default function ReadMemo({ cat, onChange }: Props) {
   const [asking, setAsking] = useState(false)
   // ［足した返事を外す］のあとは、同じ質問の欄をもう一度出す（Claudeは呼び直さない。11/7 作者の決定）
   // 外した返事は欄に残す（貼り直すときに、直して使えるように）
+  // 開いたときではなく、足した質問と返事が「あった → なくなった」ときだけ（同じ文のメモの、別の子を名簿から開いたときに出さないため。見直しの軽い4）
+  const hadAdditions = useRef(!!cat.memoAdditions.trim())
   useEffect(() => {
-    if (!cat.memoAdditions.trim() && ask && ask.memo === cat.memo && ask.status === 'added') setAsk({ ...ask, status: 'open' })
+    const has = !!cat.memoAdditions.trim()
+    if (hadAdditions.current && !has && ask && ask.memo === cat.memo && ask.status === 'added') setAsk({ ...ask, status: 'open' })
+    hadAdditions.current = has
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [cat.memoAdditions, cat.memo])
 

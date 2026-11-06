@@ -381,7 +381,12 @@ await p.screenshot({ path: join(outDir, '16b_投稿文_書けなかった.png'),
     const body = '（仮の本文）よく食べる子です。'
     return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ result: { body, parts: [{ text: body, cites: [{ doc: 0, start: 0, end: 1, text: 'x' }] }], memoChunks: splitMemo(sent.memo), factChunks: factChunks(sent.facts) } }) })
   })
+  let failNext = false
   await s4.route('**/api/check', async (route) => {
+    if (failNext) {
+      failNext = false
+      return route.fulfill({ status: 502, contentType: 'application/json', body: JSON.stringify({ error: 'api' }) })
+    }
     const sent = JSON.parse(route.request().postData() ?? '{}')
     checks.push(sent)
     const results = sent.sentences.map((_, i) => ({ i, ok: true, cites: [{ doc: 0, start: 0, end: 1, text: 'x' }], reason: '' }))
@@ -418,6 +423,11 @@ await p.screenshot({ path: join(outDir, '16b_投稿文_書けなかった.png'),
   ok((await s4.locator('.story-text', { hasText: '✓' }).count()) === 0, 'メモが変わったら、✓ を消す')
   ok(await save4.isDisabled(), 'メモが変わったら、確かめ直すまで［動画を作る］を押せない')
   await s4.screenshot({ path: join(outDir, '17e_メモが変わった.png'), fullPage: true })
+  // 確かめ直しに失敗したら、そのことを出す（見直しの中1）
+  failNext = true
+  await s4.getByRole('button', { name: 'もう一度確かめる' }).first().click()
+  await s4.getByText('本文の根拠を確かめられませんでした。もう一度押してください。').waitFor({ timeout: 4000 }).catch(() => {})
+  ok((await s4.getByText('本文の根拠を確かめられませんでした。もう一度押してください。').isVisible()) && (await save4.isDisabled()), '確かめ直しに失敗したら、そのことを出し、［動画を作る］は押せないまま')
   const before = checks.length
   await s4.getByRole('button', { name: 'もう一度確かめる' }).first().click()
   await s4.locator('.story-line').first().waitFor({ timeout: 5000 }).catch(() => {})

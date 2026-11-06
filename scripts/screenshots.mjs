@@ -1354,7 +1354,8 @@ console.log('表示:', await page.locator('.status-line').innerText())
       const yr = m.drawClipName(yx, 'ミント', { top: 660, bottom: 1260 }, { text: yb.color, pattern: false }, '推定2歳・男の子')
       const d = yx.getImageData(0, Math.round(yr.bottom - 50), 1080, 50).data
       let white = 0
-      for (let i = 0; i < d.length; i += 4) if (d[i] > 235 && d[i + 1] > 235 && d[i + 2] > 235) white++
+      // 年齢と性別の行は、少し透ける白で描く。帯の青みが少ない色（からし色。11/7）では青が235に届かないので、220より明るい所を白とみなす
+      for (let i = 0; i < d.length; i += 4) if (d[i] > 220 && d[i + 1] > 220 && d[i + 2] > 220) white++
       out.yellowProf = white
       out.yellowBand = yb
       return out
