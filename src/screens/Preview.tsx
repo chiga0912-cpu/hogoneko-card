@@ -218,6 +218,7 @@ export default function Preview({ shelter, cat, onCatChange, post, onPostChange,
   const [event, setEvent] = useState<AdoptionEvent | null>(null)
   const [eventsRead, setEventsRead] = useState(false) // 譲渡会を読み終えるまで［動画を作る］を押せなくする（読み終える前だと譲渡会なしで作られるため）
   const [coverFits, setCoverFits] = useState(true)
+  const [coverDesign, setCoverDesign] = useState<'A' | 'B'>('A') // 表紙の形（縦の写真＝A なら写真を指で動かせる。11/8）
   const [endFits, setEndFits] = useState(true)
   // ひとこと・最後の1枚の形（縦の写真＝A なら写真を指で動かせる。横・正方形＝B は帯のあいだに全体を入れるので動かさない）
   const [wordsDesign, setWordsDesign] = useState<'A' | 'B'>('A')
@@ -270,8 +271,9 @@ export default function Preview({ shelter, cat, onCatChange, post, onPostChange,
       shelter.logo ? loadImage(shelter.logo).catch(() => null) : null,
       loadBandPattern(),
     ])
-    const l = drawCoverCard(ctx, { photo: photo ?? (clipBlob ? still : null), logo, name: cat.name, theme: shelter.themeColor, shelterName: shelter.name, pattern })
+    const l = drawCoverCard(ctx, { photo: photo ?? (clipBlob ? still : null), logo, name: cat.name, theme: shelter.themeColor, shelterName: shelter.name, pattern, framing: cat.framing.cover })
     setCoverFits(l.fits)
+    setCoverDesign(l.design)
     return { fits: l.fits, design: l.design, contrast: l.contrast, mark: l.mark, markbottom: l.markBottom }
   }
   const usedEvent = showEvent ? event : null
@@ -282,7 +284,7 @@ export default function Preview({ shelter, cat, onCatChange, post, onPostChange,
     setEndDesign(l.design)
     return { fits: l.fits, scale: l.scale, event: l.hasEvent, design: l.design, contrast: l.contrast, contact: l.contactPx, top: l.textTop, photo: photoIndex(cat.photos.length, 'end') ?? (clipBlob ? 'clip' : 'none') }
   }
-  const coverDeps = [photo1, still, clipBlob, shelter.logo, shelter.themeColor, shelter.name, cat.name]
+  const coverDeps = [photo1, still, clipBlob, shelter.logo, shelter.themeColor, shelter.name, cat.name, cat.framing.cover]
   const endDeps = [shelter.logo, shelter.name, shelter.contact, shelter.themeColor, usedEvent, endBlob, stills, cat.framing.end]
 
   // ひとことカード（#28）。書き換えずに載せる。入りきらないときは知らせて、投稿文にだけ載せるか、載せる文を選んでもらう（SPEC 3.2）。
@@ -321,7 +323,7 @@ export default function Preview({ shelter, cat, onCatChange, post, onPostChange,
   const wordsDeps = [wordsOnCard, shelter.logo, shelter.themeColor, wordsBlob, stills, cat.framing.words]
 
   // 写真を指で動かす（#29。猫カードの案A・ひとこと・最後の1枚）。動かしている間に写真を何度も読み直さないよう、読んだ写真を覚えておく
-  const [moving, setMoving] = useState<'cat' | 'words' | 'end' | null>(null)
+  const [moving, setMoving] = useState<'cover' | 'cat' | 'words' | 'end' | null>(null)
   // カードの言葉の案を選んだ行（#19）。猫のデータに残すので、画面を出ても［元に戻す］が使える
   const wordSwap = cardSwaps(cat.cardLines, cat.goodPoints)[0] ?? null
   const imgCache = useRef(new Map<Blob, Promise<HTMLImageElement | null>>())
@@ -334,6 +336,10 @@ export default function Preview({ shelter, cat, onCatChange, post, onPostChange,
   const catBlob = cat.photos[1] ?? cat.photos[0] ?? null
   const movePaint = async (ctx: CanvasRenderingContext2D, f: Framing): Promise<Framing | null> => {
     const logo = await img(shelter.logo)
+    if (moving === 'cover') {
+      const photo = (await img(photo1)) ?? (clipBlob ? still : null)
+      return drawCoverCard(ctx, { photo, logo, name: cat.name, theme: shelter.themeColor, shelterName: shelter.name, pattern: await loadBandPattern(), framing: f }).framing
+    }
     if (moving === 'cat') {
       const photo = (await img(catBlob)) ?? (clipBlob ? still : null)
       return drawCatCard(ctx, {
@@ -356,7 +362,7 @@ export default function Preview({ shelter, cat, onCatChange, post, onPostChange,
     const photo = (await img(endBlob)) ?? (clipBlob ? (stills.end ?? null) : null)
     return drawEndCard(ctx, { logo, shelterName: shelter.name, contact: shelter.contact, event: usedEvent, theme: shelter.themeColor, photo, framing: f }).framing
   }
-  const hasPhotoFor = (key: 'cat' | 'words' | 'end') => cat.photos.length > 0 || !!clipBlob || key === 'cat' && !!catBlob
+  const hasPhotoFor = (key: 'cover' | 'cat' | 'words' | 'end') => cat.photos.length > 0 || !!clipBlob || key === 'cat' && !!catBlob
   const [saving, setSaving] = useState(false)
   const [saveFailed, setSaveFailed] = useState(false)
   const tagCount = countHashtags(post)
@@ -397,6 +403,11 @@ export default function Preview({ shelter, cat, onCatChange, post, onPostChange,
           <figure className="card-slot">
             <PaintedCard paint={paintCover} deps={coverDeps} className="card-thumb card-cover" label="表紙（押すと画面いっぱいに出ます）" onClick={() => setFull('cover')} />
             <figcaption>1 表紙</figcaption>
+            {coverDesign === 'A' && hasPhotoFor('cover') && (
+              <button className="btn btn-small move-photo" onClick={() => setMoving('cover')}>
+                写真を動かす
+              </button>
+            )}
           </figure>
           <figure className="card-slot">
             <CatCard cat={cat} shelter={shelter} avoid={wordsOnCard} still={clipBlob ? still : null} className="card-canvas" onLayout={setLayout} onClick={() => setFull('cat')} />
@@ -537,7 +548,7 @@ export default function Preview({ shelter, cat, onCatChange, post, onPostChange,
       {moving && (
         <FramingEditor
           key={moving}
-          title={{ cat: '猫カード', words: 'ひとことカード', end: '最後の1枚' }[moving]}
+          title={{ cover: '表紙', cat: '猫カード', words: 'ひとことカード', end: '最後の1枚' }[moving]}
           initial={cat.framing[moving]}
           paint={movePaint}
           onCancel={() => setMoving(null)}

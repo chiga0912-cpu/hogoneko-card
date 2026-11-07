@@ -262,16 +262,6 @@ function pickWords(lines: string[], avoid: string | null | undefined, tryWith: (
   return { chosen, words, indexes, skippedLong, skippedSame, longLines }
 }
 
-function drawCover(ctx: CanvasRenderingContext2D, img: Img, x: number, y: number, w: number, h: number) {
-  // 真ん中を合わせて、枠いっぱいに（指で動かすのは、このあと）
-  const s = Math.max(w / img.width, h / img.height)
-  ctx.save()
-  ctx.beginPath()
-  ctx.rect(x, y, w, h)
-  ctx.clip()
-  ctx.drawImage(img, x + (w - img.width * s) / 2, y + (h - img.height * s) / 2, img.width * s, img.height * s)
-  ctx.restore()
-}
 function drawContain(ctx: CanvasRenderingContext2D, img: Img, x: number, y: number, w: number, h: number) {
   // 切らずに、枠の中に全体を入れる
   const s = Math.min(w / img.width, h / img.height)
@@ -596,7 +586,7 @@ export function loadImage(blob: Blob): Promise<HTMLImageElement> {
 // ── 表紙（SPEC 3.2 の1番目）：写真1枚目・「ずっとのおうちを探しています」・「○○です」・その下にロゴか団体名（11/6 クローバーをやめた） ──
 // 言葉は決まった文で、入力にない事実を足さない（11/5夜 作者の決定）。名前は猫カードと同じく下のほう（11/5 作者の決定）
 export const COVER_GREETING = 'ずっとのおうちを探しています'
-export type CoverLayout = { design: CardDesign; fits: boolean; contrast: number; nameSize: number; mark: 'logo' | 'org' | 'none'; markBottom: number }
+export type CoverLayout = { design: CardDesign; fits: boolean; contrast: number; nameSize: number; mark: 'logo' | 'org' | 'none'; markBottom: number; framing: Framing | null }
 const GREET_PX = 60
 const GREET_GAP = 18
 
@@ -628,7 +618,7 @@ function drawGreeting(ctx: CanvasRenderingContext2D, size: number, y: number, co
 
 export function drawCoverCard(
   ctx: CanvasRenderingContext2D,
-  opts: { photo: Img | null; logo: Img | null; name: string; theme: string; shelterName?: string; pattern?: Img | null },
+  opts: { photo: Img | null; logo: Img | null; name: string; theme: string; shelterName?: string; pattern?: Img | null; framing?: Framing },
 ): CoverLayout {
   ctx.clearRect(0, 0, CARD_W, CARD_H)
   const design = designFor(opts.photo)
@@ -659,13 +649,15 @@ export function drawCoverCard(
       nameSize: size,
       mark: mark.kind,
       markBottom: Math.round(markTop + mark.h),
+      framing: null, // 横・正方形の写真は、帯のあいだに切らずに入れるので動かさない
     }
   }
 
   // 縦の写真：写真を全面に。言葉と名前は白い文字（影つき）。その下に差出人のようにロゴか団体名（11/6 作者の決定）
   ctx.fillStyle = '#6b5f55'
   ctx.fillRect(0, 0, CARD_W, CARD_H)
-  if (opts.photo) drawCover(ctx, opts.photo, 0, 0, CARD_W, CARD_H)
+  // 縦の写真は、指で動かした位置で（11/8。猫カードと同じ形。動かしていなければ真ん中）
+  const used = opts.photo ? drawFramed(ctx, opts.photo, 0, 0, CARD_W, CARD_H, 0.5, opts.framing ?? NO_FRAMING) : null
   const gSize = planGreeting(ctx, 1, WIDE_W)
   const { size, lines } = planName(ctx, title, 1.1, WIDE_W)
   const nameH = lines.length * size * NAME_LH
@@ -690,6 +682,7 @@ export function drawCoverCard(
     nameSize: size,
     mark: mark.kind,
     markBottom: Math.round(bottom),
+    framing: used,
   }
 }
 
