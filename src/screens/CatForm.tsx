@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react'
+import { useMemo, useRef, useState } from 'react'
 import {
   AGE_STAGES,
   MAX_PHOTOS,
@@ -103,18 +103,45 @@ export default function CatForm({ cat, fromRoster, onChange, onBack, onNext, aut
 
   const missing = [cat.photos.length === 0 && !cat.clip && '写真か動画', !cat.name.trim() && '名前'].filter(Boolean) as string[]
 
+  // iPhone の日本語入力で、変換を確定する前に［次へ］を押すと、欄に見えている最後の文字が入力に入らないまま画面が進むことがある
+  // （入力の知らせが、画面が進んだあとに届く。11/7 作者が iPhone の Chrome で見つけた。メモを足しても「メモが変わりました」が出なかった）
+  // そこで、進む前に 1) 入力中の欄から離れて確定させ 2) 欄に見えている文字を入力に入れ 3) 画面が描き直されてから進む
+  const memoBox = useRef<HTMLTextAreaElement>(null)
+  const nameBox = useRef<HTMLInputElement>(null)
+  const pointsBox = useRef<HTMLTextAreaElement>(null)
+  const wordsBox = useRef<HTMLTextAreaElement>(null)
+  const latest = useRef({ onNext, onBack, missing })
+  latest.current = { onNext, onBack, missing }
+  const commitTyped = () => {
+    if (document.activeElement instanceof HTMLElement) document.activeElement.blur()
+    const memo = memoBox.current?.value
+    if (memo !== undefined && memo !== cat.memo) set('memo', memo)
+    const name = nameBox.current?.value
+    if (name !== undefined && name !== cat.name) set('name', name)
+    const points = pointsBox.current?.value
+    if (points !== undefined && points !== cat.goodPoints.join('\n')) set('goodPoints', points.split('\n'))
+    const words = wordsBox.current?.value
+    if (words !== undefined && words !== cat.carerWords) set('carerWords', words)
+  }
   const next = () => {
-    if (missing.length) {
-      setShowErrors(true)
-      window.scrollTo({ top: 0, behavior: 'smooth' })
-      return
-    }
-    onNext()
+    commitTyped()
+    window.setTimeout(() => {
+      if (latest.current.missing.length) {
+        setShowErrors(true)
+        window.scrollTo({ top: 0, behavior: 'smooth' })
+        return
+      }
+      latest.current.onNext()
+    }, 0)
+  }
+  const back = () => {
+    commitTyped()
+    window.setTimeout(() => latest.current.onBack(), 0)
   }
 
   return (
     <main className="screen">
-      <TopBar title={fromRoster ? `${cat.name}の紹介` : '新しい子の紹介'} onBack={onBack} />
+      <TopBar title={fromRoster ? `${cat.name}の紹介` : '新しい子の紹介'} onBack={back} />
 
       {showErrors && missing.length > 0 && <p className="alert">まだ入っていません：{missing.join('、')}</p>}
 
@@ -185,10 +212,11 @@ export default function CatForm({ cat, fromRoster, onChange, onBack, onNext, aut
         <textarea
           rows={5}
           placeholder="LINEやメールの文章を、ここに貼ってください。自分で書いてもOKです"
+          ref={memoBox}
           value={cat.memo}
           onChange={(e) => set('memo', e.target.value)}
         />
-        <small className="muted">ここから紹介文を作り、下の欄も埋めます。何通かあれば、続けて貼ってください。</small>
+        <small className="muted">ここから紹介文を作り、名前や年齢などの欄も埋めます。何通かあれば、続けて貼ってください。</small>
       </label>
       {cleaned.isHistory && (
         <div className="notice line-notice" data-removed={cleaned.removed}>
@@ -208,7 +236,7 @@ export default function CatForm({ cat, fromRoster, onChange, onBack, onNext, aut
         <span>
           名前 <em className="req">必須</em> <FromMemo source={cat.sources.name} />
         </span>
-        <input value={cat.name} onChange={(e) => set('name', e.target.value)} />
+        <input ref={nameBox} value={cat.name} onChange={(e) => set('name', e.target.value)} />
       </label>
 
       <div className="field">
@@ -301,22 +329,25 @@ export default function CatForm({ cat, fromRoster, onChange, onBack, onNext, aut
 
       <label className="field">
         <span>
-          いいところ（猫カードの言葉） <FromMemo source={cat.sources.goodPoints} />
+          いいところ（猫カードの言葉）
         </span>
         <textarea
           rows={4}
           placeholder={'1行に1つ\n例：ひざの上が大好き\n例：ごはんの時間を教えてくれる'}
+          ref={pointsBox}
           value={cat.goodPoints.join('\n')}
           onChange={(e) => set('goodPoints', e.target.value.split('\n'))}
         />
-        <small className="muted">メモから自動で入ります。短い言葉にすると、動画の猫カードに出ます。</small>
+        {/* スタッフさん・ボランティアさんが書く欄。読み取りでは入れない・書き換えない（11/7 作者の決定。SPEC 2.2） */}
+        <small className="muted">スタッフさんが書く欄です。1行に1つ、短い言葉にすると、動画の猫カードに出ます。</small>
       </label>
 
       <label className="field">
         <span>
-          見る人へのひとこと（なくてもOK） <FromMemo source={cat.sources.carerWords} />
+          見る人へのひとこと（なくてもOK）
         </span>
-        <textarea rows={3} placeholder="毎朝起こしに来てくれます。そんな毎日がいとおしいです" value={cat.carerWords} onChange={(e) => set('carerWords', e.target.value)} />
+        <textarea rows={3} placeholder="毎朝起こしに来てくれます。そんな毎日がいとおしいです" ref={wordsBox} value={cat.carerWords} onChange={(e) => set('carerWords', e.target.value)} />
+        {/* 預かりさん・スタッフさんが書く欄。読み取りでは入れない・書き換えない（11/7 作者の決定） */}
         <small className="muted">預かりさんやスタッフさんの言葉です。書き換えずに、そのまま動画に出ます。</small>
       </label>
 

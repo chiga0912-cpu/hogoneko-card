@@ -17,7 +17,7 @@ import {
 } from '../lib/card'
 import * as db from '../db'
 import { nextEvent } from '../lib/events'
-import WriteStory from './WriteStory'
+import WriteStory, { type Live } from './WriteStory'
 import StoryCheck, { openFlags, type CheckState } from './StoryCheck'
 import { factChunks, removeSentence, splitMemo, storySentences, type StoryDraft, type Verdict } from '../lib/story'
 import { makeFixedPost } from '../lib/post'
@@ -145,10 +145,11 @@ type Props = {
   story?: StoryDraft | null // Claudeが書いた本文と根拠の確認の結果（#17。入力の途中に残る）
   onStoryChange?: (s: StoryDraft | null | ((cur: StoryDraft | null) => StoryDraft | null)) => void
   onStoryPost?: (p: string) => void // Claudeの本文で作った投稿文（手で直したことにしない。見直しの中9）
+  live?: () => Live // 今の入力（本文が届いたときに使う。#23のあとの見直しの重い1）
 }
 
 // 確認（仮）。カードと根拠の印は11/5〜11/6に作る。今は決まった形の投稿文だけ
-export default function Preview({ shelter, cat, onCatChange, post, onPostChange, onBack, onSave, restoreNotice, story = null, onStoryChange = () => {}, onStoryPost }: Props) {
+export default function Preview({ shelter, cat, onCatChange, post, onPostChange, onBack, onSave, restoreNotice, story = null, onStoryChange = () => {}, onStoryPost, live }: Props) {
   // ── 根拠の確認（#17。SPEC 2.4・4.2）──
   // 本文を書いたら続けて確かめる。確かめている途中・失敗はこの画面の中だけ（入力の途中には、確認が終わったものだけ残す）
   const [checking, setChecking] = useState<'idle' | 'checking' | 'failed'>('idle')
@@ -159,7 +160,11 @@ export default function Preview({ shelter, cat, onCatChange, post, onPostChange,
   const memoNow = useMemo(() => maskContacts(cleanLine(fullMemo(cat)).text).text, [cat.memo, cat.memoAdditions]) // eslint-disable-line react-hooks/exhaustive-deps
   // 本文を確かめたときのメモと、今のメモが違うか（#23 重い1。作者の決定 11/7）。違えば ✓ を消し、確かめ直すまで［動画を作る］を押せなくする
   // 比べるのは区切ったかたまり（空行・空白の違いだけなら、同じとみなす）
-  const memoStale = !!story && JSON.stringify(story.result.memoChunks) !== JSON.stringify(splitMemo(memoNow))
+  // 名前・「いいところ」（確認した項目）が変わったときも同じ（11/7 作者の決定。案B）。比べるのは確認した項目のかたまり（前後の空白・空の行は同じとみなす）
+  const factsNow = useMemo(() => factChunks({ name: cat.name, goodPoints: cat.goodPoints }), [cat.name, cat.goodPoints])
+  const memoChanged = !!story && JSON.stringify(story.result.memoChunks) !== JSON.stringify(splitMemo(memoNow))
+  const factsChanged = !!story && JSON.stringify(story.result.factChunks) !== JSON.stringify(factsNow)
+  const memoStale = memoChanged || factsChanged
   const runCheck = async (s: StoryDraft) => {
     setChecking('checking')
     setCheckLimit(null)
@@ -197,7 +202,7 @@ export default function Preview({ shelter, cat, onCatChange, post, onPostChange,
     checking === 'checking'
       ? { status: 'checking' }
       : memoStale
-        ? { status: 'stale', failed: checking === 'failed', limit: checking === 'failed' ? checkLimit : null }
+        ? { status: 'stale', what: memoChanged ? 'memo' : 'facts', failed: checking === 'failed', limit: checking === 'failed' ? checkLimit : null }
         : story?.check
           ? { status: 'done', ...story.check }
           : { status: 'failed', limit: checkLimit }
@@ -551,6 +556,7 @@ export default function Preview({ shelter, cat, onCatChange, post, onPostChange,
         cat={cat}
         shelter={shelter}
         post={post}
+        live={live}
         onPost={(p, result) => {
           ;(onStoryPost ?? onPostChange)(p)
           const s = { result, check: null }
@@ -598,7 +604,7 @@ export default function Preview({ shelter, cat, onCatChange, post, onPostChange,
               : checkState.status === 'stale'
                 ? checkState.limit
                   ? '回数の上限で、本文の根拠を確かめ直せません。上の［本文を外して、決まった形に戻す］を押すと、動画を作れます。'
-                  : 'メモが変わりました。上の［もう一度確かめる］を押してください。'
+                  : `${checkState.what === 'facts' ? '名前か「いいところ」' : 'メモ'}が変わりました。上の［もう一度確かめる］を押してください。`
               : checkState.status === 'failed'
                 ? checkLimit
                   ? '回数の上限で、本文の根拠を確かめられません。上の［本文を外して、決まった形に戻す］を押すと、動画を作れます。'

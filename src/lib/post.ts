@@ -37,3 +37,17 @@ export function makeFixedPost(cat: Cat, shelter: Shelter, today = new Date(), st
 
   return blocks.map((b) => b.join('\n')).join('\n\n')
 }
+
+// 投稿文の頭の【名前】と、本文のあとの決まった文（closingLine）だけを、今の名前にする（11/7 作者の決定）
+// 手で直した投稿文でも使う。ほかの行は書き換えない。決まった文を手で直していたら、その行はそのまま
+// 本文の中の名前は書き換えない（本文は根拠の確認で確かめ直す）
+export function renameInPost(post: string, name: string, catId: string): string {
+  const lines = post.split('\n')
+  const head = lines[0]?.match(/^【(.*)】$/)
+  const now = name.trim()
+  if (!head || head[1] === now) return post
+  const old = head[1]
+  const oldClosing = closingLine(old, catId)
+  const newClosing = closingLine(now, catId)
+  return [`【${now}】`, ...lines.slice(1).map((l) => (l.trim() === oldClosing ? newClosing : l))].join('\n')
+}

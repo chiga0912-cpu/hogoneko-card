@@ -59,9 +59,10 @@ export default function ReadMemo({ cat, onChange }: Props) {
       const body = ans.body
       const result = ans.body.result
       // 入れるのは、その時点の最新の入力に対して（読み取りを待つ間に手で入れた分を消さないため）
-      // 根拠の照合は、送ったメモ（返事を足したならそれも含む）で行う
-      onChange((c) => applyExtract(c, result, memoText).cat)
-      setReport({ applied: applyExtract(cat, result, memoText), dropped: body.dropped ?? [], masked: n })
+      onChange((c) => applyExtract(c, result).cat)
+      // 「いいところ」「ひとこと」は人が書く欄なので、入れなかった項目にも出さない（11/7 作者の決定）
+      const dropped = (body.dropped ?? []).filter((d) => !d.startsWith('いいところ') && d !== 'ひとこと')
+      setReport({ applied: applyExtract(cat, result), dropped, masked: n })
       // まだ聞いていなければ（メモに「聞いたこと」の行がなければ）、聞き返しが要るかを考える
       if (askAfter && !alreadyAsked(cat.memo)) await askBack(masked, cat.name.trim() || result.name?.value || '', cat.memo)
     } catch {

@@ -3,7 +3,7 @@ import { APP_VERSION, CHECK_MODE } from './lib/checkMode'
 import { newCat, type AdoptionEvent, type Cat, type Shelter } from './types'
 import * as db from './db'
 import { detectBrowser, isStandalone } from './lib/browser'
-import { makeFixedPost } from './lib/post'
+import { makeFixedPost, renameInPost } from './lib/post'
 import { makeCover } from './lib/shrink'
 import { migrateOldCats } from './lib/migrate'
 import { askConfirm, ConfirmHost } from './lib/confirm'
@@ -78,6 +78,9 @@ export default function App() {
   const [draftUnreadable, setDraftUnreadable] = useState(false) // 入力の途中が読めなかった
   const [postEdited, setPostEdited] = useState(false) // 投稿文を手で直したか
   const [story, setStory] = useState<StoryDraft | null>(null) // Claudeが書いた本文と根拠の確認の結果（#17）
+  // 今の入力（本文が届いたときに、書き始めたときではなく今の入力で投稿文を組み立てるため。#23のあとの見直しの重い1）
+  const live = useRef({ cat, post, postEdited, shelter })
+  live.current = { cat, post, postEdited, shelter }
   // 入力の途中を残せなかった（文字・写真・動画で分けて持つ。1つが成功しても、ほかの失敗の知らせを消さないため）
   const [saveFail, setSaveFail] = useState({ text: false, photos: false, clip: false })
   const setFail = (k: 'text' | 'photos' | 'clip', v: boolean) => setSaveFail((f) => (f[k] === v ? f : { ...f, [k]: v }))
@@ -498,6 +501,9 @@ export default function App() {
                 setPost(fresh)
                 setPostEdited(false)
                 setStory(null) // 投稿文を作り直したので、前の本文の確認の結果は使わない
+              } else {
+                // 手で直した投稿文のままでも、頭の【名前】と最後の決まった文は今の名前にする（11/7 作者の決定）
+                setPost(renameInPost(post, cat.name, cat.id))
               }
             }
             go('preview')
@@ -527,6 +533,7 @@ export default function App() {
           }}
           story={story}
           onStoryChange={setStory}
+          live={() => live.current}
           onStoryPost={(p) => {
             setPost(p)
             setPostEdited(false)

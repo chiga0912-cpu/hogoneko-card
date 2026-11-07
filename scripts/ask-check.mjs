@@ -183,7 +183,7 @@ for (const [label, ans] of [
   const { ctx, p } = await setup(ans)
   await p.getByLabel('預かりさんからのLINE・メモ').fill(MEMO)
   await readNow(p)
-  ok(!(await panel(p).isVisible()) && (await p.getByLabel('名前').inputValue()) === 'ミケ', `${label}ときは、聞き返しの欄を出さず、読み取りの結果はそのまま入る`)
+  ok(!(await panel(p).isVisible()) && (await p.getByRole('textbox', { name: /^名前/ }).inputValue()) === 'ミケ', `${label}ときは、聞き返しの欄を出さず、読み取りの結果はそのまま入る`)
   await ctx.close()
 }
 
@@ -206,7 +206,7 @@ for (const [label, ans] of [
   const dummy = { name: 'p.svg', mimeType: 'image/svg+xml', buffer: Buffer.from('<svg xmlns="http://www.w3.org/2000/svg" width="600" height="800"><rect width="600" height="800" fill="#8fa9a3"/></svg>') }
   await p.locator('input[type=file][accept="image/*"]').setInputFiles(dummy)
   await p.locator('.photo img').first().waitFor()
-  await p.getByLabel('名前').fill('ポン')
+  await p.getByRole('textbox', { name: /^名前/ }).fill('ポン')
   await p.getByLabel('預かりさんからのLINE・メモ').fill('（架空）ポンは人が帰ってくると玄関までお迎えに来て、足元にすりすりしてくれて、そのあとひざに乗ってきます。連絡は 090-0000-0000')
   await p.getByLabel('いいところ').fill(LONG)
   await p.getByRole('button', { name: '次へ' }).click()
@@ -250,13 +250,41 @@ for (const [label, ans] of [
   const dummy = { name: 'p.svg', mimeType: 'image/svg+xml', buffer: Buffer.from('<svg xmlns="http://www.w3.org/2000/svg" width="600" height="800"><rect width="600" height="800" fill="#8fa9a3"/></svg>') }
   await p.locator('input[type=file][accept="image/*"]').setInputFiles(dummy)
   await p.locator('.photo img').first().waitFor()
-  await p.getByLabel('名前').fill('ポン')
+  await p.getByRole('textbox', { name: /^名前/ }).fill('ポン')
   await p.getByLabel('いいところ').fill(LONG)
   await p.getByRole('button', { name: '次へ' }).click()
   await p.locator('.card-canvas[data-drawn="1"]').waitFor({ timeout: 8000 })
   await p.getByRole('button', { name: '短い言葉の案を出す' }).click()
   await p.getByText('案の根拠を確かめられなかったので').waitFor({ timeout: 5000 }).catch(() => {})
   ok((await p.getByText('案の根拠を確かめられなかったので、案は出しません').isVisible()) && (await p.getByRole('button', { name: /を使う/ }).count()) === 0, '案の根拠を確かめられないときは、案を出さない')
+  await ctx.close()
+}
+
+// 5. 読み取りは「いいところ」「ひとこと」を入れない・書き換えない（人が書く欄。11/7 作者の決定。SPEC 2.2）
+{
+  const { ctx, p } = await setup({ question: null, skipped: 'not-needed' })
+  await p.route('**/api/read', async (route) =>
+    route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        result: { ...READ('ミケ').result, sex: { value: 'メス', source: 'メスです。' }, goodPoints: [{ text: 'よく食べる', source: 'よく食べます。' }], carerWords: '毎日癒されています。' },
+        dropped: ['いいところ「ひざが好き」', 'ひとこと', '年齢'],
+      }),
+    }),
+  )
+  await p.getByLabel('預かりさんからのLINE・メモ').fill('（架空）ミケです。メスです。よく食べます。毎日癒されています。')
+  await readNow(p)
+  ok((await p.getByRole('textbox', { name: /^名前/ }).inputValue()) === 'ミケ', '読み取りで、名前は今までどおり入る')
+  ok((await p.getByLabel('いいところ').inputValue()) === '' && (await p.getByLabel(/見る人へのひとこと/).inputValue()) === '', '読み取りの答えに「いいところ」「ひとこと」があっても、欄には入れない')
+  const report = (await p.locator('.notice, .muted').allTextContents()).join(' ')
+  ok(report.includes('性別') && !report.includes('いいところ') && !report.includes('ひとこと') && report.includes('年齢'), `読み取りの知らせに「いいところ」「ひとこと」を出さない（${report.slice(0, 120)}）`)
+  ok((await p.getByText('スタッフさんが書く欄です。1行に1つ、短い言葉にすると、動画の猫カードに出ます。').isVisible()) && (await p.getByText('ここから紹介文を作り、名前や年齢などの欄も埋めます。何通かあれば、続けて貼ってください。').isVisible()), '「いいところ」とLINE・メモの欄の案内（11/7 作者の決定）')
+  // 先に書いた「いいところ」「ひとこと」は、読み取り直しても書き換えない
+  await p.getByLabel('いいところ').fill('スタッフが書いた言葉')
+  await p.getByLabel(/見る人へのひとこと/).fill('スタッフのひとこと')
+  await readNow(p)
+  ok((await p.getByLabel('いいところ').inputValue()) === 'スタッフが書いた言葉' && (await p.getByLabel(/見る人へのひとこと/).inputValue()) === 'スタッフのひとこと', '人が書いた「いいところ」「ひとこと」は、読み取り直しても変えない')
   await ctx.close()
 }
 

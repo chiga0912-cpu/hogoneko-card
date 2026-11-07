@@ -66,7 +66,8 @@ function darkenUntil(hex: string, against: string, target = 4.5): string {
   const base = rgbOf(hex)
   const other = rgbOf(against)
   for (let t = 0; t <= 1; t += 0.02) {
-    const c = base.map((v) => v * (1 - t))
+    // 丸めた色で判定する（丸めた分だけ4.5を割らないように。#23のあとの見直しの中2）
+    const c = base.map((v) => Math.round(v * (1 - t)))
     if (contrast(c, other) >= target) return hexOf(c)
   }
   return '#000000'

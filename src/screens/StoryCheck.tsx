@@ -4,12 +4,13 @@ import { CLOSINGS, type StoryCite, type StoryResult, type Verdict } from '../lib
 // 根拠の確認の結果（#17。SPEC 2.4）
 // - 本文の文ごとに、メモに根拠があるかを出す。押すと、メモの中の根拠の言葉が光る
 // - 根拠がない文は、黄色の線と「⚠ メモにありません」。［消す］か［本当です（残す）］を人が選ぶ
-// - 本文を確かめたあとでメモが変わったら（足した返事を外したときも）、✓ を消して「メモが変わりました」と出し、確かめ直してもらう（#23 重い1）
+// - 本文を確かめたあとでメモが変わったら（聞いたことの行や返事を足したときも）、✓ を消して「メモが変わりました」と出し、確かめ直してもらう（#23 重い1）
+//   名前・「いいところ」が変わったときも同じ（「名前か「いいところ」が変わりました」。11/7 作者の決定）
 // - 本文のあとの決まった文は「決まった文」、年齢・健康・連絡先などは「入力から」（印の対象にしない）
 export type CheckState =
   | { status: 'checking' }
   | { status: 'failed'; limit?: string | null } // limit：回数の上限の文（#20）
-  | { status: 'stale'; failed?: boolean; limit?: string | null } // 本文を確かめたときのメモと今のメモが違う（#23 重い1。✓ は出さない）。failed：確かめ直しに失敗した
+  | { status: 'stale'; what?: 'memo' | 'facts'; failed?: boolean; limit?: string | null } // 本文を確かめたときのメモ（または名前・いいところ）と今が違う（#23 重い1。✓ は出さない）。what：facts＝メモは同じで、名前か「いいところ」だけが変わった。failed：確かめ直しに失敗した
   | { status: 'done'; sentences: string[]; verdicts: Verdict[]; kept: number[]; removed?: number[] }
 
 type Props = {
@@ -37,7 +38,7 @@ export default function StoryCheck({ story, check, name, post, onKeep, onRemove,
   if (check.status === 'stale')
     return (
       <div className="alert story-check" role="status" data-story-stale="1">
-        <p>メモが変わりました。もう一度確かめてください。確かめるまで［動画を作る］は押せません。</p>
+        <p>{check.what === 'facts' ? '名前か「いいところ」' : 'メモ'}が変わりました。もう一度確かめてください。確かめるまで［動画を作る］は押せません。</p>
         {/* 確かめ直しに失敗したときは、そのことを出す（ボタンが効かないように見えないように。見直しの中1） */}
         {check.failed && <p>{check.limit ?? '本文の根拠を確かめられませんでした。もう一度押してください。'}{check.limit ? '本文を外すと、決まった形の投稿文で動画を作れます。' : ''}</p>}
         <div className="story-check-actions">

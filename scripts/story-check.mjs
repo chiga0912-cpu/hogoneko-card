@@ -130,9 +130,10 @@ await p.getByRole('button', { name: '新しい子を紹介' }).click()
 await p.locator('input[type=file][accept="image/*"]').setInputFiles(dummy)
 await p.locator('.photo img').first().waitFor()
 await p.getByLabel('預かりさんからのLINE・メモ').fill('（架空）ミントの近況です！ごはんをよく食べます。連絡は 090-1234-5678 まで')
-await p.getByLabel('名前').fill('ミント')
+await p.getByRole('textbox', { name: /^名前/ }).fill('ミント')
 await p.getByLabel('いいところ').fill('ごはんをよく食べる')
 await p.getByRole('button', { name: '次へ' }).click()
+await p.getByRole('button', { name: '物語の本文を書いてもらう' }).waitFor() // 確認画面が出てから読む（［次へ］は入力を確定してから1拍おいて進む）
 const post = p.locator('.field textarea').last()
 await post.waitFor()
 const before = await post.inputValue()
@@ -218,7 +219,7 @@ await p.screenshot({ path: join(outDir, '16b_投稿文_書けなかった.png'),
   await q.locator('input[type=file][accept="image/*"]').setInputFiles(dummy)
   await q.locator('.photo img').first().waitFor()
   await q.getByLabel('預かりさんからのLINE・メモ').fill('（架空）ミントの近況です！ごはんをよく食べます。トイレも上手です。')
-  await q.getByLabel('名前').fill('ミント')
+  await q.getByRole('textbox', { name: /^名前/ }).fill('ミント')
   await q.getByRole('button', { name: '次へ' }).click()
   const save = q.getByRole('button', { name: '動画を作る' })
   const postBox = q.locator('.field textarea').last()
@@ -359,7 +360,7 @@ await p.screenshot({ path: join(outDir, '16b_投稿文_書けなかった.png'),
   await r.locator('input[type=file][accept="image/*"]').setInputFiles(dummy)
   await r.locator('.photo img').first().waitFor()
   await r.getByLabel('預かりさんからのLINE・メモ').fill('（架空）よく食べます。よく眠ります。')
-  await r.getByLabel('名前').fill('ミント')
+  await r.getByRole('textbox', { name: /^名前/ }).fill('ミント')
   await r.getByRole('button', { name: '次へ' }).click()
   await r.getByRole('button', { name: '物語の本文を書いてもらう' }).click()
   await r.getByText('メモに根拠があるか、1文ずつ確かめています').waitFor({ timeout: 3000 }).catch(() => {})
@@ -401,7 +402,7 @@ await p.screenshot({ path: join(outDir, '16b_投稿文_書けなかった.png'),
   await s4.locator('.photo img').first().waitFor()
   const MEMO4 = '（架空）よく食べます。'
   await s4.getByLabel('預かりさんからのLINE・メモ').fill(MEMO4)
-  await s4.getByLabel('名前').fill('ミント')
+  await s4.getByRole('textbox', { name: /^名前/ }).fill('ミント')
   await s4.getByRole('button', { name: '次へ' }).click()
   const save4 = s4.getByRole('button', { name: '動画を作る' })
   await s4.getByRole('button', { name: '物語の本文を書いてもらう' }).click()
@@ -438,7 +439,190 @@ await p.screenshot({ path: join(outDir, '16b_投稿文_書けなかった.png'),
   await s4.reload()
   await s4.getByRole('button', { name: '動画を作る' }).waitFor({ timeout: 8000 }).catch(() => {})
   ok((await s4.locator('[data-story-stale]').count()) === 0, '確かめ直した結果も、入力の途中に残る（読み込み直しても「メモが変わりました」は出ない）')
+  // 名前・「いいところ」が変わったときも、✓ を消して確かめ直す（11/7 作者の決定。案B）
+  const FACT_MSG = '名前か「いいところ」が変わりました。もう一度確かめてください。'
+  await s4.getByRole('button', { name: '戻る' }).click()
+  await s4.getByRole('textbox', { name: /^名前/ }).fill('ミント ')
+  await s4.getByLabel('いいところ').fill('\n')
+  await s4.getByRole('button', { name: '次へ' }).click()
+  await s4.waitForTimeout(500)
+  ok((await s4.locator('[data-story-stale]').count()) === 0 && (await save4.isEnabled()), '名前の前後の空白・空の「いいところ」の行だけなら、確かめ直さなくてよい')
+  await s4.getByRole('button', { name: '戻る' }).click()
+  await s4.getByRole('textbox', { name: /^名前/ }).fill('ミルク')
+  await s4.getByRole('button', { name: '次へ' }).click()
+  await s4.waitForTimeout(500)
+  ok(await s4.getByText(FACT_MSG).isVisible(), '名前が変わったら「名前か「いいところ」が変わりました。もう一度確かめてください」と出る')
+  ok((await s4.locator('.story-text', { hasText: '✓' }).count()) === 0 && (await save4.isDisabled()), '名前が変わったら、✓ を消し、確かめ直すまで［動画を作る］を押せない')
+  ok(await s4.locator('[data-story-blocked]', { hasText: '名前か「いいところ」が変わりました。上の［もう一度確かめる］を押してください。' }).isVisible(), '名前が変わったら、下の帯にも同じことを出す')
+  await s4.screenshot({ path: join(outDir, '17f_名前が変わった.png'), fullPage: true })
+  const before2 = checks.length
+  await s4.getByRole('button', { name: 'もう一度確かめる' }).first().click()
+  await s4.locator('.story-line').first().waitFor({ timeout: 5000 }).catch(() => {})
+  await s4.waitForTimeout(400)
+  ok(checks.length === before2 + 1 && checks.at(-1).facts?.name === 'ミルク', '確かめ直すと、今の名前で確かめる')
+  ok((await s4.locator('[data-story-stale]').count()) === 0 && (await save4.isEnabled()), '名前のあとに確かめ直すと、［動画を作る］を押せる')
+  await s4.getByRole('button', { name: '戻る' }).click()
+  await s4.getByLabel('いいところ').fill('よく食べる')
+  await s4.getByRole('button', { name: '次へ' }).click()
+  await s4.waitForTimeout(500)
+  ok((await s4.getByText(FACT_MSG).isVisible()) && (await save4.isDisabled()), '「いいところ」が変わったときも、✓ を消して確かめ直してもらう')
+  await s4.getByRole('button', { name: 'もう一度確かめる' }).first().click()
+  await s4.locator('.story-line').first().waitFor({ timeout: 5000 }).catch(() => {})
+  await s4.waitForTimeout(400)
+  ok(JSON.stringify(checks.at(-1).facts?.goodPoints) === JSON.stringify(['よく食べる']) && (await save4.isEnabled()), '確かめ直すと、今の「いいところ」で確かめ、［動画を作る］を押せる')
+  await s4.waitForTimeout(800)
+  await s4.reload()
+  await s4.getByRole('button', { name: '動画を作る' }).waitFor({ timeout: 8000 }).catch(() => {})
+  ok((await s4.locator('[data-story-stale]').count()) === 0, '名前・いいところで確かめ直した結果も、読み込み直したあとに残る')
+  // メモと名前の両方が変わったときは、メモの文を出す
+  await s4.getByRole('button', { name: '戻る' }).click()
+  await s4.getByLabel('預かりさんからのLINE・メモ').fill(MEMO4)
+  await s4.getByRole('textbox', { name: /^名前/ }).fill('ミント')
+  await s4.getByRole('button', { name: '次へ' }).click()
+  await s4.waitForTimeout(500)
+  ok(await s4.getByText('メモが変わりました。もう一度確かめてください。').isVisible(), 'メモと名前の両方が変わったら「メモが変わりました」と出る')
   await ctx4.close()
+}
+
+// 作者が iPhone（Chrome）で見つけた手順と同じ流れ（11/7）：読み取り → 名前「モカ」→ 本文 → ✓ →［戻る］でメモの最後に1文足す →［次へ］
+// iPhone の日本語入力では、変換を確定する前に［次へ］を押すと、欄に見えている文字の入力の知らせが、画面が進んだあとに届く。
+// その形（欄には見えているが、入力の知らせがまだ届いていない）も確かめる
+for (const how of ['確定した文字', '変換を確定する前の文字']) {
+  const ctx6 = await browser.newContext({ ...devices['iPhone 15'] })
+  const s6 = await ctx6.newPage()
+  await s6.route('**/api/read', (r) => r.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ result: { name: { value: 'モカ', source: 'モカは' }, sex: null, age: null, vaccine: null, neuter: null, virusTest: null, goodPoints: [], carerWords: null }, dropped: [] }) }))
+  await s6.route('**/api/ask', (r) => r.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ question: null, skipped: 'not-needed' }) }))
+  await s6.route('**/api/post', async (r) => {
+    const sent = JSON.parse(r.request().postData() ?? '{}')
+    const body = '（仮の本文）モカは毎朝お迎えに来てくれます。'
+    return r.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ result: { body, parts: [{ text: body, cites: [] }], memoChunks: splitMemo(sent.memo), factChunks: factChunks(sent.facts) } }) })
+  })
+  await s6.route('**/api/check', async (r) => {
+    const sent = JSON.parse(r.request().postData() ?? '{}')
+    return r.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ results: sent.sentences.map((_, i) => ({ i, ok: true, cites: [{ doc: 0, start: 0, end: 1, text: 'x' }], reason: '' })) }) })
+  })
+  await s6.goto(url)
+  await s6.getByRole('button', { name: '追加せずに、このまま使う' }).click()
+  await s6.getByLabel('団体名').fill('テスト保護猫の会')
+  await s6.getByRole('button', { name: '登録して始める' }).click()
+  await s6.getByRole('button', { name: '新しい子を紹介' }).click()
+  await s6.locator('input[type=file][accept="image/*"]').setInputFiles(dummy)
+  await s6.locator('.photo img').first().waitFor()
+  const memo6 = s6.getByLabel('預かりさんからのLINE・メモ')
+  await memo6.fill('（架空）モカは毎朝お迎えに来てくれます。ごはんもよく食べます。')
+  await s6.getByRole('button', { name: 'メッセージから読み取る' }).click()
+  await s6.waitForTimeout(800)
+  await s6.getByRole('button', { name: '次へ' }).click()
+  await s6.getByRole('button', { name: '物語の本文を書いてもらう' }).click()
+  await s6.locator('.story-line').first().waitFor({ timeout: 5000 }).catch(() => {})
+  await s6.waitForTimeout(400)
+  const save6 = s6.getByRole('button', { name: '動画を作る' })
+  const okBefore = (await s6.locator('.story-text', { hasText: '✓' }).count()) === 1 && (await save6.isEnabled())
+  await s6.getByRole('button', { name: '戻る' }).click()
+  await memo6.click()
+  await s6.evaluate(() => {
+    const t = document.querySelector('textarea')
+    t.selectionStart = t.selectionEnd = t.value.length
+  })
+  if (how === '確定した文字') await s6.keyboard.type('夜は静かに寝ています')
+  else
+    await s6.evaluate(() => {
+      const t = document.querySelector('textarea')
+      const setValue = Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, 'value').set
+      t.dispatchEvent(new CompositionEvent('compositionstart', { bubbles: true }))
+      setValue.call(t, t.value + '夜は静かに寝ています') // 入力の知らせ（input）は送らない
+    })
+  await s6.getByRole('button', { name: '次へ' }).click()
+  await s6.waitForTimeout(600)
+  ok(okBefore && (await s6.getByText('メモが変わりました。もう一度確かめてください。').isVisible()) && (await save6.isDisabled()) && (await s6.locator('.story-text', { hasText: '✓' }).count()) === 0, `作者の手順（${how}）：メモの最後に1文足して［次へ］→「メモが変わりました」が出て ✓ が消え、［動画を作る］を押せない`)
+  await s6.getByRole('button', { name: '戻る' }).click()
+  ok((await memo6.inputValue()).endsWith('ごはんもよく食べます。夜は静かに寝ています'), `作者の手順（${how}）：足した文は、［戻る］で戻ってもメモの欄に残っている`)
+  await ctx6.close()
+}
+
+// 本文を書いている間に［戻る］で入力を変えても、届いた本文の投稿文は今の入力で組み立てる（#23のあとの見直しの重い1。11/7 作者のOK）
+// 本文が届いたあとに名前を変えたら、投稿文の頭の【名前】と最後の決まった文を今の名前にする（手で直した投稿文でも。11/7 作者の決定）
+{
+  const ctx5 = await browser.newContext({ ...devices['iPhone 15'] })
+  await ctx5.addInitScript(() => {
+    window.__askedCount = 0
+    new MutationObserver(() => {
+      const d = document.querySelector('[data-confirm-dialog]')
+      if (d && !d.dataset.answered) {
+        d.dataset.answered = '1'
+        window.__askedCount += 1
+        window.__asked = d.textContent
+        setTimeout(() => d.querySelector(window.__confirmAnswer === 'no' ? '[data-confirm="no"]' : '[data-confirm="yes"]')?.click(), 50)
+      }
+    }).observe(document, { childList: true, subtree: true })
+  })
+  const s5 = await ctx5.newPage()
+  let delay = 2500
+  await s5.route('**/api/post', async (route) => {
+    const sent = JSON.parse(route.request().postData() ?? '{}')
+    await new Promise((r) => setTimeout(r, delay))
+    const body = '（仮の本文）ミントはよく食べる子です。\n（仮の本文）夜はよく眠ります。'
+    return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ result: { body, parts: [{ text: body, cites: [] }], memoChunks: splitMemo(sent.memo), factChunks: factChunks(sent.facts) } }) }).catch(() => {})
+  })
+  await s5.route('**/api/check', async (route) => {
+    const sent = JSON.parse(route.request().postData() ?? '{}')
+    const results = sent.sentences.map((_, i) => ({ i, ok: true, cites: [{ doc: 0, start: 0, end: 1, text: 'x' }], reason: '' }))
+    return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ results }) })
+  })
+  await s5.goto(url)
+  await s5.getByRole('button', { name: '追加せずに、このまま使う' }).click()
+  await s5.getByLabel('団体名').fill('テスト保護猫の会')
+  await s5.getByRole('button', { name: '登録して始める' }).click()
+  await s5.getByRole('button', { name: '新しい子を紹介' }).click()
+  await s5.locator('input[type=file][accept="image/*"]').setInputFiles(dummy)
+  await s5.locator('.photo img').first().waitFor()
+  await s5.getByLabel('預かりさんからのLINE・メモ').fill('（架空）ミントはよく食べます。夜はよく眠ります。')
+  await s5.getByRole('textbox', { name: /^名前/ }).fill('ミント')
+  await s5.getByRole('group', { name: '性別' }).getByRole('button', { name: 'オス' }).click()
+  await s5.getByRole('button', { name: '次へ' }).click()
+  const postBox = s5.getByLabel('投稿文（その場で直せます）')
+  await s5.getByRole('button', { name: '物語の本文を書いてもらう' }).click()
+  await s5.waitForTimeout(300)
+  await s5.getByRole('button', { name: '戻る' }).click()
+  await s5.getByRole('group', { name: '性別' }).getByRole('button', { name: 'メス' }).click()
+  await s5.getByRole('button', { name: '次へ' }).click()
+  await s5.waitForTimeout(3500)
+  const p1 = await postBox.inputValue()
+  ok(p1.includes('（仮の本文）ミントはよく食べる子です。') && p1.split('\n')[1]?.includes('メス') && !p1.includes('オス'), `本文を書いている間に性別を変えても、届いた本文の投稿文は今の性別で組み立てる（${JSON.stringify(p1.split('\n').slice(0, 2))}）`)
+  ok((await s5.evaluate(() => window.__askedCount)) === 0, '入力を変えて投稿文が作り直されただけなら、「投稿文が直されました」と聞かない')
+  ok((await s5.getByRole('button', { name: '動画を作る' }).isEnabled()) && (await s5.locator('[data-story-stale]').count()) === 0, '性別だけなら、確かめ直さなくてよい')
+  // 書いている間に手で直したら、今までどおり聞く
+  delay = 1500
+  await s5.getByRole('button', { name: '物語の本文を書いてもらう' }).click()
+  await s5.waitForTimeout(300)
+  await s5.evaluate(() => (window.__confirmAnswer = 'no'))
+  await postBox.fill((await postBox.inputValue()) + '\n（手で足した行）')
+  await s5.waitForTimeout(2200)
+  ok((await s5.evaluate(() => window.__askedCount)) === 1 && (await postBox.inputValue()).includes('（手で足した行）'), '書いている間に投稿文を手で直したら、今までどおり聞き、［やめる］なら直した文のまま')
+  await s5.evaluate(() => (window.__confirmAnswer = 'yes'))
+  // 書いている間に名前を変えたら、頭と決まった文は今の名前。本文の確認は「名前か「いいところ」が変わりました」で止まる
+  delay = 2500
+  await s5.getByRole('button', { name: '物語の本文を書いてもらう' }).click()
+  await s5.waitForTimeout(800)
+  await s5.getByRole('button', { name: '戻る' }).click()
+  await s5.getByRole('textbox', { name: /^名前/ }).fill('ミルク')
+  await s5.getByRole('button', { name: '次へ' }).click()
+  await s5.waitForTimeout(3500)
+  const p2 = await postBox.inputValue()
+  ok(p2.startsWith('【ミルク】') && !p2.split('\n').some((l) => CLOSINGS.map((f) => f('ミント')).includes(l)) && p2.split('\n').some((l) => CLOSINGS.map((f) => f('ミルク')).includes(l)), `書いている間に名前を変えたら、頭の【名前】と最後の決まった文は今の名前（${JSON.stringify(p2.slice(0, 60))}）`)
+  ok(await s5.getByText('名前か「いいところ」が変わりました。もう一度確かめてください。').isVisible(), '書いている間に名前を変えたら、本文は確かめ直してもらう')
+  // 本文が届いたあとに［消す］などで手で直した投稿文でも、名前を変えたら頭と決まった文は今の名前にする
+  await s5.getByRole('button', { name: 'もう一度確かめる' }).first().click()
+  await s5.waitForTimeout(800)
+  await postBox.fill((await postBox.inputValue()).replace('（仮の本文）夜はよく眠ります。', ''))
+  await s5.getByRole('button', { name: '戻る' }).click()
+  await s5.getByRole('textbox', { name: /^名前/ }).fill('ハナ')
+  await s5.evaluate(() => (window.__confirmAnswer = 'no')) // 「入力の内容で作り直しますか？」に［直した文のまま］
+  await s5.getByRole('button', { name: '次へ' }).click()
+  await s5.waitForTimeout(800)
+  const p3 = await postBox.inputValue()
+  ok(p3.startsWith('【ハナ】') && p3.split('\n').some((l) => CLOSINGS.map((f) => f('ハナ')).includes(l)) && !p3.includes('夜はよく眠ります') && p3.includes('（仮の本文）ミントはよく食べる子です。'), `手で直した投稿文のままでも、頭の【名前】と最後の決まった文は今の名前にし、ほかの行は変えない（${JSON.stringify(p3.slice(0, 60))}）`)
+  await ctx5.close()
 }
 
 // 回数の上限（#20）：上限のときは、そのことを知らせ、手で入れて最後まで進める。スマホの番号を付けて送る
@@ -463,7 +647,7 @@ await p.screenshot({ path: join(outDir, '16b_投稿文_書けなかった.png'),
   ok(await r.getByText('このスマホで今日Claudeを使える回数の上限になりました。明日の0時（日本時間）すぎから、また使えます。下の項目を手で入れてください。').isVisible(), '読み取り：1台の上限のときは、そう知らせて手で入れてもらう')
   await r.locator('input[type=file][accept="image/*"]').setInputFiles(dummy)
   await r.locator('.photo img').first().waitFor()
-  await r.getByLabel('名前').fill('ミント')
+  await r.getByRole('textbox', { name: /^名前/ }).fill('ミント')
   await r.getByLabel('いいところ').fill('よく食べる')
   await r.getByRole('button', { name: '次へ' }).click()
   await r.getByRole('button', { name: '物語の本文を書いてもらう' }).click()

@@ -1,5 +1,5 @@
 // 読み取った項目を、入力欄に入れる（SPEC 2.2）
-// まだ入っていない項目にだけ入れる ⚙（スタッフさんが先に手で入れた内容を、黙って上書きしないため）
+// 入れるのは名前・性別・年齢・健康だけ。まだ入っていない項目にだけ入れる ⚙（スタッフさんが先に手で入れた内容を、黙って上書きしないため）
 // 入れた項目には、メモから写した根拠を残す（「メモから」の印。押すと根拠が出る）
 import type { Cat, CatField } from '../types'
 import { birthGuess, type AgeHint, type Extracted } from './extract'
@@ -7,7 +7,7 @@ import { todayString } from './age'
 
 export type Applied = { cat: Cat; filled: string[]; skipped: string[]; ageSuggestion: { hint: AgeHint; year: number; month: number } | null }
 
-export function applyExtract(cat: Cat, x: Extracted, originalMemo: string): Applied {
+export function applyExtract(cat: Cat, x: Extracted): Applied {
   const filled: string[] = []
   const skipped: string[] = [] // メモにあったが、もう入っていたので入れなかった
   const sources: Partial<Record<CatField, string>> = { ...cat.sources }
@@ -54,23 +54,8 @@ export function applyExtract(cat: Cat, x: Extracted, originalMemo: string): Appl
       filled.push(label)
     } else if (c[key].value !== v.value) skipped.push(label)
   }
-  if (x.goodPoints.length) {
-    const have = new Set(c.goodPoints.map((g) => g.trim()).filter(Boolean))
-    const add = x.goodPoints.map((g) => g.text.trim()).filter((t) => t && !have.has(t))
-    if (add.length) {
-      c.goodPoints = [...c.goodPoints.filter((g) => g.trim()), ...add]
-      sources.goodPoints = x.goodPoints.map((g) => g.source).join('\n')
-      filled.push('いいところ')
-    }
-  }
-  // ひとことは、貼った元の文章と一字一句同じときだけ（伏せ字や外した行の影響を受けないように、元の文章で確かめる）
-  if (x.carerWords && originalMemo.replace(/\r\n?/g, '\n').includes(x.carerWords)) {
-    if (!c.carerWords.trim()) {
-      c.carerWords = x.carerWords
-      sources.carerWords = x.carerWords
-      filled.push('ひとこと')
-    } else if (c.carerWords.trim() !== x.carerWords) skipped.push('ひとこと')
-  }
+  // 「いいところ」と「ひとこと」は、人が書く欄なので入れない・書き換えない（11/7 作者の決定。SPEC 2.2）。
+  // 読み取りの答えには入っているが（頼み方は変えていない）、ここで使わない
   c = { ...c, sources }
   return { cat: c, filled, skipped, ageSuggestion }
 }
