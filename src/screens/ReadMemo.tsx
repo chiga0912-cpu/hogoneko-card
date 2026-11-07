@@ -17,7 +17,7 @@ type AskResponse = { question?: string | null; skipped?: string | null }
 // ［メッセージから読み取る］（SPEC 2.2 の3）。AIに送るのはメモの文字だけ（写真・動画は送らない）
 export default function ReadMemo({ cat, onChange, beforeRead }: Props) {
   const [busy, setBusy] = useState(false)
-  const [report, setReport] = useState<{ applied: Applied; dropped: string[]; masked: number } | null>(null)
+  const [report, setReport] = useState<{ applied: Applied; dropped: string[]; masked: number; found: boolean } | null>(null)
   const [failed, setFailed] = useState(false)
   const [limit, setLimit] = useState<string | null>(null) // 回数の上限の文（#20）
   // 聞き返し（#18。SPEC 2.3）。このメモに対する聞き返しの下書き（返事を待つ間も残す）
@@ -65,7 +65,9 @@ export default function ReadMemo({ cat, onChange, beforeRead }: Props) {
       onChange((c) => applyExtract(c, result).cat)
       // 「いいところ」「ひとこと」は人が書く欄なので、入れなかった項目にも出さない（11/7 作者の決定）
       const dropped = (body.dropped ?? []).filter((d) => !d.startsWith('いいところ') && d !== 'ひとこと')
-      setReport({ applied: applyExtract(cat, result), dropped, masked: n })
+      // found：名前・年齢・性別・健康のどれかが、メモから見つかったか（もう同じ値が入っていた・年齢は案だけ、のときも見つかったことにする。見直しの中3）
+      const found = [result.name, result.sex, result.age, result.vaccine, result.neuter, result.virusTest].some((v) => v !== null)
+      setReport({ applied: applyExtract(cat, result), dropped, masked: n, found })
       // まだ聞いていなければ（メモに「聞いたこと」の行がなければ）、聞き返しが要るかを考える
       // まだ聞いていなければ（この子に質問を出したことがなく、前の版の「聞いたこと」の行もなければ）、聞き返しが要るかを考える
       if (askAfter && !wasAsked(cat.id) && !alreadyAsked(cat.memo)) await askBack(masked, cat.name.trim() || result.name?.value || '', cat.memo)
@@ -106,10 +108,10 @@ export default function ReadMemo({ cat, onChange, beforeRead }: Props) {
         <div className="notice read-report" role="status">
           {report.applied.filled.length ? (
             <p>メモから入れました：{report.applied.filled.join('・')}。「メモから」の印を押すと、どこから読み取ったかが出ます。最後に、まちがいがないか確かめてください。</p>
-          ) : report.applied.skipped.length === 0 ? (
+          ) : !report.found ? (
             // 項目が1つも見つからなかったとき（11/8 作者の決定）。メモの内容は、本文を書くときに使う
             <p data-read-none>名前・年齢・性別・健康のことは、メモから見つけられませんでした。名前は下の欄に入れ、年齢や健康のことは下のボタンで選んでください。メモの内容は、次の画面で紹介文を書くときに使います。</p>
-          ) : null /* メモにあった項目がもう入っていただけのときは、下の「もう入っていたので変えなかった項目」だけを出す ⚙ */}
+          ) : null /* 見つかったが入れなかったとき（同じ値・違う値がもう入っていた、年齢は案だけ）は、この文を出さない。下の「変えなかった項目」や年齢の案を出す ⚙ */}
           {report.applied.skipped.length > 0 && <p className="muted">もう入っていたので変えなかった項目：{report.applied.skipped.join('・')}</p>}
           {report.dropped.length > 0 && <p className="muted">メモの中に根拠が見つからなかったので、入れなかった項目：{report.dropped.join('・')}</p>}
           {report.masked > 0 && <p className="muted">電話番号・メールアドレスらしきもの{report.masked}こは、伏せて送りました。</p>}

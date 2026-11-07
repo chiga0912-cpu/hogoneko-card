@@ -298,6 +298,22 @@ for (const [label, ans] of [
   await p.screenshot({ path: join(outDir, '4c_読み取り_項目なし.png'), fullPage: true })
   await ctx.close()
 }
+// 見つかったが入れなかったとき（名前が同じ値でもう入っていた・年齢は案だけ）は、「見つけられませんでした」を出さない（見直しの中3）
+{
+  const { ctx, p } = await setup({ question: null, skipped: 'not-needed' })
+  await p.route('**/api/read', async (route) =>
+    route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({ result: { ...READ('ソラ').result, age: { kind: 'months', amount: 3, stage: null, source: '生後3ヶ月くらいです' } }, dropped: [] }),
+    }),
+  )
+  await p.getByRole('textbox', { name: /^名前/ }).fill('ソラ')
+  await p.getByLabel('預かりさんからのLINE・メモ').fill('（架空）ソラです。生後3ヶ月くらいです。')
+  await readNow(p)
+  ok((await p.locator('[data-read-none]').count()) === 0 && (await p.getByText(/生まれた年月を .*にしますか/).isVisible()), '名前が同じ値でもう入っていて、年齢は案だけのときは、「見つけられませんでした」を出さず、年齢の案を出す')
+  await ctx.close()
+}
 
 // 6. 変換を確定する前の文字（欄には見えているが、入力の知らせがまだ届いていない）のまま［LINEの文をコピー］を押しても、見えている文をコピーし、メモに足す（11/7）
 {
