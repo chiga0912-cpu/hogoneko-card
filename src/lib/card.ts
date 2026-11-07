@@ -271,12 +271,15 @@ function drawContain(ctx: CanvasRenderingContext2D, img: Img, x: number, y: numb
   const dy = y + (h - dh) / 2
   ctx.drawImage(img, dx, dy, dw, dh)
   drawEdges(ctx, dx, dy, dw, dh) // 帯と写真の境目の手描きの線（絵があるときだけ）
+  lastContain = { x: dx, y: dy, w: dw, h: dh }
 }
+let lastContain: { x: number; y: number; w: number; h: number } | null = null // 直前に帯のあいだに入れた写真の場所（角の絵の位置に使う）
 
 // ── オリジナルの絵を入れる場所（11/8。作る人が描いた絵に差し替えられる）──
 // 絵は public/ に置く（band.ts の loadBandPattern が、帯の柄と一緒に読んで setDecor で入れる）。置いていないときは何も描かない（今までと同じ）
 //   edge.png：帯と写真の境目の線。横長・背景は透明。写真の上の境目にそのまま、下の境目には上下を返して、写真の幅いっぱいに描く
-//   corner.png：表紙と最後の1枚の右上（上220・右64の隠れる所の内側）の小さな絵。背景は透明。CORNER_SIZE の正方形の中に収める
+//   corner.png：表紙と最後の1枚の小さな絵。背景は透明。CORNER_SIZE の正方形の中に収める
+//     縦の写真（案A）：右上（上220・右64の隠れる所の内側）。横・正方形の写真（案B）：写真の右上の角に、境目にまたがるように（上の帯の文字と重ならないように）
 // 絵は作る人の作品で、MITの対象外（README）
 export type Decor = { edge: Img | null; corner: Img | null }
 let DECOR: Decor = { edge: null, corner: null }
@@ -295,13 +298,16 @@ function drawEdges(ctx: CanvasRenderingContext2D, x: number, y: number, w: numbe
   ctx.drawImage(e, x, -EDGE_H / 2, w, EDGE_H)
   ctx.restore()
 }
-function drawCorner(ctx: CanvasRenderingContext2D) {
+function drawCorner(ctx: CanvasRenderingContext2D, onPhoto: boolean) {
   const c = DECOR.corner
   if (!c || !c.width || !c.height) return
   const s = Math.min(CORNER_SIZE / c.width, CORNER_SIZE / c.height)
   const w = c.width * s
   const h = c.height * s
-  ctx.drawImage(c, CARD_W - SAFE.right - w, SAFE.top, w, h)
+  const p = onPhoto ? lastContain : null
+  const x = p ? Math.min(CARD_W - SAFE.right, p.x + p.w - 24) - w : CARD_W - SAFE.right - w
+  const y = p ? Math.max(SAFE.top, p.y - h / 2) : SAFE.top
+  ctx.drawImage(c, x, y, w, h)
 }
 
 // 文字を書く。align：left なら x から、center なら x を真ん中に
@@ -672,8 +678,9 @@ export function drawCoverCard(
     const topH = markTop + mark.h + (mark.h ? B_PAD : B_PAD - MARK_GAP)
     const botH = SAFE.bottom
     paintBand(ctx, band, opts.pattern)
+    lastContain = null
     if (opts.photo) drawContain(ctx, opts.photo, 0, topH, CARD_W, CARD_H - topH - botH)
-    drawCorner(ctx) // 角の小さな絵（文字の下に。絵があるときだけ）
+    drawCorner(ctx, !!opts.photo) // 角の小さな絵（写真の右上の角に。絵があるときだけ）
     if (opts.pattern) readableOnBand(ctx, SAFE.left, textTop, WIDE_W, markTop + mark.h - textTop, color)
     const gw = drawGreeting(ctx, gSize, textTop, color, false)
     const p: Planned = { nameLines: lines, prof: [], profSize: 0, body: [], nameSize: size, lineSize: 0, h: 0 }
@@ -695,7 +702,7 @@ export function drawCoverCard(
   ctx.fillRect(0, 0, CARD_W, CARD_H)
   // 縦の写真は、指で動かした位置で（11/8。猫カードと同じ形。動かしていなければ真ん中）
   const used = opts.photo ? drawFramed(ctx, opts.photo, 0, 0, CARD_W, CARD_H, 0.5, opts.framing ?? NO_FRAMING) : null
-  drawCorner(ctx) // 角の小さな絵（絵があるときだけ）
+  drawCorner(ctx, false) // 角の小さな絵（右上に。絵があるときだけ）
   const gSize = planGreeting(ctx, 1, WIDE_W)
   const { size, lines } = planName(ctx, title, 1.1, WIDE_W)
   const nameH = lines.length * size * NAME_LH
@@ -951,14 +958,15 @@ function paintRows(
   if (design === 'B') {
     const { band, color, contrast } = bandColors(opts.theme)
     paintBand(ctx, band, opts.pattern)
+    lastContain = null
     paintPhoto(ctx, design, opts.photo ?? null, NO_FRAMING, pl.topH)
-    if (opts.corner) drawCorner(ctx)
+    if (opts.corner) drawCorner(ctx, !!opts.photo)
     if (opts.pattern) readableOnBand(ctx, SAFE.left, pl.top, WIDE_W, h, color)
     const t = drawRows(ctx, rows, pl.top, design, color)
     return { framing: null, contrast, top: pl.top, bottom: t.bottom, widest: t.widest, ok: pl.ok && t.widest <= WIDE_W + 0.5 }
   }
   const used = paintPhoto(ctx, design, opts.photo ?? null, opts.framing ?? NO_FRAMING, 0)
-  if (opts.corner) drawCorner(ctx)
+  if (opts.corner) drawCorner(ctx, false)
   const shade = shadeBehind(ctx, pl.top, pl.top + h)
   const t = drawRows(ctx, rows, pl.top, design, WHITE)
   return { framing: used, contrast: shade.contrast, top: pl.top, bottom: t.bottom, widest: t.widest, ok: pl.ok && t.widest <= NARROW_W + 0.5 && shade.contrast >= 4.5 }

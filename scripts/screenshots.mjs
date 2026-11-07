@@ -1244,6 +1244,16 @@ console.log('表示:', await page.locator('.status-line').innerText())
   await p10.waitForTimeout(600)
   const cAfter = await px(coverThumb, 500, 600)
   check(isRed(cBefore) && !isRed(cAfter), `動かした位置が、表紙に入る（${cBefore.join(',')} → ${cAfter.join(',')}）`)
+  // オリジナルの絵（11/8）：public/corner.png があれば、縦の写真の表紙の右上（上220・右64の内側）に描く。なければ描かない
+  {
+    const hasCorner = await p10.evaluate(async () => {
+      const r = await fetch('/corner.png', { cache: 'no-cache' })
+      return r.ok && (r.headers.get('content-type') ?? '').startsWith('image/')
+    })
+    const c = await px(coverThumb, 941, 315) // 仮の絵（肉球）の大きな丸の真ん中
+    const light = c[0] > 230 && c[1] > 225 && c[2] > 210
+    check(hasCorner ? light : !light, `角の小さな絵：${hasCorner ? 'corner.png があるので、表紙の右上に描く' : 'corner.png がないので、描かない'}（${c.join(',')}）`)
+  }
   // ひとことカードでも動かせる。［もとに戻す］で戻る
   await p10.getByRole('button', { name: '写真を動かす' }).nth(2).click()
   await ed.waitFor()
