@@ -5,8 +5,8 @@ import type { AskState } from '../lib/askState'
 
 // 聞き返し（#18。SPEC 2.3）の欄。読み取りのすぐ下に出す
 // - 預かりさんへ送るLINEの文（送る前に、欄の中で自由に直せる）と［LINEの文をコピー］［飛ばす］
-// - ［LINEの文をコピー］を押したら、メモの欄の最後に「（預かりさんに聞いたこと）〜」を1行足す（ReadMemo の onCopied）
-// - 返事を貼る専用の欄は作らない。返事は、メモの欄の最後に貼ってもらう（11/7 作者の決定）
+// - ［LINEの文をコピー］を押しても、メモの欄には何も足さない。コピーの後に、返事をメモの欄に貼る案内を出す（11/7 夕方 作者の決定）
+// - 返事を貼る専用の欄は作らない
 // - 返事を待つ間も残す（LINEに移って戻っても消えない）。残し方は src/lib/askState.ts
 
 type Props = {
@@ -48,7 +48,7 @@ export default function AskBack({ ask, onEdit, onCopied, onSkip }: Props) {
             const line = lineBox.current?.value ?? ask.line
             void copyText(line).then((ok) => {
               setCopied(ok)
-              onCopied(line) // コピーできなくても（長押しでコピーしてもらう）、聞いたことはメモに足す
+              onCopied(line) // コピーできなくても（長押しでコピーしてもらう）、案内は出す
             })
           }}
         >
@@ -59,13 +59,8 @@ export default function AskBack({ ask, onEdit, onCopied, onSkip }: Props) {
         </button>
       </div>
       {copied === false && <p className="alert">コピーできませんでした。欄の文を長押しして、コピーしてください。</p>}
-      {ask.noted ? (
-        <p data-ask-noted>
-          「{ask.noted}」を足しました。返事が来たら、LINE・メモの欄の最後に貼って、もう一度［メッセージから読み取る］を押してください。
-        </p>
-      ) : (
-        <p className="muted">［LINEの文をコピー］を押すと、聞いたことをLINE・メモの欄の最後に1行足します（消したり直したりできます）。</p>
-      )}
+      {/* コピーの前の説明は出さない。コピーの後だけ案内する（11/7 夕方 作者の決定） */}
+      {ask.copied && <p data-ask-copied>返事が来たら、LINE・メモの欄に貼って、もう一度［メッセージから読み取る］を押してください。</p>}
     </div>
   )
 }

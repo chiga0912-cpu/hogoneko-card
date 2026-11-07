@@ -5,9 +5,9 @@ import { cleanLine } from '../lib/lineText'
 import { maskContacts, type Extracted } from '../lib/extract'
 import { applyExtract, type Applied } from '../lib/applyExtract'
 import { fromMonthValue } from '../lib/age'
-import { alreadyAsked, askedLine, askLine, fullMemo, noteAsked } from '../lib/ask'
+import { alreadyAsked, askLine, fullMemo } from '../lib/ask'
 import AskBack from './AskBack'
-import { loadAsk, saveAsk, type AskState } from '../lib/askState'
+import { loadAsk, markAsked, saveAsk, wasAsked, type AskState } from '../lib/askState'
 
 // beforeRead：読み取る前に、入力中の欄の文字を確定して入力に入れる（iPhone の日本語入力で、変換を確定する前に押したときのため。CatForm の commitTyped）
 type Props = { cat: Cat; onChange: (update: (c: Cat) => Cat) => void; beforeRead?: () => void }
@@ -37,7 +37,10 @@ export default function ReadMemo({ cat, onChange, beforeRead }: Props) {
       const ans = await callClaude<AskResponse>('/api/ask', { memo: masked })
       if (!ans.ok) return
       const q = typeof ans.body.question === 'string' ? ans.body.question : null
-      if (q) setAsk({ memo: memoKey, line: askLine(name, q), reply: '', status: 'open' })
+      if (q) {
+        setAsk({ memo: memoKey, line: askLine(name, q), reply: '', status: 'open' })
+        markAsked(cat.id) // 1匹に1回（11/7 夕方 作者の決定）
+      }
       // 「要らない」「メモにない事実が入った」ときだけ、このメモではもう聞かない。一時的な失敗なら、次に読み取ったときにもう一度考える（見直しの2）
       else if (ans.body.skipped === 'not-needed' || ans.body.skipped === 'unsupported') setAsk({ memo: memoKey, line: '', reply: '', status: 'none' })
     } finally {
@@ -65,7 +68,8 @@ export default function ReadMemo({ cat, onChange, beforeRead }: Props) {
       const dropped = (body.dropped ?? []).filter((d) => !d.startsWith('いいところ') && d !== 'ひとこと')
       setReport({ applied: applyExtract(cat, result), dropped, masked: n })
       // まだ聞いていなければ（メモに「聞いたこと」の行がなければ）、聞き返しが要るかを考える
-      if (askAfter && !alreadyAsked(cat.memo)) await askBack(masked, cat.name.trim() || result.name?.value || '', cat.memo)
+      // まだ聞いていなければ（この子に質問を出したことがなく、前の版の「聞いたこと」の行もなければ）、聞き返しが要るかを考える
+      if (askAfter && !wasAsked(cat.id) && !alreadyAsked(cat.memo)) await askBack(masked, cat.name.trim() || result.name?.value || '', cat.memo)
     } catch {
       setFailed(true)
     } finally {
@@ -75,13 +79,10 @@ export default function ReadMemo({ cat, onChange, beforeRead }: Props) {
 
   // ［LINEの文をコピー］を押したら、メモの欄の最後に「（預かりさんに聞いたこと）〜」を1行足す（11/7 作者の決定）。
   // 返事が来たら、スタッフさんがメモの欄の最後に貼って、もう一度読み取る。足した行は、人が消したり直したりできる
+  // ［LINEの文をコピー］を押した：メモの欄には何も足さない（11/7 夕方 作者の決定）。コピーの後の案内を出すために覚える
   const onCopied = (line: string) => {
     if (!ask) return
-    const add = askedLine(line)
-    const memo = noteAsked(cat.memo, add, ask.noted)
-    if (memo !== cat.memo) onChange((c) => ({ ...c, memo: noteAsked(c.memo, add, ask.noted) }))
-    // 下書きは、足したあとのメモに付けかえる（メモが変わると、別のメモの下書きとみなして消えてしまうため）
-    setAsk({ ...ask, line, memo, noted: add }) // line：コピーした文（欄に見えていた文）
+    setAsk({ ...ask, line, copied: true }) // line：コピーした文（欄に見えていた文）
   }
   const showAsk = ask && ask.memo === cat.memo && ask.status === 'open'
 

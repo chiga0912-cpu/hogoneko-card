@@ -4,7 +4,7 @@ export type AskState = {
   memo: string // どのメモに対する聞き返しか（メモが変わったら使わない）
   line: string // 預かりさんへ送るLINEの文（直した文）
   reply: string // 使わない（前の版の名残。返事はメモの欄に貼る）
-  noted?: string // メモの欄に足した「聞いたこと」の1行（LINEの文を直してコピーし直したら、置きかえる）
+  copied?: boolean // ［LINEの文をコピー］を押した（コピーの後の案内を出す）
   status: 'open' | 'added' | 'skipped' | 'none' // none：聞き返しは要らなかった・出さなかった（同じメモで二度聞かない）
 }
 
@@ -28,5 +28,28 @@ export function saveAsk(a: AskState | null) {
     else localStorage.removeItem(ASK_KEY)
   } catch {
     // 残せないとき（プライベートなど）は、開いている間だけ
+  }
+}
+
+// 1匹に1回（11/7 夕方 作者の決定）：質問を出した猫を、このスマホの中に覚える。猫のデータの形は変えない
+// 覚えたものが消えて（ブラウザのデータを消した・別のスマホなど）、もう一度聞くことになるのはかまわない（作者の決定）
+const ASKED_KEY = 'hogoneko-asked-cats'
+const MAX_ASKED = 500
+const readAsked = (): string[] => {
+  try {
+    const v = JSON.parse(localStorage.getItem(ASKED_KEY) ?? '[]') as unknown
+    return Array.isArray(v) ? v.filter((x): x is string => typeof x === 'string') : []
+  } catch {
+    return []
+  }
+}
+export const wasAsked = (catId: string) => readAsked().includes(catId)
+export function markAsked(catId: string) {
+  try {
+    const list = readAsked().filter((x) => x !== catId)
+    list.push(catId)
+    localStorage.setItem(ASKED_KEY, JSON.stringify(list.slice(-MAX_ASKED)))
+  } catch {
+    // 残せないとき（プライベートなど）は、覚えない（もう一度聞くことになるだけ）
   }
 }
