@@ -1463,3 +1463,11 @@
 ### Android の実機で確かめた（試し用。11/7 夕方。作者の知り合いの方）
 - 試し用（0c24b1c）を Android の Chrome で、始める→新しい子（写真）→メモを書いて読み取り→本文を書いてもらう→動画を作って保存・再生、まで通してもらい、OK だった（作者から）
 - 機種名・Android の版・Chrome の版は、あとで作者から聞いて書く（まだ分からない）
+
+### 本番の設定（手順書の1と2。作者が操作。11/7 夕方。キーの値はどこにも書かない）
+- Anthropic の Console：月の上限は「組織（Organization）」全体に20ドル。本番用のキーにも効く
+- 本番用のキー hogoneko-prod を作り、Cloudflare の Production に ANTHROPIC_API_KEY（Secret）として入れた（試し用のキーとは別。作者の決定）
+- Production の変数：CLAUDE_ENABLED=1、LIMIT_DAY_ALL=300、LIMIT_DAY_DEVICE=50、NODE_VERSION=22（前から入っていた）
+- Production の Bindings：LIMITS → hogoneko-limits-prod（試し用とは別の数える場所。作者の決定）
+- Preview（試し用）の設定は変えていない
+- 変数は次の公開から効く。本番への反映（main に進める）はまだ（作者のOKを待つ）
