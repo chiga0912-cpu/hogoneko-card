@@ -237,7 +237,7 @@ ok((await p.getByText('5秒より短い動画なので、全部使います').is
   await slow(1_000_000)
   await p3.getByText('テスト').first().click()
   await p3.locator('.clip-time').waitFor({ timeout: 15000 })
-  await p3.getByLabel('預かりさんからのメッセージ・メモ').fill('（架空）追記')
+  await p3.getByLabel('預かりさんからのLINE・メモ').fill('（架空）追記')
   await p3.waitForTimeout(600)
   await slow(0)
   await reopen()

@@ -88,7 +88,7 @@ const readNow = async (p) => {
 // 1. 質問が出る → 直す → コピー → 残る（読み込み直しても）→ 返事を足す → 読み取り直す
 {
   const { ctx, p, sent } = await setup(Q)
-  await p.getByLabel('預かりさんからのメッセージ・メモ').fill(MEMO)
+  await p.getByLabel('預かりさんからのLINE・メモ').fill(MEMO)
   await readNow(p)
   ok(await panel(p).isVisible(), 'メモが抽象的で質問が出たら、聞き返しの欄が出る')
   const line = p.getByLabel('預かりさんへ送るLINEの文（送る前に、自由に直せます）')
@@ -103,7 +103,7 @@ const readNow = async (p) => {
   await line.fill('ミケちゃんのことで1つだけ。ひざに乗ってくることはありますか？ ')
   ok(await p.getByRole('button', { name: 'LINEの文をコピー' }).isVisible(), 'コピーしたあとでLINEの文を直したら、ボタンは［LINEの文をコピー］に戻る（見直しの8）')
   await line.fill('ミケちゃんのことで1つだけ。ひざに乗ってくることはありますか？')
-  const memoBox = p.getByLabel('預かりさんからのメッセージ・メモ')
+  const memoBox = p.getByLabel('預かりさんからのLINE・メモ')
   ok((await p.getByLabel(/預かりさんの返事/).count()) === 0 && (await p.getByRole('button', { name: '返事をメモに足す' }).count()) === 0, '返事を貼る専用の欄と［返事をメモに足す］はない（11/7 作者の決定）')
   const ASKED = `${ASKED_LABEL}ミケちゃんのことで1つだけ。ひざに乗ってくることはありますか？`
   ok((await memoBox.inputValue()) === `${MEMO}\n${ASKED}`, `［LINEの文をコピー］で、メモの欄の最後に「聞いたこと」を1行足す（${JSON.stringify(await memoBox.inputValue())}）`)
@@ -138,7 +138,7 @@ const readNow = async (p) => {
 // 2. ［飛ばす］
 {
   const { ctx, p, sent } = await setup(Q)
-  await p.getByLabel('預かりさんからのメッセージ・メモ').fill(MEMO)
+  await p.getByLabel('預かりさんからのLINE・メモ').fill(MEMO)
   await readNow(p)
   await p.getByRole('button', { name: '飛ばす' }).click()
   ok(!(await panel(p).isVisible()), '［飛ばす］で、聞き返しの欄が閉じる')
@@ -146,17 +146,17 @@ const readNow = async (p) => {
   ok(sent.ask.length === 1 && !(await panel(p).isVisible()), '飛ばしたあと、同じメモで読み取り直しても、もう聞かない')
   await p.waitForTimeout(800)
   await p.reload()
-  await p.getByLabel('預かりさんからのメッセージ・メモ').waitFor()
+  await p.getByLabel('預かりさんからのLINE・メモ').waitFor()
   ok(!(await panel(p).isVisible()), '飛ばしたことも残る（読み込み直しても出ない）')
   // メモを変えたら、新しいメモとして聞く
-  await p.getByLabel('預かりさんからのメッセージ・メモ').fill(MEMO + '（架空）かわいいです。')
+  await p.getByLabel('預かりさんからのLINE・メモ').fill(MEMO + '（架空）かわいいです。')
   await readNow(p)
   ok(sent.ask.length === 2 && (await panel(p).isVisible()), 'メモを変えたら、新しいメモとしてもう一度考える')
   // 新しく始めたら、聞き返しの下書きも消える
   await p.getByRole('button', { name: '戻る' }).click()
   await p.getByRole('button', { name: '新しい子を紹介' }).click()
   await p.getByRole('button', { name: '消して新しく始める' }).click({ timeout: 3000 }).catch(() => {})
-  await p.getByLabel('預かりさんからのメッセージ・メモ').waitFor()
+  await p.getByLabel('預かりさんからのLINE・メモ').waitFor()
   ok((await p.evaluate(() => localStorage.getItem('hogoneko-ask'))) === null && !(await panel(p).isVisible()), '入力の途中を消して新しく始めたら、聞き返しの下書きも消える')
   await ctx.close()
 }
@@ -165,7 +165,7 @@ const readNow = async (p) => {
 {
   let n = 0
   const { ctx, p, sent } = await setup(() => (++n === 1 ? { question: null, skipped: 'ask-failed' } : Q))
-  await p.getByLabel('預かりさんからのメッセージ・メモ').fill(MEMO)
+  await p.getByLabel('預かりさんからのLINE・メモ').fill(MEMO)
   await readNow(p)
   ok(!(await panel(p).isVisible()), '質問を作るのに失敗したときは、欄を出さない')
   await readNow(p)
@@ -180,7 +180,7 @@ for (const [label, ans] of [
   ['窓口が失敗した', 'fail'],
 ]) {
   const { ctx, p } = await setup(ans)
-  await p.getByLabel('預かりさんからのメッセージ・メモ').fill(MEMO)
+  await p.getByLabel('預かりさんからのLINE・メモ').fill(MEMO)
   await readNow(p)
   ok(!(await panel(p).isVisible()) && (await p.getByLabel('名前').inputValue()) === 'ミケ', `${label}ときは、聞き返しの欄を出さず、読み取りの結果はそのまま入る`)
   await ctx.close()
@@ -206,7 +206,7 @@ for (const [label, ans] of [
   await p.locator('input[type=file][accept="image/*"]').setInputFiles(dummy)
   await p.locator('.photo img').first().waitFor()
   await p.getByLabel('名前').fill('ポン')
-  await p.getByLabel('預かりさんからのメッセージ・メモ').fill('（架空）ポンは人が帰ってくると玄関までお迎えに来て、足元にすりすりしてくれて、そのあとひざに乗ってきます。連絡は 090-0000-0000')
+  await p.getByLabel('預かりさんからのLINE・メモ').fill('（架空）ポンは人が帰ってくると玄関までお迎えに来て、足元にすりすりしてくれて、そのあとひざに乗ってきます。連絡は 090-0000-0000')
   await p.getByLabel('いいところ').fill(LONG)
   await p.getByRole('button', { name: '次へ' }).click()
   await p.locator('.card-canvas[data-drawn="1"]').waitFor({ timeout: 8000 })

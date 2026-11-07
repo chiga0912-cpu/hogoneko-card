@@ -180,14 +180,15 @@ export default function CatForm({ cat, fromRoster, onChange, onBack, onNext, aut
 
       {/* 2. メッセージ欄 */}
       <label className="field">
-        <span>預かりさんからのメッセージ・メモ</span>
+        {/* 欄の名前と案内は、役目が分かる形に（11/7 作者の決定） */}
+        <span>預かりさんからのLINE・メモ</span>
         <textarea
           rows={5}
           placeholder="LINEやメールの文章を、ここに貼ってください。自分で書いてもOKです"
           value={cat.memo}
           onChange={(e) => set('memo', e.target.value)}
         />
-        <small className="muted">何通かあれば、続けて貼ってください</small>
+        <small className="muted">ここから紹介文を作り、下の欄も埋めます。何通かあれば、続けて貼ってください。</small>
       </label>
       {cleaned.isHistory && (
         <div className="notice line-notice" data-removed={cleaned.removed}>
@@ -300,7 +301,7 @@ export default function CatForm({ cat, fromRoster, onChange, onBack, onNext, aut
 
       <label className="field">
         <span>
-          いいところ <FromMemo source={cat.sources.goodPoints} />
+          いいところ（猫カードの言葉） <FromMemo source={cat.sources.goodPoints} />
         </span>
         <textarea
           rows={4}
@@ -308,14 +309,15 @@ export default function CatForm({ cat, fromRoster, onChange, onBack, onNext, aut
           value={cat.goodPoints.join('\n')}
           onChange={(e) => set('goodPoints', e.target.value.split('\n'))}
         />
+        <small className="muted">メモから自動で入ります。短い言葉にすると、動画の猫カードに出ます。</small>
       </label>
 
       <label className="field">
         <span>
-          預かりさん・スタッフさんのひとこと（なくてもOK） <FromMemo source={cat.sources.carerWords} />
+          見る人へのひとこと（なくてもOK） <FromMemo source={cat.sources.carerWords} />
         </span>
-        <textarea rows={3} value={cat.carerWords} onChange={(e) => set('carerWords', e.target.value)} />
-        <small className="muted">書いた言葉のまま載せます（書き換えません）</small>
+        <textarea rows={3} placeholder="毎朝起こしに来てくれます。そんな毎日がいとおしいです" value={cat.carerWords} onChange={(e) => set('carerWords', e.target.value)} />
+        <small className="muted">預かりさんやスタッフさんの言葉です。書き換えずに、そのまま動画に出ます。</small>
       </label>
 
       <div className="bottom-bar">

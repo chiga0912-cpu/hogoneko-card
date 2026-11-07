@@ -212,7 +212,7 @@ const seenWithoutScroll = async (p, loc) => {
   check(await seenWithoutScroll(p, p.getByText('写真は3枚までです')), '「写真は3枚まで」の知らせは、スクロールしなくても見える')
   // 入力の途中を残せないとき（見直し A2）。下までスクロールしていても見えるか
   await breakStore(p, 'drafts')
-  await p.getByLabel('預かりさん・スタッフさんのひとこと（なくてもOK）').fill('（架空）残せないときの試し')
+  await p.getByLabel('見る人へのひとこと（なくてもOK）').fill('（架空）残せないときの試し')
   await p.getByText('入力の途中を、スマホの中に残せませんでした').waitFor({ timeout: 3000 }).catch(() => {})
   check(await seenWithoutScroll(p, p.getByText('入力の途中を、スマホの中に残せませんでした')), '入力の途中を残せないときの知らせが、スクロールしなくても見える（下の方を入力中でも）')
   await p.screenshot({ path: join(outDir, '0k_途中を残せない.png') })
@@ -565,7 +565,7 @@ await shot('3b_入力_最初の状態', true)
 // 4. 入力する（手入力だけ）
 await page.locator('input[type=file][accept="image/*"]').setInputFiles([dummy('#c9a27e', '写真1'), dummy('#8fa9a3', '写真2')])
 await page.locator('.photo img').nth(1).waitFor()
-await page.getByLabel('預かりさんからのメッセージ・メモ').fill('（架空のメモ）ひざの上が好きな子です。')
+await page.getByLabel('預かりさんからのLINE・メモ').fill('（架空のメモ）ひざの上が好きな子です。')
 await page.getByLabel('名前').fill('テスト')
 await page.getByRole('button', { name: '生まれた年月' }).click()
 await page.getByLabel('生まれた年月').fill('2026-08')
@@ -575,7 +575,7 @@ await page.getByRole('group', { name: 'ワクチン' }).getByRole('button', { na
 await page.locator('.health').first().getByLabel('投稿文に載せる').check()
 await page.getByRole('group', { name: '猫エイズ・白血病の検査' }).getByRole('button', { name: '陰性' }).click()
 await page.getByLabel('いいところ').fill('ひざの上が大好き\nごはんの時間を教えてくれる')
-await page.getByLabel('預かりさん・スタッフさんのひとこと（なくてもOK）').fill('毎朝、玄関までお迎えに来てくれます。')
+await page.getByLabel('見る人へのひとこと（なくてもOK）').fill('毎朝、玄関までお迎えに来てくれます。')
 await shot('4_入力_入力後', true)
 check(await page.getByText('今は「推定生後3か月」').isVisible(), '生まれた年月から月齢が出る（11/1時点で生後3か月）')
 
