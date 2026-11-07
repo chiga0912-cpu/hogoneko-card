@@ -28,6 +28,7 @@ ok(noteAsked('（架空）いい子です。\n\n', `${ASKED_LABEL}Q？`) === `�
 ok(noteAsked(`A\n${ASKED_LABEL}Q？`, `${ASKED_LABEL}Q？`) === `A\n${ASKED_LABEL}Q？`, '同じ行は二重に足さない')
 ok(noteAsked(`A\n${ASKED_LABEL}Q？\nはい`, `${ASKED_LABEL}R？`, `${ASKED_LABEL}Q？`) === `A\n${ASKED_LABEL}R？\nはい`, '直してコピーし直したら、前に足した行を置きかえる')
 ok(alreadyAsked(`A\n${ASKED_LABEL}Q？`) && !alreadyAsked('A'), '「聞いたこと」の行があれば、もう聞いたとみなす')
+ok(alreadyAsked('A\n（預かりさんへの質問）\nQ？\n（預かりさんの返事）\nはい'), '朝の版で質問と返事を足した子も、もう聞いたとみなす（見直しの軽い3）')
 {
   const hist = `2026/11/07(土)\n10:00\t預かりA\t（架空）いい子です\n${ASKED_LABEL}ひざに乗りますか？\nいいえ`
   ok(cleanLine(hist).text.includes(`${ASKED_LABEL}ひざに乗りますか？`), 'LINEの履歴の形のメモでも、「聞いたこと」の行は外さない')

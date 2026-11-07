@@ -46,7 +46,8 @@ export function noteAsked(memo: string, add: string, prev?: string): string {
 }
 
 // このメモで、もう聞いたか（「聞いたこと」の行がある）。あれば、読み取り直しても聞き返さない
-export const alreadyAsked = (memo: string) => memo.includes(ASKED_LABEL)
+// 朝の版（11/7）で足した「（預かりさんへの質問）」「（預かりさんの返事）」も、もう聞いたとみなす（見直しの軽い3）
+export const alreadyAsked = (memo: string) => [ASKED_LABEL, '（預かりさんへの質問）', '（預かりさんの返事）'].some((l) => memo.includes(l))
 
 // 読み取り・投稿文づくりに使うメモ。memoAdditions は前の版（返事の専用の欄）の名残で、読み込むときにメモへ移すので、ふだんは空
 export function fullMemo(c: { memo: string; memoAdditions: string }): string {
