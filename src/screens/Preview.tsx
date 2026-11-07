@@ -149,7 +149,7 @@ type Props = {
   live?: () => Live // 今の入力（本文が届いたときに使う。#23のあとの見直しの重い1）
 }
 
-// 確認（仮）。カードと根拠の印は11/5〜11/6に作る。今は決まった形の投稿文だけ
+// 確認の画面（11/8 題を「確認（仮）」から「確認」に。作者の決定）
 export default function Preview({ shelter, cat, onCatChange, post, onPostChange, onBack, onSave, restoreNotice, story = null, onStoryChange = () => {}, onStoryPost, live }: Props) {
   // ── 根拠の確認（#17。SPEC 2.4・4.2）──
   // 本文を書いたら続けて確かめる。確かめている途中・失敗はこの画面の中だけ（入力の途中には、確認が終わったものだけ残す）
@@ -387,7 +387,7 @@ export default function Preview({ shelter, cat, onCatChange, post, onPostChange,
   }
   return (
     <main className="screen">
-      <TopBar title="確認（仮）" onBack={() => afterTyped(() => backLatest.current())} />
+      <TopBar title="確認" onBack={() => afterTyped(() => backLatest.current())} />
       {restoreNotice && <p className="alert">{restoreNotice}</p>}
       <p className="note">表紙・猫カード・ひとこと・最後の1枚です。撮った動画は、表紙と猫カードのあいだに入ります。</p>
 

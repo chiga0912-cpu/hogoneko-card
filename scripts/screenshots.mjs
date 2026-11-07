@@ -603,9 +603,10 @@ check((await page.getByRole('textbox', { name: /^名前/ }).inputValue()) === '�
 check((await page.locator('.photo img').count()) === 2, '読み込み直しても、写真2枚が残る')
 check((await page.getByLabel('いいところ').inputValue()).includes('ごはんの時間'), '読み込み直しても、いいところが残る')
 
-// 6. 確認（仮）→ 名簿に保存
+// 6. 確認 → 名簿に保存
 await page.getByRole('button', { name: '次へ' }).click()
 await shot('5_確認_仮')
+check((await page.locator('h1, .topbar h2, header').filter({ hasText: /^確認$/ }).count()) >= 1 && (await page.getByText('確認（仮）').count()) === 0, '確認の画面の題は「確認」（「（仮）」を外した。11/8 作者の決定）')
 // 猫カード（仮の画像）
 {
   const card = page.locator('.card-canvas')
