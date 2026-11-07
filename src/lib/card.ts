@@ -279,7 +279,7 @@ let lastContain: { x: number; y: number; w: number; h: number } | null = null //
 // 絵は public/ に置く（band.ts の loadBandPattern が、帯の柄と一緒に読んで setDecor で入れる）。置いていないときは何も描かない（今までと同じ）
 //   edge.png：帯と写真の境目の線。横長・背景は透明。写真の上の境目にそのまま、下の境目には上下を返して、写真の幅いっぱいに描く
 //   corner.png：表紙と最後の1枚の小さな絵。背景は透明。CORNER_SIZE の正方形の中に収める
-//     縦の写真（案A）：右上（上220・右64の隠れる所の内側）。横・正方形の写真（案B）：写真の右上の角に、境目にまたがるように（上の帯の文字と重ならないように）
+//     縦の写真（案A）：右上（上220・右64の隠れる所の内側）。横・正方形の写真（案B）：写真の右上の角に、境目から24pxだけ帯にかかるように（上の帯の文字と重ならないように）
 // 絵は作る人の作品で、MITの対象外（README）
 export type Decor = { edge: Img | null; corner: Img | null }
 let DECOR: Decor = { edge: null, corner: null }
@@ -306,7 +306,8 @@ function drawCorner(ctx: CanvasRenderingContext2D, onPhoto: boolean) {
   const h = c.height * s
   const p = onPhoto ? lastContain : null
   const x = p ? Math.min(CARD_W - SAFE.right, p.x + p.w - 24) - w : CARD_W - SAFE.right - w
-  const y = p ? Math.max(SAFE.top, p.y - h / 2) : SAFE.top
+  // 帯の形では、写真の上の境目から24pxだけ帯にかかる（帯の最後の文字の下のすき間は36pxなので、文字とは重ならない。見直しの軽い5）
+  const y = p ? Math.max(SAFE.top, p.y - Math.min(24, h / 2)) : SAFE.top
   ctx.drawImage(c, x, y, w, h)
 }
 
