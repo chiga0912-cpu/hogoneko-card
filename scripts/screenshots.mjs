@@ -546,6 +546,12 @@ await shot('1b_登録_入力後', true)
 await page.getByRole('button', { name: '登録して始める' }).click()
 await page.getByText('新しい子を紹介').waitFor()
 await shot('2_ホーム')
+{
+  // ツールの名前は「むすび」（11/8 作者の「できれば」）。ホームの見出し・タブの名前・ホーム画面に追加したときの名前
+  const mf = await page.evaluate(async () => (await fetch('/manifest.webmanifest')).json())
+  const appTitle = await page.evaluate(() => document.querySelector('meta[name="apple-mobile-web-app-title"]')?.getAttribute('content'))
+  check((await page.locator('.hero h1').textContent()) === 'むすび' && (await page.title()) === 'むすび' && mf.name === 'むすび' && mf.short_name === 'むすび' && appTitle === 'むすび', 'ツールの名前は「むすび」（ホームの見出し・タブ・ホーム画面に追加したときの名前）')
+}
 check(await page.getByText('ホーム画面に追加しないと、しばらく開かないときに名簿が消えることがあります').isVisible(), '案内を飛ばした人には、ホームで名簿が消えることがあると知らせる')
 // 開いてすぐ戻っただけなら、「入力の続き」にしない（見直し A9）
 await page.getByRole('button', { name: '新しい子を紹介' }).click()
