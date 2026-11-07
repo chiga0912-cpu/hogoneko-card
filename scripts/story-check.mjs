@@ -694,6 +694,9 @@ for (const how of ['確定した文字', '変換を確定する前の文字']) {
   await s8.getByRole('button', { name: '次へ' }).click()
   const box8 = s8.getByLabel('投稿文（その場で直せます）')
   await box8.waitFor()
+  // カードを描き終わるのを待つ（描き終わったときの描き直しで、テストが欄に直接入れた文字が消えないように。11/8 絵の読み込みが増えて遅くなった）
+  await s8.locator('.card-canvas[data-drawn="1"]').waitFor({ timeout: 8000 }).catch(() => {})
+  await s8.waitForTimeout(800)
   // 投稿文に、変換を確定する前の文字を足したまま［物語の本文を書いてもらう］→「手で直しています」と聞く。［やめる］なら書かない
   await s8.evaluate(() => (window.__confirmAnswer = 'no'))
   await uncommitted('\n（確定前の行A）')
