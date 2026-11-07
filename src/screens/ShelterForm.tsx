@@ -1,4 +1,5 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
+import { flushAllIn } from '../lib/typed'
 import { emptyShelter, MAX_HASHTAGS, type Shelter } from '../types'
 import { copyBlob, isPersisted } from '../db'
 import { APP_VERSION } from '../lib/checkMode'
@@ -62,8 +63,17 @@ export default function ShelterForm({ initial, first, needName = false, onSave, 
     setSaving(false)
   }
 
+  // ［保存］：変換を確定する前の文字も入れ、描き直された値で保存する（入力画面と同じ。見直しの中3）
+  const formRoot = useRef<HTMLElement>(null)
+  const saveLatest = useRef(save)
+  saveLatest.current = save
+  const onSaveClick = () => {
+    flushAllIn(formRoot.current)
+    window.setTimeout(() => void saveLatest.current(), 0)
+  }
+
   return (
-    <main className="screen">
+    <main className="screen" ref={formRoot}>
       {first ? (
         <header className="hero hero-small">
           <h1>シェルター登録</h1>
@@ -194,7 +204,7 @@ export default function ShelterForm({ initial, first, needName = false, onSave, 
       <div className="bottom-bar">
         {/* 押した場所のすぐ上に出す（スクロールしなくても見えるように） */}
         {saveFailed && <p className="alert bar-alert">保存できませんでした。もう一度押してください。</p>}
-        <button className="btn btn-primary btn-big" onClick={save} disabled={saving}>
+        <button className="btn btn-primary btn-big" onClick={onSaveClick} disabled={saving}>
           {first ? '登録して始める' : '保存する'}
         </button>
       </div>

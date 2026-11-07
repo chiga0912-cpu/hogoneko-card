@@ -3,7 +3,8 @@ import { APP_VERSION, CHECK_MODE } from './lib/checkMode'
 import { newCat, type AdoptionEvent, type Cat, type Shelter } from './types'
 import * as db from './db'
 import { detectBrowser, isStandalone } from './lib/browser'
-import { makeFixedPost, renameInPost } from './lib/post'
+import { makeFixedPost } from './lib/post'
+import { renameInPost } from './lib/story'
 import { makeCover } from './lib/shrink'
 import { migrateOldCats } from './lib/migrate'
 import { askConfirm, ConfirmHost } from './lib/confirm'
@@ -81,6 +82,8 @@ export default function App() {
   // 今の入力（本文が届いたときに、書き始めたときではなく今の入力で投稿文を組み立てるため。#23のあとの見直しの重い1）
   const live = useRef({ cat, post, postEdited, shelter })
   live.current = { cat, post, postEdited, shelter }
+  // 確認画面を離れたときの名前（投稿文に決まった文がないときに、名前を変えたかを知るため。見直しの重い1）
+  const leftPreviewName = useRef<string | null>(null)
   // 入力の途中を残せなかった（文字・写真・動画で分けて持つ。1つが成功しても、ほかの失敗の知らせを消さないため）
   const [saveFail, setSaveFail] = useState({ text: false, photos: false, clip: false })
   const setFail = (k: 'text' | 'photos' | 'clip', v: boolean) => setSaveFail((f) => (f[k] === v ? f : { ...f, [k]: v }))
@@ -503,7 +506,7 @@ export default function App() {
                 setStory(null) // 投稿文を作り直したので、前の本文の確認の結果は使わない
               } else {
                 // 手で直した投稿文のままでも、頭の【名前】と最後の決まった文は今の名前にする（11/7 作者の決定）
-                setPost(renameInPost(post, cat.name, cat.id))
+                setPost(renameInPost(post, cat.name, cat.id, leftPreviewName.current ?? undefined))
               }
             }
             go('preview')
@@ -538,7 +541,10 @@ export default function App() {
             setPost(p)
             setPostEdited(false)
           }}
-          onBack={() => go('cat')}
+          onBack={() => {
+            leftPreviewName.current = cat.name
+            go('cat')
+          }}
           onSave={saveToRoster}
         />
       )}

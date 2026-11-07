@@ -4,7 +4,7 @@
 import { chromium, devices } from 'playwright'
 import { mkdirSync } from 'node:fs'
 import { join } from 'node:path'
-import { splitMemo, factChunks, stripHashtags, leakedWords, EXAMPLES, stripClosing, closingLine, CLOSINGS, tidyEmoji, dropMeta, removeSentence, parseVerdicts, flagOldName, writtenNameOf, OLD_NAME_REASON } from '../src/lib/story.ts'
+import { splitMemo, factChunks, stripHashtags, leakedWords, EXAMPLES, stripClosing, closingLine, CLOSINGS, tidyEmoji, dropMeta, removeSentence, parseVerdicts, flagOldName, writtenNameOf, OLD_NAME_REASON, closingName, renameInPost } from '../src/lib/story.ts'
 
 const outDir = process.argv[2] ?? 'screenshots'
 const url = process.argv[3] ?? 'http://localhost:5173'
@@ -38,6 +38,16 @@ ok(CLOSINGS.map((f) => f('ミント')).includes(closingLine(' ミント ', 'id-1
   ok(!f1[0].ok && f1[0].reason === OLD_NAME_REASON && f1[1].ok, '名前を変えたあと、本文に前の名前が残っている文だけ、確認役の答えにかかわらず印を付ける（理由「前の名前が残っています」）')
   ok(flagOldName(S2, V(2), 'ミント', 'ミント').every((v) => v.ok), '名前を変えていなければ、印を付けない')
   ok(flagOldName(['モカちゃんはよく食べます。'], V(1), 'モカ', 'モカちゃん')[0].ok && !flagOldName(['モカはよく食べます。'], V(1), 'モカ', 'モカちゃん')[0].ok, '今の名前の中に前の名前が入っているとき（モカ→モカちゃん）は、今の名前の部分を除いて探す')
+  ok(!flagOldName(['ハナコは甘えん坊です。'], V(1), 'ハナコ', 'ハナ')[0].ok && !flagOldName(['モカちゃんは甘えん坊です。'], V(1), 'モカちゃん', 'モカ')[0].ok && flagOldName(['ハナは甘えん坊です。'], V(1), 'ハナコ', 'ハナ')[0].ok, '名前を短くしたとき（ハナコ→ハナ、モカちゃん→モカ）も、前の名前が残る文に印を付ける（見直しの中1）')
+  ok(closingName(closingLine('モカ', 'cat-x'), 'cat-x') === 'モカ' && closingName('ちがう文です。', 'cat-x') === null, '決まった文から、入っている名前を取り出す')
+  {
+    const id = 'cat-x'
+    const P = (head, name) => `${head}\n1歳\n\nモカはよく食べます。\n${closingLine(name, id)}\n\n#保護猫`
+    ok(renameInPost(P('【モカ・里親さん募集中】', 'モカ'), 'モカ', id) === P('【モカ・里親さん募集中】', 'モカ'), '名前を変えていなければ、手で直した見出し（【モカ・里親さん募集中】）を変えない（見直しの重い1）')
+    ok(renameInPost(P('【モカ・里親さん募集中】', 'モカ'), 'ミルク', id) === P('【モカ・里親さん募集中】', 'ミルク'), '名前を変えても、手で直した見出しは変えず、決まった文だけ今の名前にする')
+    ok(renameInPost(P('【モカ】', 'モカ'), 'ミルク', id) === P('【ミルク】', 'ミルク').replace('モカはよく食べます。', 'モカはよく食べます。'), '名前を変えたら、頭がちょうど【前の名前】のときだけ今の名前にする（本文の中の名前は変えない）')
+    ok(renameInPost('【モカ】\n・よく食べる', 'ミルク', id, 'モカ') === '【ミルク】\n・よく食べる' && renameInPost('【里親さん募集】\n・よく食べる', 'ミルク', id, 'モカ') === '【里親さん募集】\n・よく食べる', '決まった文がない投稿文では、確認画面を離れたときの名前で見分ける')
+  }
   ok(writtenNameOf({ body: '', parts: [], memoChunks: [], factChunks: ['名前：ミント'], writtenName: 'モカ' }) === 'モカ' && writtenNameOf({ body: '', parts: [], memoChunks: [], factChunks: ['名前：ミント'] }) === 'ミント', '本文を書いたときの名前（前の版の途中には無いので、確認した項目の名前で代わりにする）')
 }
 ok(new Set(['a', 'b', 'c', 'd', 'e', 'f', 'g', 'h'].map((k) => closingLine('ミント', 'cat-' + k))).size >= 3, '猫が違えば、決まった文もばらける（全部が同じ文にならない）')
@@ -315,6 +325,7 @@ await p.screenshot({ path: join(outDir, '16b_投稿文_書けなかった.png'),
   await q.getByRole('button', { name: '物語の本文を書いてもらう' }).click()
   await q.locator('.story-line[data-flag="1"]').waitFor({ timeout: 5000 }).catch(() => {})
   await q.getByRole('button', { name: '消す' }).click()
+  await q.waitForTimeout(200) // ［消す］は、投稿文の欄の文字を確定してから1拍おいて動く
   ok(!(await postBox.inputValue()).includes('トイレも上手にできます') && (await postBox.inputValue()).includes('ごはんをよく食べるようになったミント。'), '［消す］で、その文だけ投稿文から消える')
   ok(await save.isEnabled(), '印の文を消すと、［動画を作る］を押せる')
 
@@ -631,6 +642,88 @@ for (const how of ['確定した文字', '変換を確定する前の文字']) {
   const copied7 = (await s7.evaluate(() => window.__copied)) ?? ''
   ok(copied7.includes('（確定前の行）'), `変換を確定する前の文字のまま［動画を作る］を押しても、欄に見えている投稿文で作る（コピーされた投稿文に入っている：${copied7.includes('（確定前の行）')}）`)
   await ctx7.close()
+}
+
+// 確認画面の［物語の本文を書いてもらう］［消す］［戻る］も、投稿文の欄の変換を確定する前の文字を入れてから動く（11/7 夜 作者の指示）
+// 名前を変えていなければ、手で直した見出しは【名前】に戻さない（見直しの重い1）
+{
+  const ctx8 = await browser.newContext({ ...devices['iPhone 15'] })
+  await ctx8.addInitScript(() => {
+    window.__askedCount = 0
+    new MutationObserver(() => {
+      const d = document.querySelector('[data-confirm-dialog]')
+      if (d && !d.dataset.answered) {
+        d.dataset.answered = '1'
+        window.__askedCount += 1
+        window.__asked = d.textContent
+        setTimeout(() => d.querySelector(window.__confirmAnswer === 'no' ? '[data-confirm="no"]' : '[data-confirm="yes"]')?.click(), 50)
+      }
+    }).observe(document, { childList: true, subtree: true })
+  })
+  const s8 = await ctx8.newPage()
+  let posts8 = 0
+  await s8.route('**/api/post', async (route) => {
+    posts8++
+    const sent = JSON.parse(route.request().postData() ?? '{}')
+    const body = '（仮の本文）モカはよく食べる子です。\n（仮の本文）夜はよく眠ります。'
+    return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ result: { body, parts: [{ text: body, cites: [] }], memoChunks: splitMemo(sent.memo), factChunks: factChunks(sent.facts) } }) })
+  })
+  await s8.route('**/api/check', async (route) => {
+    const sent = JSON.parse(route.request().postData() ?? '{}')
+    // 2文目（夜はよく眠ります）に印を付ける（［消す］を出すため）
+    return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ results: sent.sentences.map((_, i) => ({ i, ok: i === 0, cites: i === 0 ? [{ doc: 0, start: 0, end: 1, text: 'x' }] : [], reason: '' })) }) })
+  })
+  const uncommitted = (add) =>
+    s8.evaluate((text) => {
+      const t = [...document.querySelectorAll('textarea')].at(-1)
+      t.focus()
+      const setValue = Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, 'value').set
+      t.dispatchEvent(new CompositionEvent('compositionstart', { bubbles: true }))
+      setValue.call(t, t.value + text)
+      t.addEventListener('blur', () => t.dispatchEvent(new CompositionEvent('compositionend', { bubbles: true, data: text })), { once: true })
+    }, add)
+  await s8.goto(url)
+  await s8.getByRole('button', { name: '追加せずに、このまま使う' }).click()
+  await s8.getByLabel('団体名').fill('テスト保護猫の会')
+  await s8.getByRole('button', { name: '登録して始める' }).click()
+  await s8.getByRole('button', { name: '新しい子を紹介' }).click()
+  await s8.locator('input[type=file][accept="image/*"]').setInputFiles(dummy)
+  await s8.locator('.photo img').first().waitFor()
+  await s8.getByLabel('預かりさんからのLINE・メモ').fill('（架空）モカはよく食べます。夜はよく眠ります。')
+  await s8.getByRole('textbox', { name: /^名前/ }).fill('モカ')
+  await s8.getByRole('button', { name: '次へ' }).click()
+  const box8 = s8.getByLabel('投稿文（その場で直せます）')
+  await box8.waitFor()
+  // 投稿文に、変換を確定する前の文字を足したまま［物語の本文を書いてもらう］→「手で直しています」と聞く。［やめる］なら書かない
+  await s8.evaluate(() => (window.__confirmAnswer = 'no'))
+  await uncommitted('\n（確定前の行A）')
+  await s8.getByRole('button', { name: '物語の本文を書いてもらう' }).click()
+  await s8.waitForTimeout(600)
+  ok((await s8.evaluate(() => window.__askedCount)) === 1 && posts8 === 0 && (await box8.inputValue()).includes('（確定前の行A）'), '変換を確定する前の文字のまま［物語の本文を書いてもらう］を押しても、手で直したとみなして聞く（［やめる］なら書かない）')
+  await s8.evaluate(() => (window.__confirmAnswer = 'yes'))
+  await s8.getByRole('button', { name: '物語の本文を書いてもらう' }).click()
+  await s8.locator('.story-line').first().waitFor({ timeout: 5000 }).catch(() => {})
+  await s8.waitForTimeout(400)
+  // ［消す］：確定前の文字を足したまま押しても、その文字を消さずに、文だけ消す
+  await uncommitted('\n（確定前の行B）')
+  await s8.locator('.story-line[data-flag="1"]').getByRole('button', { name: '消す' }).click()
+  await s8.waitForTimeout(400)
+  {
+    const v = await box8.inputValue()
+    ok(v.includes('（確定前の行B）') && !v.includes('夜はよく眠ります') && v.includes('モカはよく食べる子です'), '変換を確定する前の文字のまま［消す］を押しても、その文字は残し、印の文だけ消す')
+  }
+  // 手で見出しを直す（名前は変えない）→［戻る］（確定前の文字のまま）→［次へ］→「直した文のまま」→ 見出しはそのまま
+  await box8.fill((await box8.inputValue()).replace('【モカ】', '【モカ・里親さん募集中】'))
+  await uncommitted('\n（確定前の行C）')
+  await s8.getByRole('button', { name: '戻る' }).click()
+  await s8.getByRole('textbox', { name: /^名前/ }).waitFor()
+  await s8.evaluate(() => (window.__confirmAnswer = 'no'))
+  await s8.getByRole('button', { name: '次へ' }).click()
+  await box8.waitFor()
+  await s8.waitForTimeout(400)
+  const v8 = await box8.inputValue()
+  ok(v8.startsWith('【モカ・里親さん募集中】') && v8.includes('（確定前の行C）'), `名前を変えていなければ、手で直した見出しを【名前】に戻さない。確定前の文字のまま［戻る］を押しても、その文字は残る（${JSON.stringify(v8.slice(0, 30))}）`)
+  await ctx8.close()
 }
 
 // 本文を書いている間に［戻る］で入力を変えても、届いた本文の投稿文は今の入力で組み立てる（#23のあとの見直しの重い1。11/7 作者のOK）

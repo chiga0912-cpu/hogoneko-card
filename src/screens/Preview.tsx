@@ -363,6 +363,16 @@ export default function Preview({ shelter, cat, onCatChange, post, onPostChange,
   const tooMany = tagCount > MAX_HASHTAGS
   // ［動画を作る］：入力を確定したあと、描き直された画面の値で、押せる状態かを確かめ直してから作る
   const postBox = useRef<HTMLTextAreaElement>(null)
+  // 投稿文の欄の、変換を確定する前の文字を入れてから動く（［戻る］［消す］［物語の本文を書いてもらう］も。11/7 夜 作者の指示）
+  // 入れたあと、描き直された画面の値（nowPost・backLatest）で動く
+  const nowPost = useRef(post)
+  nowPost.current = post
+  const backLatest = useRef(onBack)
+  backLatest.current = onBack
+  const afterTyped = (fn: () => void) => {
+    flushTyped(postBox.current)
+    window.setTimeout(fn, 0)
+  }
   const saveLatest = useRef(async () => {})
   saveLatest.current = async () => {
     if (saving || tooMany || !eventsRead || storyBlocked) return
@@ -377,7 +387,7 @@ export default function Preview({ shelter, cat, onCatChange, post, onPostChange,
   }
   return (
     <main className="screen">
-      <TopBar title="確認（仮）" onBack={onBack} />
+      <TopBar title="確認（仮）" onBack={() => afterTyped(() => backLatest.current())} />
       {restoreNotice && <p className="alert">{restoreNotice}</p>}
       <p className="note">表紙・猫カード・ひとこと・最後の1枚です。撮った動画は、表紙と猫カードのあいだに入ります。</p>
 
@@ -576,6 +586,7 @@ export default function Preview({ shelter, cat, onCatChange, post, onPostChange,
         post={post}
         live={live}
         primary={draftOnly}
+        beforeWrite={() => flushTyped(postBox.current)}
         onPost={(p, result) => {
           ;(onStoryPost ?? onPostChange)(p)
           const s = { result, check: null }
@@ -590,10 +601,12 @@ export default function Preview({ shelter, cat, onCatChange, post, onPostChange,
           name={cat.name}
           post={post}
           onKeep={(i) => story.check && onStoryChange({ ...story, check: { ...story.check, kept: [...story.check.kept, i] } })}
-          onRemove={(i, s) => {
-            onPostChange(removeSentence(post, s))
-            if (story.check) onStoryChange({ ...story, check: { ...story.check, removed: [...(story.check.removed ?? []), i] } })
-          }}
+          onRemove={(i, s) =>
+            afterTyped(() => {
+              onPostChange(removeSentence(nowPost.current, s))
+              onStoryChange((cur) => (cur?.check ? { ...cur, check: { ...cur.check, removed: [...(cur.check.removed ?? []), i] } } : cur))
+            })
+          }
           onRetry={() => void runCheck(story)}
           onDropStory={async () => {
             // 手で書き足していたら、黙って消さない（見直しの重い7）

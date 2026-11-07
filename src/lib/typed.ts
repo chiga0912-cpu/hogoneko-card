@@ -7,3 +7,9 @@ export function flushTyped(...boxes: (HTMLInputElement | HTMLTextAreaElement | n
   if (document.activeElement instanceof HTMLElement) document.activeElement.blur()
   for (const b of boxes) b?.dispatchEvent(new Event('input', { bubbles: true }))
 }
+
+// まとまり（画面）の中の、文字を入れる欄すべて（ファイル・色・チェックの欄は除く）
+export function flushAllIn(root: HTMLElement | null): void {
+  if (!root) return flushTyped()
+  flushTyped(...root.querySelectorAll<HTMLInputElement | HTMLTextAreaElement>('textarea, input:not([type=file]):not([type=color]):not([type=checkbox]):not([type=radio])'))
+}

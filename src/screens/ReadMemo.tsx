@@ -21,7 +21,7 @@ export default function ReadMemo({ cat, onChange, beforeRead }: Props) {
   const [failed, setFailed] = useState(false)
   const [limit, setLimit] = useState<string | null>(null) // 回数の上限の文（#20）
   // 聞き返し（#18。SPEC 2.3）。このメモに対する聞き返しの下書き（返事を待つ間も残す）
-  const [ask, setAskState] = useState<AskState | null>(() => loadAsk(cat.memo))
+  const [ask, setAskState] = useState<AskState | null>(() => loadAsk(cat.memo, cat.id))
   const setAsk = (a: AskState | null) => {
     setAskState(a)
     saveAsk(a)
@@ -30,7 +30,7 @@ export default function ReadMemo({ cat, onChange, beforeRead }: Props) {
   // 聞き返しが要るかをClaudeに聞く。同じメモでは一度だけ（質問が出なかった・飛ばした・返事を足したあとは聞かない）
   // 失敗したとき・上限のときは、何も出さずに先へ進める（聞き返しは必ずではない）
   const askBack = async (masked: string, name: string, memoKey: string) => {
-    const known = loadAsk(memoKey)
+    const known = loadAsk(memoKey, cat.id)
     if (known) return
     setAsking(true)
     try {
@@ -38,11 +38,10 @@ export default function ReadMemo({ cat, onChange, beforeRead }: Props) {
       if (!ans.ok) return
       const q = typeof ans.body.question === 'string' ? ans.body.question : null
       if (q) {
-        setAsk({ memo: memoKey, line: askLine(name, q), reply: '', status: 'open' })
-        markAsked(cat.id) // 1匹に1回（11/7 夕方 作者の決定）
+        setAsk({ memo: memoKey, catId: cat.id, line: askLine(name, q), reply: '', status: 'open' })
       }
       // 「要らない」「メモにない事実が入った」ときだけ、このメモではもう聞かない。一時的な失敗なら、次に読み取ったときにもう一度考える（見直しの2）
-      else if (ans.body.skipped === 'not-needed' || ans.body.skipped === 'unsupported') setAsk({ memo: memoKey, line: '', reply: '', status: 'none' })
+      else if (ans.body.skipped === 'not-needed' || ans.body.skipped === 'unsupported') setAsk({ memo: memoKey, catId: cat.id, line: '', reply: '', status: 'none' })
     } finally {
       setAsking(false)
     }
@@ -83,6 +82,7 @@ export default function ReadMemo({ cat, onChange, beforeRead }: Props) {
   const onCopied = (line: string) => {
     if (!ask) return
     setAsk({ ...ask, line, copied: true }) // line：コピーした文（欄に見えていた文）
+    markAsked(cat.id) // 1匹に1回：［LINEの文をコピー］か［飛ばす］を押したときだけ覚える（11/7 夜 作者の決定）
   }
   const showAsk = ask && ask.memo === cat.memo && ask.status === 'open'
 
@@ -135,7 +135,10 @@ export default function ReadMemo({ cat, onChange, beforeRead }: Props) {
       )}
       {/* 聞き返し（#18）。読み取りの結果の知らせのあとに出す */}
       {asking && <p className="muted center">預かりさんに聞くことがあるか、考えています…</p>}
-      {showAsk && ask && <AskBack ask={ask} onEdit={setAsk} onCopied={onCopied} onSkip={() => setAsk({ ...ask, status: 'skipped' })} />}
+      {showAsk && ask && <AskBack ask={ask} onEdit={setAsk} onCopied={onCopied} onSkip={() => {
+            setAsk({ ...ask, status: 'skipped' })
+            markAsked(cat.id) // 1匹に1回（［飛ばす］も聞いたことにする）
+          }} />}
     </div>
   )
 }

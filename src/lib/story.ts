@@ -19,7 +19,8 @@ export const writtenNameOf = (r: StoryResult): string =>
   (r.writtenName ?? r.factChunks.find((c) => c.startsWith('名前：'))?.slice(3) ?? '').trim()
 
 // 名前を変えたあと、本文に前の名前が残っている文は、確認役の答えにかかわらず印を付ける（11/7 作者の決定。メモに前の名前があっても）
-// 今の名前の中に前の名前が入っているとき（モカ→モカちゃん）は、今の名前の部分を除いてから探す
+// 今の名前の中に前の名前が入っているとき（モカ→モカちゃん）だけ、今の名前の部分を除いてから探す
+// 前の名前の中に今の名前が入っているとき（ハナコ→ハナ）や、関係のない名前のときは、前の名前をそのまま探す（見直しの中1）
 export const OLD_NAME_REASON = '前の名前が残っています'
 export function flagOldName(sentences: string[], verdicts: Verdict[], writtenName: string, nowName: string): Verdict[] {
   const old = writtenName.trim()
@@ -27,7 +28,7 @@ export function flagOldName(sentences: string[], verdicts: Verdict[], writtenNam
   if (!old || old === now) return verdicts
   return verdicts.map((v, k) => {
     const s = sentences[k] ?? ''
-    const rest = now ? s.split(now).join('') : s
+    const rest = now && now.includes(old) ? s.split(now).join('') : s
     return rest.includes(old) ? { ...v, ok: false, cites: [], reason: OLD_NAME_REASON } : v
   })
 }
@@ -72,6 +73,13 @@ const pickIndex = (key: string) => {
   return h % CLOSINGS.length
 }
 export const closingLine = (name: string, key: string) => CLOSINGS[pickIndex(key)](name.trim())
+// 決まった文の1行から、入っている名前を取り出す（この猫の決まった文の形でなければ null）。投稿文を作ったときの名前を知るため
+export function closingName(line: string, key: string): string | null {
+  const [pre, post] = CLOSINGS[pickIndex(key)]('\u0000').split('\u0000')
+  const t = line.trim()
+  if (t.length <= pre.length + post.length || !t.startsWith(pre) || !t.endsWith(post)) return null
+  return t.slice(pre.length, t.length - post.length)
+}
 // 本文ではない行（前置き・説明・注記）と、同じ行の2回目を外す（AIに任せない）
 // 本文はメモや資料のことを書かないので、「メモ」「資料」「書きます」「元に」などを含む行・かっこだけの行は、本文ではないと見なす
 // 資料・メモのことを「元にした・書いた」と説明している行、かっこだけの注記（「（ちょっと怖がりです）」や「メモ帳をかじります。」は外さない。見直しの軽い11）
@@ -272,4 +280,19 @@ export function removeSentence(post: string, sentence: string): string {
     if (parts.length) out.push(parts.join(''))
   }
   return out.join('\n').replace(/\n{3,}/g, '\n\n')
+}
+
+// 投稿文の頭の【名前】と、本文のあとの決まった文（closingLine）だけを、今の名前にする（11/7 作者の決定）
+// 手で直した投稿文でも使う。ほかの行は書き換えない。決まった文を手で直していたら、その行はそのまま
+// 本文の中の名前は書き換えない（本文は根拠の確認で確かめ直す）
+// 名前を変えたときだけ動く：前の名前は、投稿文の中の決まった文から取り出す（なければ prevName＝確認画面を離れたときの名前）。
+// 頭の行がちょうど【前の名前】のときだけ置きかえる（【モカ・里親さん募集中】のように人が直した見出しは変えない。見直しの重い1）
+export function renameInPost(post: string, name: string, catId: string, prevName?: string): string {
+  const lines = post.split('\n')
+  const now = name.trim()
+  const old = (lines.map((l) => closingName(l, catId)).find((n) => n !== null) ?? prevName ?? '').trim()
+  if (!old || old === now) return post
+  const oldClosing = closingLine(old, catId)
+  const newClosing = closingLine(now, catId)
+  return lines.map((l, i) => (i === 0 && l.trim() === `【${old}】` ? `【${now}】` : l.trim() === oldClosing ? newClosing : l)).join('\n')
 }

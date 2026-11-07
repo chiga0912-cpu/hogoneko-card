@@ -18,11 +18,12 @@ type Props = {
   onPost: (post: string, story: StoryResult) => void
   live?: () => Live
   primary?: boolean // メモがあって本文をまだ書いていないときは、［動画を作る］より目立たせる（11/7 作者の要望）
+  beforeWrite?: () => void // 押したら、投稿文の欄の変換を確定する前の文字を入れる（11/7 夜 作者の指示）
 }
 
 // ［物語の本文を書いてもらう］（#16。SPEC 4.1・4.2・4.4）。AIに送るのはメモの文字と、確認した名前・いいところだけ
 // Claudeが書くのは本文だけ。年齢・性別・健康・毎回の文・連絡先・ハッシュタグは、決まった形でプログラムが足す
-export default function WriteStory({ cat, shelter, post, onPost, live, primary = false }: Props) {
+export default function WriteStory({ cat, shelter, post, onPost, live, primary = false, beforeWrite }: Props) {
   const [busy, setBusy] = useState(false)
   const [failed, setFailed] = useState(false)
   const [limit, setLimit] = useState<string | null>(null) // 回数の上限の文（#20）
@@ -71,9 +72,17 @@ export default function WriteStory({ cat, shelter, post, onPost, live, primary =
     }
   }
 
+  // 押したら、投稿文の欄の文字を入れ、描き直された画面の値（手で直したか・今の投稿文）で書いてもらう
+  const writeLatest = useRef(write)
+  writeLatest.current = write
+  const onWrite = () => {
+    beforeWrite?.()
+    window.setTimeout(() => void writeLatest.current(), 0)
+  }
+
   return (
     <div className="write-story">
-      <button className={primary ? 'btn btn-primary btn-big' : 'btn btn-big'} disabled={busy || !storyReady(memo, facts)} onClick={() => void write()}>
+      <button className={primary ? 'btn btn-primary btn-big' : 'btn btn-big'} disabled={busy || !storyReady(memo, facts)} onClick={onWrite}>
         {busy ? '本文を書いています…' : '物語の本文を書いてもらう'}
       </button>
       {!storyReady(memo, facts) && <p className="muted center">メッセージか「いいところ」を入れると押せます</p>}

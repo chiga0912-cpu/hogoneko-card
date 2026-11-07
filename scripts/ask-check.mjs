@@ -135,6 +135,7 @@ const readNow = async (p) => {
   await p.getByLabel('預かりさんからのLINE・メモ').fill(MEMO)
   await readNow(p)
   await p.getByRole('button', { name: '飛ばす' }).click()
+  await p.waitForTimeout(200) // ［飛ばす］は、入力を確定してから1拍おいて閉じる
   ok(!(await panel(p).isVisible()), '［飛ばす］で、聞き返しの欄が閉じる')
   await readNow(p)
   ok(sent.ask.length === 1 && !(await panel(p).isVisible()), '飛ばしたあと、同じメモで読み取り直しても、もう聞かない')
@@ -298,6 +299,60 @@ for (const [label, ans] of [
   await p.waitForTimeout(300)
   ok((await p.evaluate(() => window.__copied)) === 'ミケちゃんのことで1つだけ。ひざに乗ってくることはありますか？', '変換を確定する前の文字のまま［LINEの文をコピー］を押しても、欄に見えている文をコピーする')
   ok((await p.getByLabel('預かりさんからのLINE・メモ').inputValue()) === MEMO, '変換を確定する前の文字のままコピーしても、メモの欄には何も足さない')
+  await ctx.close()
+}
+
+// 7. 質問が出ても、［LINEの文をコピー］か［飛ばす］を押す前にメモを直したら、聞いたことにしない（もう一度読み取ったら、また聞く。11/7 夜 作者の決定）
+{
+  const { ctx, p, sent } = await setup(Q)
+  await p.getByLabel('預かりさんからのLINE・メモ').fill(MEMO)
+  await readNow(p)
+  ok(await panel(p).isVisible(), '質問が出る')
+  await p.getByLabel('預かりさんからのLINE・メモ').fill(MEMO + '（架空）元気です。')
+  ok(!(await panel(p).isVisible()), 'コピーの前にメモを直したら、質問の欄は閉じる')
+  await readNow(p)
+  ok(sent.ask.length === 2 && (await panel(p).isVisible()), 'コピーも［飛ばす］も押していなければ、もう一度読み取ったときに、また聞く')
+  await ctx.close()
+}
+
+// 8. メモが一字一句同じ別の子に、前の子の聞き返しの下書きを出さない（見直しの中2）
+{
+  const { ctx, p, sent } = await setup(Q)
+  await p.getByLabel('預かりさんからのLINE・メモ').fill(MEMO)
+  await readNow(p)
+  ok(await panel(p).isVisible(), '1匹目で質問が出る')
+  // 新しく始めずに、2匹目へ（名簿から別の子を開く代わりに、入力の途中を残したまま、新しい子の id で同じメモを入れる）
+  await p.evaluate(() => {
+    const raw = localStorage.getItem('hogoneko-ask')
+    const a = JSON.parse(raw)
+    a.catId = 'another-cat'
+    localStorage.setItem('hogoneko-ask', JSON.stringify(a))
+  })
+  await p.reload()
+  await p.getByLabel('預かりさんからのLINE・メモ').waitFor()
+  ok(!(await panel(p).isVisible()), '別の子の聞き返しの下書きは、メモが同じでも出さない')
+  await readNow(p)
+  ok(sent.ask.length === 2 && (await panel(p).isVisible()) && (await p.getByLabel('預かりさんへ送るLINEの文（送る前に、自由に直せます）').inputValue()).startsWith('ミケちゃん'), 'その子で読み取ると、その子のために聞き返しを考える')
+  await ctx.close()
+}
+
+// 9. 団体の情報の［保存］：変換を確定する前の文字も入れてから保存する（見直しの中3）
+{
+  const ctx = await browser.newContext({ ...devices['iPhone 15'] })
+  const p = await ctx.newPage()
+  await p.goto(url)
+  await p.getByRole('button', { name: '追加せずに、このまま使う' }).click()
+  await p.getByLabel('団体名').fill('テスト保護猫')
+  await p.evaluate(() => {
+    const t = [...document.querySelectorAll('input')].find((x) => x.value === 'テスト保護猫')
+    t.focus()
+    const setValue = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set
+    t.dispatchEvent(new CompositionEvent('compositionstart', { bubbles: true }))
+    setValue.call(t, 'テスト保護猫の会') // 入力の知らせ（input）は送らない
+  })
+  await p.getByRole('button', { name: '登録して始める' }).click()
+  await p.getByRole('button', { name: '新しい子を紹介' }).waitFor({ timeout: 5000 }).catch(() => {})
+  ok(await p.getByText('テスト保護猫の会', { exact: true }).isVisible(), '変換を確定する前の文字のまま［登録して始める］を押しても、欄に見えている団体名で保存する')
   await ctx.close()
 }
 

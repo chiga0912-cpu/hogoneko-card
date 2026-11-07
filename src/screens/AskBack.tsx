@@ -19,6 +19,8 @@ type Props = {
 export default function AskBack({ ask, onEdit, onCopied, onSkip }: Props) {
   const [copied, setCopied] = useState<boolean | null>(null)
   const lineBox = useRef<HTMLTextAreaElement>(null)
+  const skipLatest = useRef(onSkip)
+  skipLatest.current = onSkip
   return (
     <div className="notice ask-back" data-ask>
       <p>
@@ -54,7 +56,14 @@ export default function AskBack({ ask, onEdit, onCopied, onSkip }: Props) {
         >
           {copied ? 'コピーしました ✓' : 'LINEの文をコピー'}
         </button>
-        <button type="button" className="btn btn-small btn-ghost" onClick={onSkip}>
+        <button
+          type="button"
+          className="btn btn-small btn-ghost"
+          onClick={() => {
+            flushTyped(lineBox.current) // 変換を確定する前の文字も入れてから（11/7 夜 作者の指示）
+            window.setTimeout(() => skipLatest.current(), 0)
+          }}
+        >
           飛ばす
         </button>
       </div>
