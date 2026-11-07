@@ -147,6 +147,21 @@ const post = p.locator('.field textarea').last()
 await post.waitFor()
 const before = await post.inputValue()
 ok(before.includes('・ごはんをよく食べる'), 'はじめは決まった形の投稿文（いいところの箇条書き）')
+// 本文を書く前は「まだ下書きです」と出し、［物語の本文を書いてもらう］を［動画を作る］より目立たせる（11/7 作者の要望）
+const DRAFT = 'まだ下書きです。［物語の本文を書いてもらう］を押すと、メモから紹介文を書きます。'
+const cls = (name) => p.getByRole('button', { name }).getAttribute('class')
+ok((await p.getByText(DRAFT).isVisible()) && (await cls('物語の本文を書いてもらう')).includes('btn-primary') && !(await cls('動画を作る')).includes('btn-primary'), '本文を書く前は「まだ下書きです…」と出し、［物語の本文を書いてもらう］のほうを目立たせる')
+{
+  const above = await p.evaluate(() => {
+    const n = document.querySelector('[data-draft-notice]')
+    const f = [...document.querySelectorAll('.field')].find((x) => x.textContent.includes('投稿文（その場で直せます）'))
+    return !!n && !!f && n.getBoundingClientRect().bottom <= f.getBoundingClientRect().top + 1
+  })
+  ok(above, '「まだ下書きです」は、投稿文の欄の上に出る')
+}
+await p.addStyleTag({ content: '.bottom-bar{position:static!important}' })
+await p.screenshot({ path: join(outDir, '16_本文を書く前_下書き.png'), fullPage: true })
+await p.addStyleTag({ content: '.bottom-bar{position:fixed!important}' })
 
 await p.getByRole('button', { name: '物語の本文を書いてもらう' }).click()
 await p.getByRole('button', { name: '本文を書いています…' }).waitFor({ timeout: 2000 }).catch(() => {})
@@ -158,6 +173,7 @@ ok(after.startsWith('【ミント】') && after.includes('（仮の本文）ご�
 ok(CLOSINGS.some((f) => after.includes('トイレも上手にできます。\n' + f('ミント'))), '本文のすぐあとに、決まった文（4つのどれか）をプログラムが足す')
 ok(!after.includes('・ごはんをよく食べる'), '本文があるときは、いいところの箇条書きの代わりに本文を入れる')
 ok(after.includes('お問い合わせ：（架空）DMでお問い合わせください'), '連絡先はプログラムが足す')
+ok(!(await p.getByText(DRAFT).isVisible()) && !(await cls('物語の本文を書いてもらう')).includes('btn-primary') && (await cls('動画を作る')).includes('btn-primary'), '本文を書いたあとは「まだ下書きです」を消し、［動画を作る］を目立たせる')
 await p.screenshot({ path: join(outDir, '16a_投稿文_本文.png'), fullPage: true })
 
 // 手で直したあとは、聞いてから置きかえる。［やめる］なら置きかえない

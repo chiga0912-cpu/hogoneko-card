@@ -200,6 +200,8 @@ export default function Preview({ shelter, cat, onCatChange, post, onPostChange,
   // 本文がある間は、確認が終わり、印の文をすべて人が片づけるまで押せない（SPEC 2.4）。
   // 印の文を手で直して文字が変わっても、印は消えない（［本当です（残す）］か、本文を外すまで。見直しの重い3・4。作者に聞くまでの安全な形）
   const storyInPost = !!story
+  // メモがあって、本文をまだ書いていない（投稿文は決まった形の下書き）。［物語の本文を書いてもらう］を目立たせ、下書きだと知らせる（11/7 作者の要望）
+  const draftOnly = !story && fullMemo(cat).trim() !== ''
   const checkState: CheckState =
     checking === 'checking'
       ? { status: 'checking' }
@@ -573,6 +575,7 @@ export default function Preview({ shelter, cat, onCatChange, post, onPostChange,
         shelter={shelter}
         post={post}
         live={live}
+        primary={draftOnly}
         onPost={(p, result) => {
           ;(onStoryPost ?? onPostChange)(p)
           const s = { result, check: null }
@@ -603,6 +606,11 @@ export default function Preview({ shelter, cat, onCatChange, post, onPostChange,
         />
       )}
 
+      {draftOnly && (
+        <p className="notice" data-draft-notice>
+          まだ下書きです。［物語の本文を書いてもらう］を押すと、メモから紹介文を書きます。
+        </p>
+      )}
       <label className="field">
         <span>投稿文（その場で直せます）</span>
         <textarea ref={postBox} rows={14} value={post} onChange={(e) => onPostChange(e.target.value)} />
@@ -634,7 +642,7 @@ export default function Preview({ shelter, cat, onCatChange, post, onPostChange,
           </p>
         )}
         <button
-          className="btn btn-primary btn-big"
+          className={draftOnly ? 'btn btn-big' : 'btn btn-primary btn-big'} // 本文を書く前は、［物語の本文を書いてもらう］のほうを目立たせる
           disabled={saving || tooMany || !eventsRead || storyBlocked}
           onClick={() => {
             // iPhone の日本語入力で、変換を確定する前に押したとき、投稿文の欄の最後の文字が入らないまま作らないように、
