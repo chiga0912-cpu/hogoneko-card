@@ -3,7 +3,8 @@
 export type AskState = {
   memo: string // どのメモに対する聞き返しか（メモが変わったら使わない）
   line: string // 預かりさんへ送るLINEの文（直した文）
-  reply: string // 貼りかけの返事
+  reply: string // 使わない（前の版の名残。返事はメモの欄に貼る）
+  noted?: string // メモの欄に足した「聞いたこと」の1行（LINEの文を直してコピーし直したら、置きかえる）
   status: 'open' | 'added' | 'skipped' | 'none' // none：聞き返しは要らなかった・出さなかった（同じメモで二度聞かない）
 }
 

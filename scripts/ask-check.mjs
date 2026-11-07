@@ -4,7 +4,8 @@
 import { chromium, devices } from 'playwright'
 import { mkdirSync } from 'node:fs'
 import { join } from 'node:path'
-import { askLine, questionOk, fullMemo, replyAddition, REPLY_LABEL, QUESTION_LABEL } from '../src/lib/ask.ts'
+import { askLine, questionOk, askedLine, noteAsked, alreadyAsked, ASKED_LABEL } from '../src/lib/ask.ts'
+import { cleanLine } from '../src/lib/lineText.ts'
 import { cardSwaps, cardWordLines, addSwap, removeSwap } from '../src/lib/words.ts'
 
 const outDir = process.argv[2] ?? 'screenshots'
@@ -21,10 +22,16 @@ ok(askLine('ミケ', 'ひざに乗ってくることはありますか？') === 
 ok(askLine(' ', 'ひざに乗ってくることはありますか？') === '紹介を書いています。ひざに乗ってくることはありますか？ よかったら教えてください。', '名前がまだないときは「紹介を書いています。」から')
 ok(questionOk('ひざに乗ってくることはありますか？') && questionOk('好きなおもちゃはありますか?'), '質問1つ・「？」で終わる形は通す')
 ok(!questionOk('ひざに乗りますか？おもちゃは好きですか？') && !questionOk('ひざに乗りますか？\nよろしく') && !questionOk('ひざに乗ります。') && !questionOk('あ'.repeat(70) + '？'), '質問が2つ・改行あり・「？」なし・長すぎるものは通さない')
-ok(replyAddition('（架空）よく遊びます。\n夜は鳴きます') === `${REPLY_LABEL}\n（架空）よく遊びます。\n夜は鳴きます`, '返事は一字も変えずに「（預かりさんの返事）」のあとに足す')
-ok(replyAddition('（架空）はい', 'ミケちゃんの紹介を書いています。\nひざに乗りますか？ ') === `${QUESTION_LABEL}\nミケちゃんの紹介を書いています。\nひざに乗りますか？\n${REPLY_LABEL}\n（架空）はい`, '聞いた質問（送ったLINEの文）も、返事の前に一字も変えずに足す（11/7 作者の決定）')
-ok(fullMemo({ memo: 'A', memoAdditions: '' }) === 'A' && fullMemo({ memo: 'A', memoAdditions: replyAddition('B') }) === `A\n${REPLY_LABEL}\nB`, '読み取り・投稿文には、元のメモ＋足した返事を使う')
-
+ok(askedLine('ミケちゃんの紹介を書いています。ひざに乗ってくることはありますか？ よかったら教えてください。') === `${ASKED_LABEL}ひざに乗ってくることはありますか？`, '「聞いたこと」は、LINEの文から初めのあいさつを外した質問を1行で（11/7 作者の決定）')
+ok(askedLine('ミケちゃんのことで1つだけ。\nひざに乗ってくることはありますか？') === `${ASKED_LABEL}ミケちゃんのことで1つだけ。 ひざに乗ってくることはありますか？`, 'LINEの文を直していたら、直した文を1行にして足す')
+ok(noteAsked('（架空）いい子です。\n\n', `${ASKED_LABEL}Q？`) === `（架空）いい子です。\n${ASKED_LABEL}Q？`, 'メモの欄の最後に1行足す')
+ok(noteAsked(`A\n${ASKED_LABEL}Q？`, `${ASKED_LABEL}Q？`) === `A\n${ASKED_LABEL}Q？`, '同じ行は二重に足さない')
+ok(noteAsked(`A\n${ASKED_LABEL}Q？\nはい`, `${ASKED_LABEL}R？`, `${ASKED_LABEL}Q？`) === `A\n${ASKED_LABEL}R？\nはい`, '直してコピーし直したら、前に足した行を置きかえる')
+ok(alreadyAsked(`A\n${ASKED_LABEL}Q？`) && !alreadyAsked('A'), '「聞いたこと」の行があれば、もう聞いたとみなす')
+{
+  const hist = `2026/11/07(土)\n10:00\t預かりA\t（架空）いい子です\n${ASKED_LABEL}ひざに乗りますか？\nいいえ`
+  ok(cleanLine(hist).text.includes(`${ASKED_LABEL}ひざに乗りますか？`), 'LINEの履歴の形のメモでも、「聞いたこと」の行は外さない')
+}
 {
   const gp = ['短い行', '（架空）とても長い元の行です']
   const cl = addSwap([], '（架空）とても長い元の行です', '長い元の行')
@@ -96,49 +103,35 @@ const readNow = async (p) => {
   await line.fill('ミケちゃんのことで1つだけ。ひざに乗ってくることはありますか？ ')
   ok(await p.getByRole('button', { name: 'LINEの文をコピー' }).isVisible(), 'コピーしたあとでLINEの文を直したら、ボタンは［LINEの文をコピー］に戻る（見直しの8）')
   await line.fill('ミケちゃんのことで1つだけ。ひざに乗ってくることはありますか？')
-  const reply = p.getByLabel('預かりさんの返事（貼るか、書いてください）')
-  await reply.fill('（架空）よくひざに乗ってきます')
+  const memoBox = p.getByLabel('預かりさんからのメッセージ・メモ')
+  ok((await p.getByLabel(/預かりさんの返事/).count()) === 0 && (await p.getByRole('button', { name: '返事をメモに足す' }).count()) === 0, '返事を貼る専用の欄と［返事をメモに足す］はない（11/7 作者の決定）')
+  const ASKED = `${ASKED_LABEL}ミケちゃんのことで1つだけ。ひざに乗ってくることはありますか？`
+  ok((await memoBox.inputValue()) === `${MEMO}\n${ASKED}`, `［LINEの文をコピー］で、メモの欄の最後に「聞いたこと」を1行足す（${JSON.stringify(await memoBox.inputValue())}）`)
+  ok(await p.getByText('返事が来たら、上の欄の最後に貼って、もう一度［メッセージから読み取る］を押してください').isVisible(), '返事の貼り方を短く出す')
+  await p.getByRole('button', { name: /LINEの文をコピー|コピーしました/ }).click()
+  await p.waitForTimeout(200)
+  ok((await memoBox.inputValue()) === `${MEMO}\n${ASKED}`, 'もう一度コピーしても、二重には足さない')
   await p.screenshot({ path: join(outDir, '4a_聞き返し.png'), fullPage: true })
   // LINEに移って戻った代わりに、読み込み直す
   await p.waitForTimeout(800)
   await p.reload()
-  await p.getByLabel('預かりさんからのメッセージ・メモ').waitFor()
+  await memoBox.waitFor()
   ok(await panel(p).isVisible(), '返事を待つ間も、聞き返しの欄が残る（読み込み直しても消えない）')
-  ok((await line.inputValue()) === 'ミケちゃんのことで1つだけ。ひざに乗ってくることはありますか？' && (await reply.inputValue()) === '（架空）よくひざに乗ってきます', '直したLINEの文と、貼りかけの返事も残る')
+  ok((await line.inputValue()) === 'ミケちゃんのことで1つだけ。ひざに乗ってくることはありますか？' && (await memoBox.inputValue()) === `${MEMO}\n${ASKED}`, '直したLINEの文と、足した「聞いたこと」も残る')
+  // 返事をメモの欄の最後に貼って、読み取り直す
   const replyText = '（架空）よくひざに乗ってきます。\n夜は  少しさみしがりです🐾 電話は 090-0000-0000 です'
-  await reply.fill(replyText)
+  await memoBox.fill(`${MEMO}\n${ASKED}\n${replyText}`)
+  ok(!(await panel(p).isVisible()), '返事を貼ってメモが変わったら、聞き返しの欄は閉じる')
   const readsBefore = sent.read.length
-  await p.getByRole('button', { name: '返事をメモに足す' }).click()
-  await p.waitForTimeout(800)
-  ok(!(await panel(p).isVisible()), '返事を足したら、聞き返しの欄は閉じる')
-  const added = await p.locator('[data-memo-additions] pre').textContent().catch(() => null)
-  const LINE2 = 'ミケちゃんのことで1つだけ。ひざに乗ってくることはありますか？'
-  const ADDED = `${QUESTION_LABEL}\n${LINE2}\n${REPLY_LABEL}\n${replyText}`
-  ok(added === ADDED, `聞いた質問（送ったLINEの文）と返事を、書き換えずにメモの最後に足す（${JSON.stringify(added)}）`)
-  ok((await p.getByLabel('預かりさんからのメッセージ・メモ').inputValue()) === MEMO, '元のメモの欄は変えない')
-  ok(sent.read.length === readsBefore + 1 && sent.read.at(-1).includes(`${REPLY_LABEL}\n（架空）よくひざに乗ってきます。`), '返事を足したら、元のメモ＋返事で読み取り直す')
+  await readNow(p)
+  ok(sent.read.length === readsBefore + 1 && sent.read.at(-1).includes(`${ASKED_LABEL}ミケちゃんのことで1つだけ。ひざに乗ってくることはありますか？\n（架空）よくひざに乗ってきます。`), '読み取り直すと、「聞いたこと」と返事を含めたメモで読み取る')
   ok(!sent.read.at(-1).includes('090-0000-0000'), '読み取り直すときも、返事の中の電話番号を伏せて送る（見直しの5）')
-  ok(sent.ask.length === 1, '返事を足したあとは、もう聞き返さない')
-  await p.screenshot({ path: join(outDir, '4b_聞き返し_返事を足した.png'), fullPage: true })
-  await p.reload()
-  await p.getByLabel('預かりさんからのメッセージ・メモ').waitFor()
-  ok((await p.locator('[data-memo-additions] pre').textContent().catch(() => null)) === ADDED, '足した質問と返事は、入力の途中として残る（読み込み直しても消えない）')
+  ok(sent.ask.length === 1 && !(await panel(p).isVisible()), '「聞いたこと」の行があれば、もう聞き返さない')
+  await p.screenshot({ path: join(outDir, '4b_聞き返し_返事を貼った.png'), fullPage: true })
+  // 「聞いたこと」の行は人が消せる。消して読み取ると、新しいメモとしてもう一度考える
+  await memoBox.fill(MEMO + '（架空）よくひざに乗ってきます。')
   await readNow(p)
-  ok(sent.ask.length === 1 && !(await panel(p).isVisible()), '返事を足したあとで読み取り直しても、聞き返しは出ない')
-  // 足した返事を外せる（見直しの1）
-  await p.getByRole('button', { name: '足した返事を外す' }).click()
-  ok((await p.locator('[data-memo-additions]').count()) === 0, '［足した返事を外す］で、足した質問と返事を外せる')
-  // 外したあとは、同じ質問の欄がもう一度出る（Claudeは呼び直さない。11/7 作者の決定）
-  await p.waitForTimeout(300)
-  ok((await panel(p).isVisible()) && sent.ask.length === 1, '外したあと、同じ質問の欄がもう一度出る（聞き返しの窓口は呼ばない）')
-  ok((await line.inputValue()) === LINE2 && (await reply.inputValue()) === replyText, '欄には、前のLINEの文と、外した返事が残る（直して足し直せる）')
-  await readNow(p)
-  ok(!sent.read.at(-1).includes(REPLY_LABEL) && !sent.read.at(-1).includes(QUESTION_LABEL), '外したあとは、質問も返事も使わずに読み取る')
-  ok(sent.ask.length === 1, '外したあとで読み取り直しても、聞き返しの窓口は呼ばない')
-  await reply.fill('（架空）ひざには乗りません')
-  await p.getByRole('button', { name: '返事をメモに足す' }).click()
-  await p.waitForTimeout(800)
-  ok((await p.locator('[data-memo-additions] pre').textContent().catch(() => null)) === `${QUESTION_LABEL}\n${LINE2}\n${REPLY_LABEL}\n（架空）ひざには乗りません`, '外したあとで、直した返事を足し直せる')
+  ok(sent.ask.length === 2, '「聞いたこと」の行を消して読み取ると、もう一度聞き返しを考える')
   await ctx.close()
 }
 

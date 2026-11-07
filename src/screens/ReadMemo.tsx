@@ -1,11 +1,11 @@
 import { callClaude, limitText } from '../lib/claude'
-import { useEffect, useRef, useState } from 'react'
+import { useState } from 'react'
 import type { Cat } from '../types'
 import { cleanLine } from '../lib/lineText'
 import { maskContacts, type Extracted } from '../lib/extract'
 import { applyExtract, type Applied } from '../lib/applyExtract'
 import { fromMonthValue } from '../lib/age'
-import { askLine, fullMemo, replyAddition } from '../lib/ask'
+import { alreadyAsked, askedLine, askLine, fullMemo, noteAsked } from '../lib/ask'
 import AskBack from './AskBack'
 import { loadAsk, saveAsk, type AskState } from '../lib/askState'
 
@@ -26,17 +26,6 @@ export default function ReadMemo({ cat, onChange }: Props) {
     saveAsk(a)
   }
   const [asking, setAsking] = useState(false)
-  // ［足した返事を外す］のあとは、同じ質問の欄をもう一度出す（Claudeは呼び直さない。11/7 作者の決定）
-  // 外した返事は欄に残す（貼り直すときに、直して使えるように）
-  // 開いたときではなく、足した質問と返事が「あった → なくなった」ときだけ（同じ文のメモの、別の子を名簿から開いたときに出さないため。見直しの軽い4）
-  const hadAdditions = useRef(!!cat.memoAdditions.trim())
-  useEffect(() => {
-    const has = !!cat.memoAdditions.trim()
-    if (hadAdditions.current && !has && ask && ask.memo === cat.memo && ask.status === 'added') setAsk({ ...ask, status: 'open' })
-    hadAdditions.current = has
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [cat.memoAdditions, cat.memo])
-
   // 聞き返しが要るかをClaudeに聞く。同じメモでは一度だけ（質問が出なかった・飛ばした・返事を足したあとは聞かない）
   // 失敗したとき・上限のときは、何も出さずに先へ進める（聞き返しは必ずではない）
   const askBack = async (masked: string, name: string, memoKey: string) => {
@@ -55,7 +44,7 @@ export default function ReadMemo({ cat, onChange }: Props) {
     }
   }
 
-  // memoText：読み取りに使うメモ（元のメモ＋足した返事）。askAfter：読み取りのあとで聞き返しを考えるか
+  // memoText：読み取りに使うメモ。askAfter：読み取りのあとで聞き返しを考えるか
   const read = async (memoText = fullMemo(cat), askAfter = true) => {
     setBusy(true)
     setFailed(false)
@@ -73,8 +62,8 @@ export default function ReadMemo({ cat, onChange }: Props) {
       // 根拠の照合は、送ったメモ（返事を足したならそれも含む）で行う
       onChange((c) => applyExtract(c, result, memoText).cat)
       setReport({ applied: applyExtract(cat, result, memoText), dropped: body.dropped ?? [], masked: n })
-      // 返事をまだ足していなければ、聞き返しが要るかを考える
-      if (askAfter && !cat.memoAdditions.trim()) await askBack(masked, cat.name.trim() || result.name?.value || '', cat.memo)
+      // まだ聞いていなければ（メモに「聞いたこと」の行がなければ）、聞き返しが要るかを考える
+      if (askAfter && !alreadyAsked(cat.memo)) await askBack(masked, cat.name.trim() || result.name?.value || '', cat.memo)
     } catch {
       setFailed(true)
     } finally {
@@ -82,14 +71,15 @@ export default function ReadMemo({ cat, onChange }: Props) {
     }
   }
 
-  // 返事は書き換えずに、聞いた質問（送ったLINEの文）と一緒に、元のメモの最後に足し、読み取り直す（SPEC 2.3）
-  const addReply = (reply: string) => {
+  // ［LINEの文をコピー］を押したら、メモの欄の最後に「（預かりさんに聞いたこと）〜」を1行足す（11/7 作者の決定）。
+  // 返事が来たら、スタッフさんがメモの欄の最後に貼って、もう一度読み取る。足した行は、人が消したり直したりできる
+  const onCopied = (line: string) => {
     if (!ask) return
-    const addition = replyAddition(reply, ask.line)
-    const additions = cat.memoAdditions.trim() ? `${cat.memoAdditions}\n${addition}` : addition
-    onChange((c) => ({ ...c, memoAdditions: c.memoAdditions.trim() ? `${c.memoAdditions}\n${addition}` : addition }))
-    setAsk({ ...ask, status: 'added' })
-    void read(fullMemo({ memo: cat.memo, memoAdditions: additions }), false)
+    const add = askedLine(line)
+    const memo = noteAsked(cat.memo, add, ask.noted)
+    if (memo !== cat.memo) onChange((c) => ({ ...c, memo: noteAsked(c.memo, add, ask.noted) }))
+    // 下書きは、足したあとのメモに付けかえる（メモが変わると、別のメモの下書きとみなして消えてしまうため）
+    setAsk({ ...ask, memo, noted: add })
   }
   const showAsk = ask && ask.memo === cat.memo && ask.status === 'open'
 
@@ -134,7 +124,7 @@ export default function ReadMemo({ cat, onChange }: Props) {
       )}
       {/* 聞き返し（#18）。読み取りの結果の知らせのあとに出す */}
       {asking && <p className="muted center">預かりさんに聞くことがあるか、考えています…</p>}
-      {showAsk && ask && <AskBack ask={ask} onEdit={setAsk} onAdd={addReply} onSkip={() => setAsk({ ...ask, status: 'skipped' })} />}
+      {showAsk && ask && <AskBack ask={ask} onEdit={setAsk} onCopied={onCopied} onSkip={() => setAsk({ ...ask, status: 'skipped' })} />}
     </div>
   )
 }

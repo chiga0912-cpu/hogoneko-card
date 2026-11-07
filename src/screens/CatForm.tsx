@@ -189,18 +189,6 @@ export default function CatForm({ cat, fromRoster, onChange, onBack, onNext, aut
         />
         <small className="muted">何通かあれば、続けて貼ってください</small>
       </label>
-      {/* 聞き返しで足した質問と返事（#18。SPEC 2.3）。書き換えずに、メモの最後に足してある */}
-      {cat.memoAdditions.trim() && (
-        <div className="notice memo-additions" data-memo-additions>
-          <p className="muted">メモの最後に、聞いた質問と預かりさんの返事を足しました（書き換えていません）。読み取りと投稿文づくりに使います。</p>
-          <pre className="line-preview">{cat.memoAdditions}</pre>
-          {/* まちがえて貼ったとき・メッセージを新しくしたときに外せるように（見直しの1） */}
-          <p className="muted">ちがう返事を足したときや、メッセージを新しく貼り直したときは、外してください（質問も一緒に外れます。外したあと、同じ質問の欄がもう一度出ます）。</p>
-          <button type="button" className="btn btn-small btn-ghost" onClick={() => onChange((c) => ({ ...c, memoAdditions: '' }))}>
-            足した返事を外す
-          </button>
-        </div>
-      )}
       {cleaned.isHistory && (
         <div className="notice line-notice" data-removed={cleaned.removed}>
           LINEのトーク履歴の形でした。読み取るときは、時刻・名前・スタンプなど{cleaned.removed}行を外した文章を使います（欄の文章はそのままです）。

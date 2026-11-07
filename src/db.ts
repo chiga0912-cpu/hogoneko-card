@@ -4,6 +4,7 @@
 // - events：譲渡会
 // - drafts：入力の途中（LINEに移ってページが読み込み直されても消えないように）
 // - catMedia：猫の写真と撮った動画（版2から。名簿の一覧を開くたびに全員分の写真を読まないように、cats から分けた）
+import { fullMemo } from './lib/ask'
 import {
   AGE_STAGES,
   NEUTERS,
@@ -227,8 +228,9 @@ function normalizeCatText(raw: unknown): Omit<Cat, 'photos' | 'clip'> | null {
     updatedAt: num(raw.updatedAt, num(raw.createdAt, 0)),
     framing: isObj(raw.framing) ? (raw.framing as Cat['framing']) : {},
     textPosition: oneOf(raw.textPosition, ['up', 'normal', 'down'] as const, 'normal'),
-    memo: str(raw.memo),
-    memoAdditions: str(raw.memoAdditions),
+    // 前の版（11/7朝まで）で返事を別に足していたら、メモの欄の最後に移す（見えない所でメモが使われないように）
+    memo: fullMemo({ memo: str(raw.memo), memoAdditions: str(raw.memoAdditions) }),
+    memoAdditions: '',
     name: str(raw.name),
     age: age(raw.age),
     sex: oneOf(raw.sex, SEXES, '未確認'),
