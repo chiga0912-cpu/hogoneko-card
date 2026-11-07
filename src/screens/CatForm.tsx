@@ -18,6 +18,7 @@ import { TopBar } from './ShelterForm'
 import ClipPicker from './ClipPicker'
 import ReadMemo, { FromMemo } from './ReadMemo'
 import { cleanLine } from '../lib/lineText'
+import { flushTyped } from '../lib/typed'
 
 type Props = {
   cat: Cat
@@ -112,17 +113,7 @@ export default function CatForm({ cat, fromRoster, onChange, onBack, onNext, aut
   const wordsBox = useRef<HTMLTextAreaElement>(null)
   const latest = useRef({ onNext, onBack, missing })
   latest.current = { onNext, onBack, missing }
-  const commitTyped = () => {
-    if (document.activeElement instanceof HTMLElement) document.activeElement.blur()
-    const memo = memoBox.current?.value
-    if (memo !== undefined && memo !== cat.memo) set('memo', memo)
-    const name = nameBox.current?.value
-    if (name !== undefined && name !== cat.name) set('name', name)
-    const points = pointsBox.current?.value
-    if (points !== undefined && points !== cat.goodPoints.join('\n')) set('goodPoints', points.split('\n'))
-    const words = wordsBox.current?.value
-    if (words !== undefined && words !== cat.carerWords) set('carerWords', words)
-  }
+  const commitTyped = () => flushTyped(memoBox.current, nameBox.current, pointsBox.current, wordsBox.current)
   const next = () => {
     commitTyped()
     window.setTimeout(() => {
@@ -229,7 +220,7 @@ export default function CatForm({ cat, fromRoster, onChange, onBack, onNext, aut
       )}
 
       {/* 3. 読み取り（Claudeがメモから項目を入れる。入れた項目には「メモから」の印） */}
-      <ReadMemo cat={cat} onChange={onChange} />
+      <ReadMemo cat={cat} onChange={onChange} beforeRead={commitTyped} />
 
       {/* 4. 項目 */}
       <label className="field">

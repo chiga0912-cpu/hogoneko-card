@@ -1,5 +1,6 @@
-import { useState } from 'react'
+import { useRef, useState } from 'react'
 import { copyText } from '../lib/copy'
+import { flushTyped } from '../lib/typed'
 import type { AskState } from '../lib/askState'
 
 // 聞き返し（#18。SPEC 2.3）の欄。読み取りのすぐ下に出す
@@ -17,6 +18,7 @@ type Props = {
 
 export default function AskBack({ ask, onEdit, onCopied, onSkip }: Props) {
   const [copied, setCopied] = useState<boolean | null>(null)
+  const lineBox = useRef<HTMLTextAreaElement>(null)
   return (
     <div className="notice ask-back" data-ask>
       <p>
@@ -25,6 +27,7 @@ export default function AskBack({ ask, onEdit, onCopied, onSkip }: Props) {
       <label className="field">
         <span>預かりさんへ送るLINEの文（送る前に、自由に直せます）</span>
         <textarea
+          ref={lineBox}
           rows={4}
           value={ask.line}
           onChange={(e) => {
@@ -38,12 +41,16 @@ export default function AskBack({ ask, onEdit, onCopied, onSkip }: Props) {
           type="button"
           className="btn btn-small"
           disabled={!ask.line.trim()}
-          onClick={() =>
-            void copyText(ask.line).then((ok) => {
+          onClick={() => {
+            // 欄に見えている文をコピーする（iPhone の日本語入力で、変換を確定する前に押しても、最後の文字まで。11/7）
+            // コピーは押したその場で行う（あとに回すと、スマホがコピーを許さないことがあるため）
+            flushTyped(lineBox.current)
+            const line = lineBox.current?.value ?? ask.line
+            void copyText(line).then((ok) => {
               setCopied(ok)
-              onCopied(ask.line) // コピーできなくても（長押しでコピーしてもらう）、聞いたことはメモに足す
+              onCopied(line) // コピーできなくても（長押しでコピーしてもらう）、聞いたことはメモに足す
             })
-          }
+          }}
         >
           {copied ? 'コピーしました ✓' : 'LINEの文をコピー'}
         </button>

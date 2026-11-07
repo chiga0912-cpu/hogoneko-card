@@ -4,7 +4,7 @@
 import { chromium, devices } from 'playwright'
 import { mkdirSync } from 'node:fs'
 import { join } from 'node:path'
-import { splitMemo, factChunks, stripHashtags, leakedWords, EXAMPLES, stripClosing, closingLine, CLOSINGS, tidyEmoji, dropMeta, removeSentence, parseVerdicts } from '../src/lib/story.ts'
+import { splitMemo, factChunks, stripHashtags, leakedWords, EXAMPLES, stripClosing, closingLine, CLOSINGS, tidyEmoji, dropMeta, removeSentence, parseVerdicts, flagOldName, writtenNameOf, OLD_NAME_REASON } from '../src/lib/story.ts'
 
 const outDir = process.argv[2] ?? 'screenshots'
 const url = process.argv[3] ?? 'http://localhost:5173'
@@ -31,6 +31,15 @@ ok(EXAMPLES.length === 3 && EXAMPLES.every((e) => !/ワクチン/.test(e.body)),
 ok(stripClosing('（架空）よく食べます。\nそんなミントの、ずっとのおうちを探しています。') === '（架空）よく食べます。' && stripClosing('（架空）よく食べます！\nミントに、素敵なご縁がありますように🍀') === '（架空）よく食べます！', 'Claudeが書いたまとめの文は外す（決まった文と2回出ないように）')
 ok(stripClosing('そんなに食べない子です。') === 'そんなに食べない子です。', '1行だけの本文や、まとめでない「そんな」の文は外さない')
 ok(CLOSINGS.map((f) => f('ミント')).includes(closingLine(' ミント ', 'id-1')) && closingLine('ミント', 'id-1') === closingLine('ミント', 'id-1'), '決まった文は4つのどれかで、名前だけが入り、同じ猫なら同じ文')
+{
+  const V = (n) => Array.from({ length: n }, (_, i) => ({ i, ok: true, cites: [{ doc: 0, start: 0, end: 1, text: 'x' }], reason: '' }))
+  const S2 = ['ミントはよく食べます。', '夜はよく眠ります。']
+  const f1 = flagOldName(S2, V(2), 'ミント', 'ミルク')
+  ok(!f1[0].ok && f1[0].reason === OLD_NAME_REASON && f1[1].ok, '名前を変えたあと、本文に前の名前が残っている文だけ、確認役の答えにかかわらず印を付ける（理由「前の名前が残っています」）')
+  ok(flagOldName(S2, V(2), 'ミント', 'ミント').every((v) => v.ok), '名前を変えていなければ、印を付けない')
+  ok(flagOldName(['モカちゃんはよく食べます。'], V(1), 'モカ', 'モカちゃん')[0].ok && !flagOldName(['モカはよく食べます。'], V(1), 'モカ', 'モカちゃん')[0].ok, '今の名前の中に前の名前が入っているとき（モカ→モカちゃん）は、今の名前の部分を除いて探す')
+  ok(writtenNameOf({ body: '', parts: [], memoChunks: [], factChunks: ['名前：ミント'], writtenName: 'モカ' }) === 'モカ' && writtenNameOf({ body: '', parts: [], memoChunks: [], factChunks: ['名前：ミント'] }) === 'ミント', '本文を書いたときの名前（前の版の途中には無いので、確認した項目の名前で代わりにする）')
+}
 ok(new Set(['a', 'b', 'c', 'd', 'e', 'f', 'g', 'h'].map((k) => closingLine('ミント', 'cat-' + k))).size >= 3, '猫が違えば、決まった文もばらける（全部が同じ文にならない）')
 
 ok(tidyEmoji('（架空）よく食べます😊\nよく寝ます😊🍀\n遊びます🏠🐾', 3) === '（架空）よく食べます😊\nよく寝ます\n遊びます🐾', '同じ絵文字の2回目と、決まった文の🍀🏠を本文から外す')
@@ -540,6 +549,74 @@ for (const how of ['確定した文字', '変換を確定する前の文字']) {
   await ctx6.close()
 }
 
+// 変換を確定する前の文字（欄には見えているが、入力の知らせがまだ届いていない）のまま、
+// ［メッセージから読み取る］［動画を作る］を押したときも、欄に見えている文字を使う（11/7 作者の指示）
+{
+  const ctx7 = await browser.newContext({ ...devices['iPhone 15'] })
+  await ctx7.addInitScript(() => {
+    window.__copied = null
+    try {
+      Object.defineProperty(navigator, 'clipboard', { value: { writeText: async (t) => void (window.__copied = t) }, configurable: true })
+      Object.defineProperty(navigator, 'share', { value: undefined, configurable: true })
+    } catch {
+      // そのまま
+    }
+  })
+  const s7 = await ctx7.newPage()
+  const readSent = []
+  await s7.route('**/api/read', (r) => {
+    readSent.push(JSON.parse(r.request().postData() ?? '{}').memo)
+    return r.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ result: { name: { value: 'モカ', source: 'モカは' }, sex: null, age: null, vaccine: null, neuter: null, virusTest: null, goodPoints: [], carerWords: null }, dropped: [] }) })
+  })
+  await s7.route('**/api/ask', (r) => r.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ question: null, skipped: 'not-needed' }) }))
+  // endOnBlur：欄から離れたときに変換が終わる形にするか（false なら、入力の知らせも変換の終わりも届かない、いちばん悪い形）
+  const typeUncommitted = (selector, add, endOnBlur = true) =>
+    s7.evaluate(
+      ([sel, text, end]) => {
+        const t = sel === 'last' ? [...document.querySelectorAll('textarea')].at(-1) : document.querySelector(sel)
+        t.focus()
+        const setValue = Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, 'value').set
+        t.dispatchEvent(new CompositionEvent('compositionstart', { bubbles: true }))
+        setValue.call(t, t.value + text) // 入力の知らせ（input）は送らない
+        // 欄から離れたら、変換は終わる（入力の知らせは届かないまま）
+        if (end) t.addEventListener('blur', () => t.dispatchEvent(new CompositionEvent('compositionend', { bubbles: true, data: text })), { once: true })
+      },
+      [selector, add, endOnBlur],
+    )
+  await s7.goto(url)
+  await s7.getByRole('button', { name: '追加せずに、このまま使う' }).click()
+  await s7.getByLabel('団体名').fill('テスト保護猫の会')
+  await s7.getByRole('button', { name: '登録して始める' }).click()
+  await s7.getByRole('button', { name: '新しい子を紹介' }).click()
+  await s7.locator('input[type=file][accept="image/*"]').setInputFiles(dummy)
+  await s7.locator('.photo img').first().waitFor()
+  await s7.getByLabel('預かりさんからのLINE・メモ').fill('（架空）モカは毎朝お迎えに来てくれます。')
+  await typeUncommitted('textarea', '夜は静かに寝ています', false)
+  await s7.getByRole('button', { name: 'メッセージから読み取る' }).click()
+  await s7.waitForTimeout(800)
+  ok(readSent.length === 1 && readSent[0].endsWith('夜は静かに寝ています'), `変換を確定する前の文字のまま［メッセージから読み取る］を押しても、欄に見えている文字まで読み取りに送る（${JSON.stringify(readSent[0] ?? '')}）`)
+  await s7.getByRole('button', { name: '次へ' }).click()
+  await s7.getByRole('button', { name: '動画を作る' }).waitFor()
+  await s7.waitForTimeout(500)
+  // ハッシュタグを6こにしたまま押したら、作らない（確定してから確かめ直す）
+  await typeUncommitted('last', '\n#a #b #c #d #e #f')
+  await s7.getByRole('button', { name: '動画を作る' }).click()
+  await s7.waitForTimeout(600)
+  ok((await s7.getByRole('heading', { name: /できあがり|保存/ }).count()) === 0 && (await s7.getByText(/ハッシュタグが\d+こあります/).isVisible()), '変換を確定する前の文字でハッシュタグが6こになっていたら、［動画を作る］を押しても作らず、知らせる')
+  const box7 = s7.getByLabel('投稿文（その場で直せます）')
+  await box7.fill((await box7.inputValue()).replace('\n#a #b #c #d #e #f', ''))
+  await typeUncommitted('last', '\n（確定前の行）')
+  await s7.getByRole('button', { name: '動画を作る' }).click()
+  const share7 = s7.getByRole('button', { name: '投稿文をコピーしてInstagramへ' })
+  await share7.waitFor({ timeout: 90000 }).catch(() => {})
+  for (let k = 0; k < 90 && !(await share7.isEnabled().catch(() => false)); k++) await s7.waitForTimeout(1000)
+  await share7.click().catch(() => {})
+  await s7.waitForTimeout(500)
+  const copied7 = (await s7.evaluate(() => window.__copied)) ?? ''
+  ok(copied7.includes('（確定前の行）'), `変換を確定する前の文字のまま［動画を作る］を押しても、欄に見えている投稿文で作る（コピーされた投稿文に入っている：${copied7.includes('（確定前の行）')}）`)
+  await ctx7.close()
+}
+
 // 本文を書いている間に［戻る］で入力を変えても、届いた本文の投稿文は今の入力で組み立てる（#23のあとの見直しの重い1。11/7 作者のOK）
 // 本文が届いたあとに名前を変えたら、投稿文の頭の【名前】と最後の決まった文を今の名前にする（手で直した投稿文でも。11/7 作者の決定）
 {
@@ -614,6 +691,10 @@ for (const how of ['確定した文字', '変換を確定する前の文字']) {
   // 本文が届いたあとに［消す］などで手で直した投稿文でも、名前を変えたら頭と決まった文は今の名前にする
   await s5.getByRole('button', { name: 'もう一度確かめる' }).first().click()
   await s5.waitForTimeout(800)
+  // 確かめ直すと、前の名前（ミント）が残る文に「⚠ 前の名前が残っています」。メモに「ミント」があり、確認役が「ある」と答えても（11/7 作者の決定）
+  ok((await s5.locator('[data-old-name]').count()) === 1 && (await s5.locator('.story-line[data-flag="1"]', { hasText: 'ミントはよく食べる子です' }).count()) === 1 && (await s5.locator('.story-line[data-flag="1"]').count()) === 1, '名前を変えて確かめ直すと、前の名前が残る文だけに「⚠ 前の名前が残っています」（メモに前の名前があっても）')
+  ok(await s5.getByRole('button', { name: '動画を作る' }).isDisabled(), '前の名前が残る文を片づけるまで、［動画を作る］は押せない')
+  await s5.screenshot({ path: join(outDir, '17g_前の名前が残っています.png'), fullPage: true })
   await postBox.fill((await postBox.inputValue()).replace('（仮の本文）夜はよく眠ります。', ''))
   await s5.getByRole('button', { name: '戻る' }).click()
   await s5.getByRole('textbox', { name: /^名前/ }).fill('ハナ')

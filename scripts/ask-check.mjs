@@ -288,6 +288,26 @@ for (const [label, ans] of [
   await ctx.close()
 }
 
+// 6. 変換を確定する前の文字（欄には見えているが、入力の知らせがまだ届いていない）のまま［LINEの文をコピー］を押しても、見えている文をコピーし、メモに足す（11/7）
+{
+  const { ctx, p } = await setup(Q)
+  await p.getByLabel('預かりさんからのLINE・メモ').fill(MEMO)
+  await readNow(p)
+  await p.evaluate(() => {
+    const t = [...document.querySelectorAll('textarea')].find((x) => x.closest('[data-ask]'))
+    t.focus()
+    const setValue = Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, 'value').set
+    t.dispatchEvent(new CompositionEvent('compositionstart', { bubbles: true }))
+    setValue.call(t, 'ミケちゃんのことで1つだけ。ひざに乗ってくることはありますか？')
+    t.addEventListener('blur', () => t.dispatchEvent(new CompositionEvent('compositionend', { bubbles: true })), { once: true })
+  })
+  await p.getByRole('button', { name: 'LINEの文をコピー' }).click()
+  await p.waitForTimeout(300)
+  ok((await p.evaluate(() => window.__copied)) === 'ミケちゃんのことで1つだけ。ひざに乗ってくることはありますか？', '変換を確定する前の文字のまま［LINEの文をコピー］を押しても、欄に見えている文をコピーする')
+  ok((await p.getByLabel('預かりさんからのLINE・メモ').inputValue()).endsWith(`${ASKED_LABEL}ミケちゃんのことで1つだけ。ひざに乗ってくることはありますか？`), '変換を確定する前の文字のままでも、メモには見えていた文で「聞いたこと」を足す')
+  await ctx.close()
+}
+
 await browser.close()
 console.log(failures ? `確認NGが${failures}こあります` : '聞き返し・カードの言葉の案の確認：全部OK')
 process.exit(failures ? 1 : 0)

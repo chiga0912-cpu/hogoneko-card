@@ -1,5 +1,5 @@
 import { callClaude, limitText } from '../lib/claude'
-import { useState } from 'react'
+import { useRef, useState } from 'react'
 import type { Cat } from '../types'
 import { cleanLine } from '../lib/lineText'
 import { maskContacts, type Extracted } from '../lib/extract'
@@ -9,12 +9,13 @@ import { alreadyAsked, askedLine, askLine, fullMemo, noteAsked } from '../lib/as
 import AskBack from './AskBack'
 import { loadAsk, saveAsk, type AskState } from '../lib/askState'
 
-type Props = { cat: Cat; onChange: (update: (c: Cat) => Cat) => void }
+// beforeRead：読み取る前に、入力中の欄の文字を確定して入力に入れる（iPhone の日本語入力で、変換を確定する前に押したときのため。CatForm の commitTyped）
+type Props = { cat: Cat; onChange: (update: (c: Cat) => Cat) => void; beforeRead?: () => void }
 type ReadResponse = { result?: Extracted; dropped?: string[]; error?: string; ms?: number }
 type AskResponse = { question?: string | null; skipped?: string | null }
 
 // ［メッセージから読み取る］（SPEC 2.2 の3）。AIに送るのはメモの文字だけ（写真・動画は送らない）
-export default function ReadMemo({ cat, onChange }: Props) {
+export default function ReadMemo({ cat, onChange, beforeRead }: Props) {
   const [busy, setBusy] = useState(false)
   const [report, setReport] = useState<{ applied: Applied; dropped: string[]; masked: number } | null>(null)
   const [failed, setFailed] = useState(false)
@@ -80,14 +81,22 @@ export default function ReadMemo({ cat, onChange }: Props) {
     const memo = noteAsked(cat.memo, add, ask.noted)
     if (memo !== cat.memo) onChange((c) => ({ ...c, memo: noteAsked(c.memo, add, ask.noted) }))
     // 下書きは、足したあとのメモに付けかえる（メモが変わると、別のメモの下書きとみなして消えてしまうため）
-    setAsk({ ...ask, memo, noted: add })
+    setAsk({ ...ask, line, memo, noted: add }) // line：コピーした文（欄に見えていた文）
   }
   const showAsk = ask && ask.memo === cat.memo && ask.status === 'open'
 
   const s = report?.applied.ageSuggestion
+  // 押したら、欄に見えている文字を入力に入れ、画面が描き直されてから（今のメモで）読み取る（11/7 作者が iPhone で見つけた件と同じ）
+  const readLatest = useRef(read)
+  readLatest.current = read
+  const onRead = () => {
+    beforeRead?.()
+    window.setTimeout(() => void readLatest.current(), 0)
+  }
+
   return (
     <div className="read-memo">
-      <button className="btn btn-big" disabled={busy || asking || !cat.memo.trim()} onClick={() => void read()}>
+      <button className="btn btn-big" disabled={busy || asking || !cat.memo.trim()} onClick={onRead}>
         {busy ? '読み取っています…' : 'メッセージから読み取る'}
       </button>
       {!cat.memo.trim() && <p className="muted center">メッセージを貼ると押せます。下の項目は、手でも入れられます</p>}

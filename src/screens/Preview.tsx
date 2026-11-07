@@ -19,8 +19,9 @@ import * as db from '../db'
 import { nextEvent } from '../lib/events'
 import WriteStory, { type Live } from './WriteStory'
 import StoryCheck, { openFlags, type CheckState } from './StoryCheck'
-import { factChunks, removeSentence, splitMemo, storySentences, type StoryDraft, type Verdict } from '../lib/story'
+import { factChunks, flagOldName, removeSentence, splitMemo, storySentences, writtenNameOf, type StoryDraft, type Verdict } from '../lib/story'
 import { makeFixedPost } from '../lib/post'
+import { flushTyped } from '../lib/typed'
 import { askConfirm } from '../lib/confirm'
 import { loadBandPattern } from '../lib/band'
 import { cardProfile } from '../lib/age'
@@ -176,7 +177,8 @@ export default function Preview({ shelter, cat, onCatChange, post, onPostChange,
       const ans = await callClaude<{ results?: Verdict[] }>('/api/check', { memo: sentMemo, facts, sentences })
       if (!ans.ok && latestStory.current?.result.body === s.result.body) setCheckLimit(limitText(ans.error))
       if (!ans.ok || !Array.isArray(ans.body.results) || ans.body.results.length !== sentences.length) throw new Error('check')
-      const results = ans.body.results
+      // 名前を変えたあと、本文に前の名前が残っている文は、確認役の答えにかかわらず印を付ける（11/7 作者の決定）
+      const results = flagOldName(sentences, ans.body.results, writtenNameOf(s.result), facts.name)
       const memoChunks = splitMemo(sentMemo)
       const facChunks = factChunks(facts)
       // 今の本文（入力の途中にある、画面の外の値）が、確かめた本文と同じで、確かめ始めたときから結果が変わっていないときだけ入れる。
@@ -357,6 +359,20 @@ export default function Preview({ shelter, cat, onCatChange, post, onPostChange,
   const [saveFailed, setSaveFailed] = useState(false)
   const tagCount = countHashtags(post)
   const tooMany = tagCount > MAX_HASHTAGS
+  // ［動画を作る］：入力を確定したあと、描き直された画面の値で、押せる状態かを確かめ直してから作る
+  const postBox = useRef<HTMLTextAreaElement>(null)
+  const saveLatest = useRef(async () => {})
+  saveLatest.current = async () => {
+    if (saving || tooMany || !eventsRead || storyBlocked) return
+    setSaving(true)
+    setSaveFailed(false)
+    try {
+      await onSave(usedEvent, wordsOnCard)
+    } catch {
+      setSaveFailed(true)
+      setSaving(false)
+    }
+  }
   return (
     <main className="screen">
       <TopBar title="確認（仮）" onBack={onBack} />
@@ -589,7 +605,7 @@ export default function Preview({ shelter, cat, onCatChange, post, onPostChange,
 
       <label className="field">
         <span>投稿文（その場で直せます）</span>
-        <textarea rows={14} value={post} onChange={(e) => onPostChange(e.target.value)} />
+        <textarea ref={postBox} rows={14} value={post} onChange={(e) => onPostChange(e.target.value)} />
         <small className="muted">本文はClaudeが書き、年齢・健康・連絡先・ハッシュタグはプログラムが決まった形で足します。投稿する前に、必ず読んで確かめてください</small>
       </label>
 
@@ -620,15 +636,11 @@ export default function Preview({ shelter, cat, onCatChange, post, onPostChange,
         <button
           className="btn btn-primary btn-big"
           disabled={saving || tooMany || !eventsRead || storyBlocked}
-          onClick={async () => {
-            setSaving(true)
-            setSaveFailed(false)
-            try {
-              await onSave(usedEvent, wordsOnCard)
-            } catch {
-              setSaveFailed(true)
-              setSaving(false)
-            }
+          onClick={() => {
+            // iPhone の日本語入力で、変換を確定する前に押したとき、投稿文の欄の最後の文字が入らないまま作らないように、
+            // 欄に見えている文字を入力に入れ、画面が描き直されてから（ハッシュタグの数などを確かめ直して）作る（11/7 作者が iPhone で見つけた件と同じ）
+            flushTyped(postBox.current)
+            window.setTimeout(() => void saveLatest.current(), 0)
           }}
         >
           動画を作る

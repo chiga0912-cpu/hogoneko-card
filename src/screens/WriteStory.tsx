@@ -61,7 +61,7 @@ export default function WriteStory({ cat, shelter, post, onPost, live }: Props) 
       if (handEdited && !(await askConfirm('本文を書いている間に、投稿文が直されました。Claudeが書いた本文の投稿文に置きかえますか？', { yes: '置きかえる' })))
         return
       setLastPost(next)
-      onPost(next, body.result)
+      onPost(next, { ...body.result, writtenName: facts.name.trim() }) // 書いたときの名前を残す（名前を変えたあと、前の名前が残る文に印を付けるため）
     } catch {
       // Claudeが使えないときは、決まった形の投稿文のまま（SPEC 4.4）
       setFailed(true)

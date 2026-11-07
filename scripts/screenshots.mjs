@@ -561,6 +561,22 @@ await page.getByRole('button', { name: '次へ' }).click()
 await shot('3a_入力_未入力')
 check(await page.getByText('まだ入っていません：写真か動画、名前').isVisible(), '写真か動画と、名前がないと先へ進めない')
 await shot('3b_入力_最初の状態', true)
+// 欄の下の案内が、下に続くもの（次の欄の見出し・ボタン）に隠れていない（11/7 作者が見本で気にした所。下に固定のボタンは除く）
+{
+  const hidden = await page.evaluate(() =>
+    [...document.querySelectorAll('.field > small.muted')]
+      .map((el) => {
+        const b = el.getBoundingClientRect()
+        let n = el.closest('.field')?.nextElementSibling
+        while (n && (getComputedStyle(n).position === 'fixed' || n.getBoundingClientRect().height === 0)) n = n.nextElementSibling
+        const nb = n?.getBoundingClientRect()
+        return { text: el.textContent.slice(0, 12), bad: (nb ? b.bottom > nb.top + 0.5 : false) || el.scrollHeight > el.clientHeight + 1 }
+      })
+      .filter((x) => x.bad)
+      .map((x) => x.text),
+  )
+  check(hidden.length === 0, `入力画面の欄の下の案内が、下の見出しやボタンに隠れていない（${hidden.join('・') || 'なし'}）`)
+}
 
 // 4. 入力する（手入力だけ）
 await page.locator('input[type=file][accept="image/*"]').setInputFiles([dummy('#c9a27e', '写真1'), dummy('#8fa9a3', '写真2')])

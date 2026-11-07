@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { CLOSINGS, type StoryCite, type StoryResult, type Verdict } from '../lib/story'
+import { CLOSINGS, OLD_NAME_REASON, type StoryCite, type StoryResult, type Verdict } from '../lib/story'
 
 // 根拠の確認の結果（#17。SPEC 2.4）
 // - 本文の文ごとに、メモに根拠があるかを出す。押すと、メモの中の根拠の言葉が光る
@@ -88,7 +88,11 @@ export default function StoryCheck({ story, check, name, post, onKeep, onRemove,
               </button>
               {flagged && (
                 <div className="story-flag-box">
-                  <p>⚠ メモにありません{v.reason && v.reason !== 'メモに根拠が見つかりませんでした' ? `（${v.reason}）` : ''}</p>
+                  {v.reason === OLD_NAME_REASON ? (
+                    <p data-old-name>⚠ {OLD_NAME_REASON}</p>
+                  ) : (
+                    <p>⚠ メモにありません{v.reason && v.reason !== 'メモに根拠が見つかりませんでした' ? `（${v.reason}）` : ''}</p>
+                  )}
                   {!found && <p className="muted">この文は投稿文で直されています。直した文を読んで確かめたら、［本当です（残す）］を押してください。</p>}
                   <div className="story-check-actions">
                     {found && (

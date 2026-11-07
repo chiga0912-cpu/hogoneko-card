@@ -11,7 +11,26 @@ export type StoryFacts = {
 // 本文のひとかたまり。cites は、どの資料のどの区切りから来たか（#17 の根拠の表示で使う）
 export type StoryCite = { doc: 0 | 1; start: number; end: number; text: string }
 export type StoryPart = { text: string; cites: StoryCite[] }
-export type StoryResult = { body: string; parts: StoryPart[]; memoChunks: string[]; factChunks: string[] }
+// writtenName：本文を書いたときの名前（画面で足す。名前を変えたあと、本文に前の名前が残っている文に印を付けるため。11/7 作者の決定）
+export type StoryResult = { body: string; parts: StoryPart[]; memoChunks: string[]; factChunks: string[]; writtenName?: string }
+
+// 本文を書いたときの名前（前の版で残した途中には writtenName がないので、確認した項目の名前で代わりにする）
+export const writtenNameOf = (r: StoryResult): string =>
+  (r.writtenName ?? r.factChunks.find((c) => c.startsWith('名前：'))?.slice(3) ?? '').trim()
+
+// 名前を変えたあと、本文に前の名前が残っている文は、確認役の答えにかかわらず印を付ける（11/7 作者の決定。メモに前の名前があっても）
+// 今の名前の中に前の名前が入っているとき（モカ→モカちゃん）は、今の名前の部分を除いてから探す
+export const OLD_NAME_REASON = '前の名前が残っています'
+export function flagOldName(sentences: string[], verdicts: Verdict[], writtenName: string, nowName: string): Verdict[] {
+  const old = writtenName.trim()
+  const now = nowName.trim()
+  if (!old || old === now) return verdicts
+  return verdicts.map((v, k) => {
+    const s = sentences[k] ?? ''
+    const rest = now ? s.split(now).join('') : s
+    return rest.includes(old) ? { ...v, ok: false, cites: [], reason: OLD_NAME_REASON } : v
+  })
+}
 
 // メモを区切る：空行・改行で分け、さらに「。！？」の後で分ける。空のかたまりは作らない
 // 区切りの番号がそのまま引用の番号になるので、画面でも同じ関数で区切る
@@ -210,6 +229,7 @@ export function normalizeStoryDraft(v: unknown): StoryDraft | null {
     body: r.body,
     memoChunks: r.memoChunks,
     factChunks: r.factChunks,
+    ...(typeof r.writtenName === 'string' ? { writtenName: r.writtenName } : {}),
     parts: r.parts.filter(isObj).map((p) => ({ text: typeof p.text === 'string' ? p.text : '', cites: cites(p.cites) })),
   }
   let check: SavedCheck | null = null
