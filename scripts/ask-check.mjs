@@ -282,6 +282,23 @@ for (const [label, ans] of [
   await ctx.close()
 }
 
+// 5b. 読み取りで、入る項目が1つも見つからなかったときの案内（11/8 作者の決定）
+{
+  const { ctx, p } = await setup({ question: null, skipped: 'not-needed' })
+  await p.route('**/api/read', async (route) =>
+    route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ result: { ...READ('').result, goodPoints: [{ text: 'お迎え', source: 'お迎え' }] }, dropped: [] }) }),
+  )
+  await p.getByLabel('預かりさんからのLINE・メモ').fill('（架空）毎朝玄関までお迎えに来てくれます。')
+  await readNow(p)
+  ok(
+    await p.getByText('名前・年齢・性別・健康のことは、メモから見つけられませんでした。名前は下の欄に入れ、年齢や健康のことは下のボタンで選んでください。メモの内容は、次の画面で紹介文を書くときに使います。').isVisible(),
+    '入る項目が1つも見つからなかったときは、作者が決めた案内を出す',
+  )
+  ok((await p.getByText('メモから入れられる項目は見つかりませんでした').count()) === 0, '前の案内（メモから入れられる項目は見つかりませんでした）は出さない')
+  await p.screenshot({ path: join(outDir, '4c_読み取り_項目なし.png'), fullPage: true })
+  await ctx.close()
+}
+
 // 6. 変換を確定する前の文字（欄には見えているが、入力の知らせがまだ届いていない）のまま［LINEの文をコピー］を押しても、見えている文をコピーし、メモに足す（11/7）
 {
   const { ctx, p } = await setup(Q)

@@ -106,9 +106,10 @@ export default function ReadMemo({ cat, onChange, beforeRead }: Props) {
         <div className="notice read-report" role="status">
           {report.applied.filled.length ? (
             <p>メモから入れました：{report.applied.filled.join('・')}。「メモから」の印を押すと、どこから読み取ったかが出ます。最後に、まちがいがないか確かめてください。</p>
-          ) : (
-            <p>メモから入れられる項目は見つかりませんでした。下の項目を手で入れてください。</p>
-          )}
+          ) : report.applied.skipped.length === 0 ? (
+            // 項目が1つも見つからなかったとき（11/8 作者の決定）。メモの内容は、本文を書くときに使う
+            <p data-read-none>名前・年齢・性別・健康のことは、メモから見つけられませんでした。名前は下の欄に入れ、年齢や健康のことは下のボタンで選んでください。メモの内容は、次の画面で紹介文を書くときに使います。</p>
+          ) : null /* メモにあった項目がもう入っていただけのときは、下の「もう入っていたので変えなかった項目」だけを出す ⚙ */}
           {report.applied.skipped.length > 0 && <p className="muted">もう入っていたので変えなかった項目：{report.applied.skipped.join('・')}</p>}
           {report.dropped.length > 0 && <p className="muted">メモの中に根拠が見つからなかったので、入れなかった項目：{report.dropped.join('・')}</p>}
           {report.masked > 0 && <p className="muted">電話番号・メールアドレスらしきもの{report.masked}こは、伏せて送りました。</p>}
