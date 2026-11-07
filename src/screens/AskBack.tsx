@@ -54,10 +54,10 @@ export default function AskBack({ ask, onEdit, onCopied, onSkip }: Props) {
       {copied === false && <p className="alert">コピーできませんでした。欄の文を長押しして、コピーしてください。</p>}
       {ask.noted ? (
         <p data-ask-noted>
-          上の欄の最後に「{ask.noted}」を足しました。返事が来たら、上の欄の最後に貼って、もう一度［メッセージから読み取る］を押してください。
+          「{ask.noted}」を足しました。返事が来たら、LINE・メモの欄の最後に貼って、もう一度［メッセージから読み取る］を押してください。
         </p>
       ) : (
-        <p className="muted">［LINEの文をコピー］を押すと、聞いたことを上の欄の最後に1行足します（消したり直したりできます）。</p>
+        <p className="muted">［LINEの文をコピー］を押すと、聞いたことをLINE・メモの欄の最後に1行足します（消したり直したりできます）。</p>
       )}
     </div>
   )

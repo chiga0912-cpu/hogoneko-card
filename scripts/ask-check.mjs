@@ -108,7 +108,7 @@ const readNow = async (p) => {
   ok((await p.getByLabel(/預かりさんの返事/).count()) === 0 && (await p.getByRole('button', { name: '返事をメモに足す' }).count()) === 0, '返事を貼る専用の欄と［返事をメモに足す］はない（11/7 作者の決定）')
   const ASKED = `${ASKED_LABEL}ミケちゃんのことで1つだけ。ひざに乗ってくることはありますか？`
   ok((await memoBox.inputValue()) === `${MEMO}\n${ASKED}`, `［LINEの文をコピー］で、メモの欄の最後に「聞いたこと」を1行足す（${JSON.stringify(await memoBox.inputValue())}）`)
-  ok(await p.getByText('返事が来たら、上の欄の最後に貼って、もう一度［メッセージから読み取る］を押してください').isVisible(), '返事の貼り方を短く出す')
+  ok(await p.getByText('返事が来たら、LINE・メモの欄の最後に貼って、もう一度［メッセージから読み取る］を押してください').isVisible(), '返事の貼り方を短く出す')
   await p.getByRole('button', { name: /LINEの文をコピー|コピーしました/ }).click()
   await p.waitForTimeout(200)
   ok((await memoBox.inputValue()) === `${MEMO}\n${ASKED}`, 'もう一度コピーしても、二重には足さない')
