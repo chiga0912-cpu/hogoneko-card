@@ -18,9 +18,10 @@ const fetchImg = (path: string): Promise<HTMLImageElement | null> =>
 // どれも、置いていなければ今までどおり（無地・線なし・絵なし）
 let cached: Promise<HTMLImageElement | null> | null = null
 export function loadBandPattern(): Promise<HTMLImageElement | null> {
-  cached ??= Promise.all([fetchImg('/band.png'), fetchImg('/edge.png'), fetchImg('/corner.png')]).then(([band, edge, corner]) => {
+  // 帯の柄はやめた（11/8 作者の決定。public/band.png も消した）。いつも null（テーマ色の無地）。柄を描く作りは card.ts に残っている
+  cached ??= Promise.all([fetchImg('/edge.png'), fetchImg('/corner.png')]).then(([edge, corner]) => {
     setDecor({ edge, corner })
-    return band
+    return null
   })
   return cached
 }
