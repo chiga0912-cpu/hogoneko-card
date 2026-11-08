@@ -69,10 +69,7 @@ export default function Home({
           名簿から選ぶ
           <span className="count">{catCount}匹</span>
         </button>
-        <button className="btn btn-big" disabled>
-          譲渡会の案内
-          <span className="soon">準備中</span>
-        </button>
+        {/* ［譲渡会の案内］は、できあがるまでホームに出さない（11/8 作者の決定。前は「準備中」で押せないボタンを出していた） */}
         <button className="btn btn-ghost" onClick={() => go('shelter')}>
           シェルター情報を直す
         </button>

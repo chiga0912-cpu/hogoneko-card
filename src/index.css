@@ -111,14 +111,6 @@ h3 {
   opacity: 0.5;
   cursor: default;
 }
-.soon {
-  font-size: 12px;
-  font-weight: 700;
-  padding: 2px 8px;
-  border-radius: 99px;
-  background: var(--line);
-  color: var(--muted);
-}
 
 /* 上の帯 */
 .topbar {
