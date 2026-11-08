@@ -1752,8 +1752,13 @@ for (const withPattern of [false, true]) {
   const p = await ctx.newPage()
   await p.goto(url)
   const r = await p.evaluate(async () => {
+    let m
     try {
-      const m = await import('/src/lib/card.ts')
+      m = await import('/src/lib/card.ts')
+    } catch {
+      return null // 本番と同じ作りでは、部品を直接読めない
+    }
+    try {
       // 絵は public/art/ から読んで入れる（band.ts と同じ絵。開発用のサーバーでは、直したあとの card.ts が別の入れ物で読まれることがあるので、ここで直接入れる）
       const img = async (n) => {
         const res = await fetch('/art/' + n + '.png', { cache: 'no-cache' })
@@ -1807,9 +1812,16 @@ for (const withPattern of [false, true]) {
       const w = card()
       m.drawWordsCard(w.getContext('2d'), { text: '毎日癒されています', theme: '#e8826b', photo: wide })
       out.flower = count(w, 0, 220, 1080, 400, orange) > 100
+      out.flowerHidden = count(w, 0, 0, 1080, 220, orange)
       const e = card()
       m.drawEndCard(e.getContext('2d'), { logo: null, shelterName: '（架空）ねこの会', contact: '', event: null, theme: '#e8826b', photo: wide })
       out.house = count(e, 0, 220, 1080, 300, teal) > 300
+      // 文字が多い最後の1枚（縦の写真・譲渡会・ロゴ・連絡先3行）：家を先に小さく・なくして、文字は小さくしない（見直しの中2）
+      const logo = mk(300, 300)
+      const ev = { date: '2026-11-23', startTime: '13:00', endTime: '16:00', venue: '（架空）ひだまり公民館 2階' }
+      const e2 = card()
+      const l2 = m.drawEndCard(e2.getContext('2d'), { logo, shelterName: '（架空）ねこの会', contact: 'InstagramのDMで\nお問い合わせください\n見学は土日', event: ev, theme: '#e8826b', photo: tall })
+      out.busyEnd = { fits: l2.fits, scale: l2.scale }
       return out
     } catch (err) {
       return { error: String(err) }
@@ -1823,6 +1835,8 @@ for (const withPattern of [false, true]) {
     check(r.lines.left === 32 && r.lines.right === 32, `横・正方形の写真：上と下の帯に16pxの線を1本ずつ、カードの幅いっぱい（左端 ${r.lines.left}px・右端 ${r.lines.right}px）`)
     check(r.noLineA === 0, `縦の写真のカードには線を描かない（${r.noLineA}）`)
     check(r.flower, 'ひとことカードに花')
+    check(r.flowerHidden === 0, `花は上の隠れる所（上220）に入らない（${r.flowerHidden}）`)
+    check(r.busyEnd.fits && r.busyEnd.scale === 1, `文字が多い最後の1枚でも、家のせいで文字を小さくしない（入る ${r.busyEnd.fits}・大きさ ${r.busyEnd.scale}）`)
     check(r.house, '最後の1枚に家')
   } else if (r?.error) check(false, `作者の絵の確認が動かなかった（${r.error}）`)
   await ctx.close()

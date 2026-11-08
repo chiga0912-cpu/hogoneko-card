@@ -306,13 +306,18 @@ function drawBeside(
   const s = size / Math.max(img.width, img.height)
   const w = img.width * s
   const h = img.height * s
+  // 傾けたあとの外側の四角の大きさで、はみ出さないかを確かめる（見直しの軽い3）
+  const rad = (Math.abs(tilt) * Math.PI) / 180
+  const bw = w * Math.cos(rad) + h * Math.sin(rad)
+  const bh = w * Math.sin(rad) + h * Math.cos(rad)
   const gap = size * 0.18
   const lineLeft = line.align === 'center' ? line.x - line.w / 2 : line.x
   const lineRight = lineLeft + line.w
-  let cx = lineRight + gap + w / 2
-  if (cx + w / 2 > bounds.right) cx = lineLeft - gap - w / 2
-  if (cx - w / 2 < bounds.left) return false
-  const cy = line.top + line.h / 2
+  let cx = lineRight + gap + bw / 2
+  if (cx + bw / 2 > bounds.right) cx = lineLeft - gap - bw / 2
+  if (cx - bw / 2 < bounds.left) return false
+  // 上の隠れる所（上220）に入らないように、行の真ん中より下げることがある（見直しの中1：ひとことの花）
+  const cy = Math.max(line.top + line.h / 2, SAFE.top + bh / 2)
   ctx.save()
   ctx.shadowColor = 'transparent'
   ctx.translate(cx, cy)
@@ -1124,11 +1129,12 @@ export function drawEndCard(
     .map((l) => l.trim())
     .filter(Boolean)
   const logo = opts.logo && opts.logo.width > 0 && opts.logo.height > 0 ? opts.logo : null
-  const build = (k: number): TextRow[] => {
+  // hk：家の大きさ（1＝HOUSE_H）。入らないときは、文字より先に家を小さくし、それでも入らなければ家を置かない（見直しの中2）
+  const build = (k: number, hk = 1): TextRow[] => {
     const rows: TextRow[] = []
     const house = DECOR.house
-    if (okImg(house)) {
-      const h = HOUSE_H * k
+    if (okImg(house) && hk > 0) {
+      const h = HOUSE_H * k * hk
       rows.push({ lines: [], px: 0, weight: 0, lh: 1, gap: 0, pic: { img: house, w: (house.width / house.height) * h, h } })
     }
     const text = (t: string, px: number, weight: number, gap: number, alpha?: number, name = false): TextRow => {
@@ -1153,9 +1159,10 @@ export function drawEndCard(
   }
   let k = 1
   let rows = build(1)
-  for (const s of [1, 0.92, 0.84, 0.76, 0.68]) {
+  const tries: [number, number][] = [[1, 1], [1, 0.75], [1, 0.5], [1, 0], [0.92, 0], [0.84, 0], [0.76, 0], [0.68, 0]]
+  for (const [s, hk] of tries) {
     k = s
-    rows = build(s)
+    rows = build(s, hk)
     if (placeRows(design, rowsH(rows)).ok) break
   }
   const r = paintRows(ctx, design, rows, opts)
