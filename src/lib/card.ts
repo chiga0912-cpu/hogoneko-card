@@ -380,7 +380,6 @@ export const CLOVER_TILT = 15 // クローバーの傾き（度。右回り）�
 export const FLOWER_K = 1.8 // 「ひとこと」の文字の高さに対する花の大きさ ⚙
 export const HOUSE_SMALL = 110 // 最後の1枚の家の大きさ（長い辺。表紙のクローバーと同じくらい。11/8 作者の決定）⚙
 export const HOUSE_TILT = -10 // 家の傾き（度。マイナスは左回り）⚙
-export const EVENT_CLOVER_H = 130 // 譲渡会を出す最後の1枚の、四つ葉のクローバーの高さ ⚙
 export const PAW_SIZES = [110, 96, 84] // 帯の中の肉球の大きさ（大きい順に試す）⚙
 
 // 行の横に絵を置く。lineX/align：その行を描いた位置とそろえ方。右に置けなければ左に、どちらも無理なら置かない
@@ -1092,7 +1091,7 @@ function paintPhoto(ctx: CanvasRenderingContext2D, design: CardDesign, photo: Im
 // 文字の行（帯の上なら真ん中にそろえ、写真の上なら左にそろえて影を付ける）
 // pic：文字の代わりに絵を置く行（最後の1枚の家）。icon：行の横に置く小さな絵（ひとことカードの花）
 // indent：左にそろえる形（縦の写真）で、その行だけ右へずらす幅（最後の1枚の家の場所。11/8）。tag：あとで場所を探すための印
-type TextRow = { lines: string[]; px: number; weight: number; lh: number; gap: number; alpha?: number; logo?: { img: Img; w: number; h: number; theme: string }; pic?: { img: Img; w: number; h: number }; icon?: { img: Img; size: number }; indent?: number; tag?: 'org' }
+type TextRow = { lines: string[]; px: number; weight: number; lh: number; gap: number; alpha?: number; logo?: { img: Img; w: number; h: number; theme: string }; pic?: { img: Img; w: number; h: number }; icon?: { img: Img; size: number; tilt?: number }; indent?: number; tag?: 'org' }
 type Rect = { x0: number; x1: number; y0: number; y1: number; tag?: 'org' }
 const rowsH = (rows: TextRow[]) => rows.reduce((y, r) => y + r.gap + (r.logo ? r.logo.h : r.pic ? r.pic.h : r.lines.length * r.px * r.lh), 0)
 function drawRows(ctx: CanvasRenderingContext2D, rows: TextRow[], top: number, design: CardDesign, color: string): { widest: number; bottom: number; rects: Rect[] } {
@@ -1143,7 +1142,7 @@ function drawRows(ctx: CanvasRenderingContext2D, rows: TextRow[], top: number, d
       rects.push({ x0: center ? lx - lw / 2 : lx, x1: center ? lx + lw / 2 : lx + lw, y0: y, y1: y + r.px * r.lh, tag: r.tag })
       if (r.icon) {
         const right = center ? CARD_W - SAFE.right : SAFE.left + NARROW_W
-        if (drawBeside(ctx, r.icon.img, { x, align: center ? 'center' : 'left', w: lw, top: y, h: r.px * r.lh }, r.icon.size, 0, { left: SAFE.left, right }))
+        if (drawBeside(ctx, r.icon.img, { x, align: center ? 'center' : 'left', w: lw, top: y, h: r.px * r.lh }, r.icon.size, r.icon.tilt ?? 0, { left: SAFE.left, right }))
           widest = Math.max(widest, lw + r.icon.size * 1.2)
       }
       y += r.px * r.lh
@@ -1265,14 +1264,11 @@ export function drawEndCard(
     const rad = (Math.abs(HOUSE_TILT) * Math.PI) / 180
     return { w, h, bw: w * Math.cos(rad) + h * Math.sin(rad), bh: w * Math.sin(rad) + h * Math.cos(rad), gap: 14 * k }
   }
-  // 譲渡会を出すときは、絵は四つ葉のクローバーだけ（いちばん上。11/8 作者の決定）。hk：クローバーの大きさ。入らないときは文字より先に小さく・なくす
+  // 譲渡会を出すときは、絵は四つ葉のクローバーだけ。表紙の「○○です🍀」と同じく、「譲渡会」の文字の横に小さく、少し斜めに（11/8 作者の決定）。
+  // 行の横に置くので、行の高さは増えない（縦の写真でロゴと連絡先があっても消えない）
   const clover = opts.event && okImg(DECOR.clover) ? DECOR.clover : null
-  const build = (k: number, hk = 1): TextRow[] => {
+  const build = (k: number): TextRow[] => {
     const rows: TextRow[] = []
-    if (clover && hk > 0) {
-      const h = EVENT_CLOVER_H * k * hk
-      rows.push({ lines: [], px: 0, weight: 0, lh: 1, gap: 0, pic: { img: clover, w: (clover.width / clover.height) * h, h } })
-    }
     const hb = houseBox(k)
     const room = hb ? hb.bw + hb.gap : 0
     const text = (t: string, px: number, weight: number, gap: number, alpha?: number): TextRow => {
@@ -1289,7 +1285,7 @@ export function drawEndCard(
     if (opts.event) {
       // 「譲渡会」と譲渡会の名前は大きく、日付・時間・場所は小さめ（11/8 作者の決定）。縦の写真では、ほかの文字と同じく後ろを暗くして読めるように
       const e = opts.event
-      rows.push(text('譲渡会', 76 * k, 800, rows.length ? 20 * k : 0))
+      rows.push({ ...text('譲渡会', 76 * k, 800, 0), icon: clover ? { img: clover, size: 76 * k * CLOVER_K, tilt: CLOVER_TILT } : undefined })
       rows.push(text(e.name, 64 * k, 800, 4 * k))
       rows.push(text(e.date, 44 * k, 700, 14 * k))
       if (e.time) rows.push(text(e.time, 44 * k, 700, 0))
@@ -1306,10 +1302,9 @@ export function drawEndCard(
   }
   let k = 1
   let rows = build(1)
-  const tries: [number, number][] = [[1, 1], [1, 0.75], [1, 0.5], [1, 0], [0.92, 0], [0.84, 0], [0.76, 0], [0.68, 0]]
-  for (const [s, hk] of tries) {
+  for (const s of [1, 0.92, 0.84, 0.76, 0.68]) {
     k = s
-    rows = build(s, hk)
+    rows = build(s)
     if (placeRows(design, rowsH(rows)).ok) break
   }
   const r = paintRows(ctx, design, rows, opts)
