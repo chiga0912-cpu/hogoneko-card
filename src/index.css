@@ -6,9 +6,10 @@
   --muted: #5a4d45;
   --line: #e4d8cc;
   --theme: #e8826b;
-  /* 画面の文字・ボタンに使うテーマ色（読める濃さ）。App.tsx が、入力されたテーマ色から作って入れる（11/7） */
-  --theme-text: #9e5849;
-  --theme-strong: #ac604f;
+  /* 画面の文字・ボタンに使うテーマ色。App.tsx が、入力されたテーマ色から作って入れる（11/8：テーマ色はそのまま。上の文字は白か濃い色） */
+  --theme-text: #3b2f2a;
+  --theme-strong: #e8826b;
+  --on-theme: #3b2f2a;
   font-family: system-ui, -apple-system, 'Hiragino Sans', 'Noto Sans JP', sans-serif;
   color: var(--text);
   background: var(--bg);
@@ -94,7 +95,7 @@ h3 {
 .btn-primary {
   background: var(--theme-strong, var(--theme));
   border-color: var(--theme-strong, var(--theme));
-  color: #fff;
+  color: var(--on-theme, #fff);
 }
 .btn-ghost {
   background: transparent;
@@ -243,7 +244,7 @@ input[type='color'] {
 .chip-on {
   background: var(--theme-strong, var(--theme));
   border-color: var(--theme-strong, var(--theme));
-  color: #fff;
+  color: var(--on-theme, #fff);
 }
 .toggle {
   display: flex;
@@ -308,7 +309,7 @@ input[type='color'] {
   padding: 2px 8px;
   border-radius: 99px;
   background: var(--theme-strong, var(--theme));
-  color: #fff;
+  color: var(--on-theme, #fff);
   font-size: 12px;
   font-weight: 700;
 }
@@ -421,7 +422,7 @@ input[type='color'] {
   height: 26px;
   border-radius: 99px;
   background: var(--theme-strong, var(--theme));
-  color: #fff;
+  color: var(--on-theme, #fff);
   font-weight: 700;
   text-align: center;
   line-height: 26px;
@@ -456,7 +457,7 @@ input[type='color'] {
   padding: 1px 6px;
   border-radius: 6px;
   background: var(--theme-strong, var(--theme));
-  color: #fff;
+  color: var(--on-theme, #fff);
   font-size: 11px;
   font-style: normal;
   vertical-align: 2px;

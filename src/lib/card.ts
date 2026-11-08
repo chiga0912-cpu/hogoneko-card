@@ -58,7 +58,7 @@ export type CardLayout = {
   framing?: Framing | null // 案A：実際に使った写真の位置（#29）
 }
 
-import { yellowInk } from './themeInk.ts' // 拡張子つき：logo.ts と同じ理由
+import { themeInk } from './themeInk.ts' // 拡張子つき：logo.ts と同じ理由
 import { drawLogoCircle } from './logo.ts' // 拡張子つき：自動の確認（scripts/wrap-check.mjs）が Node でこのファイルを直接読むため
 
 type Img = CanvasImageSource & { width: number; height: number }
@@ -559,25 +559,12 @@ export function readableOnBand(ctx: CanvasRenderingContext2D, x: number, y: numb
   ctx.fillRect(X - pad, Y - pad, W + pad * 2, H + pad * 2)
 }
 
-// 帯の文字はいつも白。明るいテーマ色でも、白い文字が読める（見やすさ4.5以上）濃さまで帯の色を暗くする（11/6夜 作者の決定）。
-// テーマ色の設定は変えない（帯の色だけ）
 export function bandColors(theme: string): { band: string; color: string; contrast: number } {
-  // 黄色の仲間は、画面の文字と同じく、からし色の方向へ濃くする（緑っぽく見えないように。11/7 作者の決定）
-  const y = yellowInk(theme, '#ffffff')
-  if (y) {
-    const [yr, yg, yb] = [1, 3, 5].map((i) => parseInt(y.slice(i, i + 2), 16))
-    return { band: y, color: WHITE, contrast: ratio(1, lum(yr, yg, yb)) }
-  }
-  const n = parseInt(theme.replace('#', '').padEnd(6, '0').slice(0, 6), 16)
-  const rgb = [(n >> 16) & 255, (n >> 8) & 255, n & 255]
-  let t = 0
-  let c = rgb
-  while (ratio(1, lum(c[0], c[1], c[2])) < 4.5 && t < 1) {
-    t = Math.min(1, t + 0.02)
-    c = rgb.map((v) => Math.round(v * (1 - t)))
-  }
-  const hex = '#' + c.map((v) => v.toString(16).padStart(2, '0')).join('')
-  return { band: hex, color: WHITE, contrast: ratio(1, lum(c[0], c[1], c[2])) }
+  // 帯は選んだテーマ色のまま。帯の文字は、白か濃い色の読みやすいほう（画面のボタンと同じ。11/8 作者の決定）
+  const { strong: band, on: color } = themeInk(theme)
+  const [r, g, b] = [1, 3, 5].map((i) => parseInt(band.slice(i, i + 2), 16))
+  const [cr, cg, cb] = [1, 3, 5].map((i) => parseInt(color.slice(i, i + 2), 16))
+  return { band, color, contrast: ratio(lum(cr, cg, cb), lum(r, g, b)) }
 }
 
 // 縦の写真の上の白い文字：文字の後ろだけを、境目のないグラデーションで暗くする（灰色の帯に見せない。11/6夜 作者の決定）
@@ -622,9 +609,7 @@ const B_MIN_PHOTO = 700 // 写真に残す高さの下限 ⚙
 const B_MIN_PHOTO_TWO = 560
 
 function drawB(ctx: CanvasRenderingContext2D, opts: Opts, lines: string[]): CardLayout {
-  // 帯の文字はいつも白。帯の色を、白が読める濃さまで暗くする（11/6夜 作者の決定）
-  // どちらも見やすさ4.5に届かない中くらいの色のときは、帯の色だけを少し暗く（白い文字）か明るく（濃い文字）して4.5にそろえる。
-  // テーマ色の設定は変えない（11/5 見直し①の1番。作る人の決定）
+  // 帯はテーマ色のまま。帯の文字は白か濃い色の読みやすいほう（11/8 作者の決定。bandColors）
   const { band, color, contrast } = bandColors(opts.theme)
   const logoH = 0 // 猫カードにはロゴを入れない（11/6 作者の決定）
 

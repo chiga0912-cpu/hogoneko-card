@@ -409,7 +409,7 @@ export default function App() {
   const ink = themeInk(themeColor)
 
   return (
-    <div className="app" style={{ ['--theme' as string]: themeColor, ['--theme-text' as string]: ink.text, ['--theme-strong' as string]: ink.strong }}>
+    <div className="app" style={{ ['--theme' as string]: themeColor, ['--theme-text' as string]: ink.text, ['--theme-strong' as string]: ink.strong, ['--on-theme' as string]: ink.on }}>
       {CHECK_MODE && <p className="check-mode">確認モード・版 {APP_VERSION}</p>}
       {update && (
         <div className="update-bar" role="status">
