@@ -35,7 +35,11 @@ export default function Home({
           {logoUrl && <img className="hero-logo" src={logoUrl} alt="" />}
           <p className="hero-sub">{shelter.name}</p>
         </div>
-        <h1>むすび</h1>
+        <h1>
+          むすび
+          {/* 作者のキャラクター（緑のクローバー。ツールのアイコンと同じ絵の背景を消したもの。11/8 作者の決定） */}
+          <img className="hero-mascot" src="/art/mascot.png" alt="" />
+        </h1>
         <p className="hero-lead">写真を選んで、短く書くか貼るだけ。リール用の動画と投稿文をつくります</p>
       </header>
 

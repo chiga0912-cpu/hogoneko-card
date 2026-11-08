@@ -49,6 +49,13 @@ h3 {
   font-size: 34px;
   letter-spacing: 0.04em;
 }
+/* 「むすび」の横のキャラクター（文字と同じくらいの大きさ） */
+.hero-mascot {
+  height: 1.2em;
+  width: auto;
+  margin-left: 6px;
+  vertical-align: -0.25em;
+}
 .hero-sub {
   margin: 0 0 6px;
   color: var(--theme-text, var(--theme));

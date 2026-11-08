@@ -15,7 +15,7 @@ const fetchImg = (path: string): Promise<HTMLImageElement | null> =>
     .catch(() => null)
 
 // 作者の絵（11/8 作者の決定）も読んで、カードに入れる。置いていなければ描かない
-// 最後の1枚の家は、粘土の家（house-clay）と平らな家（house-flat）のどちらかを作者が選ぶ（決まったら、もう一方は消す）
+// 最後の1枚の家は、粘土の家（11/8 作者の決定）
 export const HOUSE_ART = '/art/house-clay.png'
 let cached: Promise<HTMLImageElement | null> | null = null
 export function loadBandPattern(): Promise<HTMLImageElement | null> {
