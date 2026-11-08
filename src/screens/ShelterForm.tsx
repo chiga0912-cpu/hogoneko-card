@@ -204,7 +204,7 @@ export default function ShelterForm({ initial, first, needName = false, onSave, 
         <p className="muted">名前と日付を入れると、動画の最後の1枚に出ます。空なら出しません。</p>
         {(
           [
-            ['name', '譲渡会の名前', '例：ねこの会 譲渡会'],
+            ['name', '譲渡会の名前', '例：秋のおうち探し会'],
             ['date', '日付', '例：11月23日（日）'],
             ['time', '時間', '例：13時〜16時'],
             ['venue', '場所', '例：ひだまり公民館'],

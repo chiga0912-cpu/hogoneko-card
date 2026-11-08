@@ -1803,6 +1803,16 @@ for (const withPattern of [false, true]) {
       const cA = card()
       const lA = m.drawCoverCard(cA.getContext('2d'), { photo: tall, logo: null, name: 'ソラ', theme: '#e8826b', shelterName: '（架空）ねこの会' })
       out.clover = { B: lB.clover && count(cB, 0, 220, 1080, 600, green) > 300, A: lA.clover && count(cA, 0, 800, 1080, 700, green) > 300 }
+      // 名前が長くてクローバーが入らないときだけ、名前を少し小さくして右に置く（11/8 作者の決定。案1）。入る名前（テオ）は大きさを変えない
+      const coverOf = (name, photo) => m.drawCoverCard(card().getContext('2d'), { photo, logo: null, name, theme: '#1b5e20', shelterName: '（架空）ねこの会' })
+      const saved = { clover: null, house: null, flower: null, paw: null }
+      const withC = { goro: coverOf('ゴロくん', tall), goroB: coverOf('ゴロくん', wide), teo: coverOf('テオ', tall), teoB: coverOf('テオ', wide) }
+      const keep = m.setDecor
+      const cl = await img('clover')
+      keep({ ...saved, clover: null })
+      const noC = { goro: coverOf('ゴロくん', tall), teo: coverOf('テオ', tall), teoB: coverOf('テオ', wide) }
+      keep({ clover: cl, house: await img(houseName), flower: await img('flower'), paw: await img('paw') })
+      out.longName = { goro: withC.goro.clover && withC.goroB.clover && withC.goro.nameSize < noC.goro.nameSize, teo: withC.teo.clover && withC.teo.nameSize === noC.teo.nameSize && withC.teoB.nameSize === noC.teoB.nameSize, sizes: [withC.goro.nameSize, noC.goro.nameSize, withC.teo.nameSize, noC.teo.nameSize] }
       const cat = card()
       m.drawCatCard(cat.getContext('2d'), { photo: wide, logo: null, name: 'ソラ', lines: ['よく食べる'], theme: '#e8826b', position: 'normal' })
       out.paw = count(cat, 64, 220, 140, 500, black) > 300
@@ -1849,6 +1859,8 @@ for (const withPattern of [false, true]) {
   })
   if (r && !r.error) {
     check(r.clover.B && r.clover.A, `表紙の名前の横にクローバー（横の写真 ${r.clover.B}・縦の写真 ${r.clover.A}）`)
+    check(r.longName.goro, `「ゴロくんです」のように名前の横に入らないときは、名前を少し小さくしてクローバーを置く（大きさ ${r.longName.sizes[1]}→${r.longName.sizes[0]}）`)
+    check(r.longName.teo, `「テオです」のように入る名前は、大きさを変えない（${r.longName.sizes[3]}→${r.longName.sizes[2]}）`)
     check(r.paw, '横・正方形の写真の猫カード：上の帯の左端に肉球')
     check(r.pawHidden === 0, `肉球はInstagramで隠れる所（上220・左64）に入らない（黒い点 ${r.pawHidden}）`)
     check(r.noPawA < 50, `縦の写真のカードには肉球を描かない（${r.noPawA}）`)

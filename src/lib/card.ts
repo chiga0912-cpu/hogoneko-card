@@ -478,6 +478,33 @@ function drawBandLines(ctx: CanvasRenderingContext2D, top: number, bottom: numbe
   ctx.restore()
 }
 
+// 表紙の名前の大きさ：ふつうは猫カードと同じ決め方。クローバーが名前の横に入りきらないときだけ、
+// 名前の文字を少し小さくして、右にクローバーの場所を空ける（11/8 作者の決定。案1）。行の数は変えない。入る名前は今までのまま
+function planCoverName(ctx: CanvasRenderingContext2D, title: string, k: number, width: number) {
+  const first = planName(ctx, title, k, width)
+  const c = DECOR.clover
+  if (!okImg(c) || !first.lines.length) return first
+  // クローバーが占める幅（傾けたあとの外側の四角と、名前とのすき間）
+  const room = (nameSize: number) => {
+    const size = nameSize * CLOVER_K
+    const s = size / Math.max(c.width, c.height)
+    const rad = (Math.abs(CLOVER_TILT) * Math.PI) / 180
+    return c.width * s * Math.cos(rad) + c.height * s * Math.sin(rad) + size * 0.18
+  }
+  const fits = (p: { size: number; lines: string[] }) => {
+    ctx.font = `800 ${p.size}px ${FONT}`
+    const lw = ctx.measureText(p.lines[p.lines.length - 1]).width
+    return lw / 2 + room(p.size) <= width / 2
+  }
+  if (fits(first)) return first
+  // 折り方（行の切れ目）は今のままで、文字だけを少しずつ小さくして、クローバーが入る大きさを探す
+  for (let f = 0.96; f >= 0.5; f -= 0.04) {
+    const p = { size: Math.round(first.size * f), lines: first.lines }
+    if (fits(p)) return p
+  }
+  return first // 小さくしても入らないときは、今までどおり（クローバーは置かない）
+}
+
 // 表紙：名前の最後の行の横にクローバー
 function drawClover(ctx: CanvasRenderingContext2D, p: Planned, nameTop: number, bounds: { left: number; right: number }): boolean {
   const c = DECOR.clover
@@ -838,7 +865,7 @@ export function drawCoverCard(
     // 横・正方形の写真：上の帯に、言葉・名前・その下に差出人のようにロゴか団体名（11/6 作者の決定）。下の帯には何も置かない
     const { band, color, contrast } = bandColors(opts.theme)
     const gSize = planGreeting(ctx, 0.9, WIDE_W)
-    const { size, lines } = planName(ctx, title, 1.0, WIDE_W)
+    const { size, lines } = planCoverName(ctx, title, 1.0, WIDE_W)
     const textTop = SAFE.top
     const nameTop = textTop + gSize * 1.2 + GREET_GAP
     const markTop = nameTop + lines.length * size * NAME_LH + MARK_GAP
@@ -872,7 +899,7 @@ export function drawCoverCard(
   // 縦の写真は、指で動かした位置で（11/8。猫カードと同じ形。動かしていなければ真ん中）
   const used = opts.photo ? drawFramed(ctx, opts.photo, 0, 0, CARD_W, CARD_H, 0.5, opts.framing ?? NO_FRAMING) : null
   const gSize = planGreeting(ctx, 1, WIDE_W)
-  const { size, lines } = planName(ctx, title, 1.1, WIDE_W)
+  const { size, lines } = planCoverName(ctx, title, 1.1, WIDE_W)
   const nameH = lines.length * size * NAME_LH
   const h = gSize * 1.2 + GREET_GAP + nameH // 言葉＋名前のかたまり
   // 言葉と名前は、ロゴがないときと同じ位置（ロゴのために上げない。11/6 作者の決定）。真ん中にそろえるので、右下のボタンの高さ（下から540）より上
