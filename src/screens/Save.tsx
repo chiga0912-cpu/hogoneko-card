@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
-import type { AdoptionEvent, Cat, Shelter } from '../types'
+import type { Cat, Shelter, ShelterEvent } from '../types'
 import { CHECK_MODE } from '../lib/checkMode'
 import { useBlobUrl } from '../lib/useBlobUrls'
 import type { Made, Method } from '../lib/video'
@@ -8,7 +8,7 @@ import { copyText } from '../lib/copy'
 type Props = {
   cat: Cat
   shelter: Shelter
-  event: AdoptionEvent | null
+  event: ShelterEvent | null
   words: string | null // ひとことカードに載せる文（なければ null）
   post: string
   onHome: () => void

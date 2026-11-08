@@ -58,6 +58,7 @@ export type CardLayout = {
   framing?: Framing | null // 案A：実際に使った写真の位置（#29）
 }
 
+import type { ShelterEvent } from '../types'
 import { themeInk } from './themeInk.ts' // 拡張子つき：logo.ts と同じ理由
 import { drawLogoCircle } from './logo.ts' // 拡張子つき：自動の確認（scripts/wrap-check.mjs）が Node でこのファイルを直接読むため
 import { Parser, jaModel } from 'budoux'
@@ -379,6 +380,7 @@ export const CLOVER_TILT = 15 // クローバーの傾き（度。右回り）�
 export const FLOWER_K = 1.8 // 「ひとこと」の文字の高さに対する花の大きさ ⚙
 export const HOUSE_SMALL = 110 // 最後の1枚の家の大きさ（長い辺。表紙のクローバーと同じくらい。11/8 作者の決定）⚙
 export const HOUSE_TILT = -10 // 家の傾き（度。マイナスは左回り）⚙
+export const EVENT_CLOVER_H = 130 // 譲渡会を出す最後の1枚の、四つ葉のクローバーの高さ ⚙
 export const PAW_SIZES = [110, 96, 84] // 帯の中の肉球の大きさ（大きい順に試す）⚙
 
 // 行の横に絵を置く。lineX/align：その行を描いた位置とそろえ方。右に置けなければ左に、どちらも無理なら置かない
@@ -949,8 +951,8 @@ function drawMark(ctx: CanvasRenderingContext2D, m: Mark, y: number, color: stri
   return 0
 }
 
-// 最後の1枚の譲渡会の日時（描くのは drawEndCard。下のほう）
-export type EndEvent = { date: string; startTime: string; endTime: string; venue: string }
+// 最後の1枚の譲渡会（描くのは drawEndCard。下のほう）。11/8 作者の決定：シェルター情報に文字で入れた4つの欄をそのまま使う
+export type EndEvent = ShelterEvent
 export type EndLayout = {
   design: CardDesign
   fits: boolean
@@ -964,13 +966,12 @@ export type EndLayout = {
   house: boolean // 粘土の家を描いたか（団体名の左下。11/8）
 }
 
-const WEEK = ['日', '月', '火', '水', '木', '金', '土']
-export function eventDateText(e: EndEvent): string {
-  const [y, m, d] = e.date.split('-').map(Number)
-  if (!y || !m || !d) return e.date
-  return `${m}月${d}日（${WEEK[new Date(y, m - 1, d).getDay()]}）`
+// 名前と日付が入っているときだけ、最後の1枚に出す（空なら出さない。11/8 作者の決定）
+export function eventToShow(e: ShelterEvent | undefined | null): EndEvent | null {
+  if (!e) return null
+  const t = { name: e.name.trim(), date: e.date.trim(), time: e.time.trim(), venue: e.venue.trim() }
+  return t.name && t.date ? t : null
 }
-export const eventTimeText = (e: EndEvent) => (e.startTime ? `${e.startTime}〜${e.endTime}` : '')
 
 
 // 団体名の最後の行の左に家を置く。少し下にずらした「左下」を先に試し、文字やロゴと重なるなら、下の端を行の下にそろえる・行の真ん中の順に。どれもだめなら置かない
@@ -1264,8 +1265,14 @@ export function drawEndCard(
     const rad = (Math.abs(HOUSE_TILT) * Math.PI) / 180
     return { w, h, bw: w * Math.cos(rad) + h * Math.sin(rad), bh: w * Math.sin(rad) + h * Math.cos(rad), gap: 14 * k }
   }
-  const build = (k: number): TextRow[] => {
+  // 譲渡会を出すときは、絵は四つ葉のクローバーだけ（いちばん上。11/8 作者の決定）。hk：クローバーの大きさ。入らないときは文字より先に小さく・なくす
+  const clover = opts.event && okImg(DECOR.clover) ? DECOR.clover : null
+  const build = (k: number, hk = 1): TextRow[] => {
     const rows: TextRow[] = []
+    if (clover && hk > 0) {
+      const h = EVENT_CLOVER_H * k * hk
+      rows.push({ lines: [], px: 0, weight: 0, lh: 1, gap: 0, pic: { img: clover, w: (clover.width / clover.height) * h, h } })
+    }
     const hb = houseBox(k)
     const room = hb ? hb.bw + hb.gap : 0
     const text = (t: string, px: number, weight: number, gap: number, alpha?: number): TextRow => {
@@ -1280,11 +1287,13 @@ export function drawEndCard(
       return { lines: wrapName(ctx, t, w), px, weight: 800, lh: 1.3, gap: gap + extra, tag: 'org', indent: design === 'B' ? 0 : room }
     }
     if (opts.event) {
-      rows.push(text('次の譲渡会', 40 * k, 800, rows.length ? 24 * k : 0, 0.9))
-      rows.push(text(eventDateText(opts.event), 58 * k, 800, 10 * k))
-      const time = eventTimeText(opts.event)
-      if (time) rows.push(text(time, 50 * k, 800, 0))
-      if (opts.event.venue) rows.push(text(opts.event.venue, 46 * k, 700, 6 * k))
+      // 「譲渡会」と譲渡会の名前は大きく、日付・時間・場所は小さめ（11/8 作者の決定）。縦の写真では、ほかの文字と同じく後ろを暗くして読めるように
+      const e = opts.event
+      rows.push(text('譲渡会', 64 * k, 800, rows.length ? 20 * k : 0))
+      rows.push(text(e.name, 60 * k, 800, 4 * k))
+      rows.push(text(e.date, 44 * k, 700, 14 * k))
+      if (e.time) rows.push(text(e.time, 44 * k, 700, 0))
+      if (e.venue) rows.push(text(e.venue, 44 * k, 700, 0))
     }
     const g = opts.event ? 40 * k : rows.length ? 24 * k : 0
     if (logo) {
@@ -1297,9 +1306,10 @@ export function drawEndCard(
   }
   let k = 1
   let rows = build(1)
-  for (const s of [1, 0.92, 0.84, 0.76, 0.68]) {
+  const tries: [number, number][] = [[1, 1], [1, 0.75], [1, 0.5], [1, 0], [0.92, 0], [0.84, 0], [0.76, 0], [0.68, 0]]
+  for (const [s, hk] of tries) {
     k = s
-    rows = build(s)
+    rows = build(s, hk)
     if (placeRows(design, rowsH(rows)).ok) break
   }
   const r = paintRows(ctx, design, rows, opts)

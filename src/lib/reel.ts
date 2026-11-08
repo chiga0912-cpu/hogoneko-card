@@ -1,6 +1,6 @@
 // 1匹の紹介の順番（SPEC 3.2）に、カードと撮った動画を並べる
 //   1 表紙 3秒 → 2 撮った動画（選んだ5秒。なければ飛ばす）→ 3 猫カード 3秒（言葉が2行なら4秒）→ 4 ひとこと 3〜5秒（なければ飛ばす）→ 5 最後の1枚 4秒
-import type { AdoptionEvent, Cat, Shelter } from '../types'
+import type { Cat, Shelter, ShelterEvent } from '../types'
 import { bandColors, CARD_H, CARD_W, drawCatCard, drawClipName, drawCoverCard, drawEndCard, drawWordsCard, loadImage, paintBand } from './card'
 import { cardWordLines } from './words'
 import { loadBandPattern } from './band'
@@ -16,7 +16,7 @@ const canvas = () => {
 }
 
 // words：ひとことカードに載せる文（確認画面で決めたもの。入りきらず投稿文にだけ載せるときは null）
-export async function buildSegments(cat: Cat, shelter: Shelter, event: AdoptionEvent | null, words: string | null): Promise<Segment[]> {
+export async function buildSegments(cat: Cat, shelter: Shelter, event: ShelterEvent | null, words: string | null): Promise<Segment[]> {
   // カードごとの写真（SPEC 3.2 の表）。写真がなく動画だけのときは、選んだ5秒のコマを使う
   const imgs = await Promise.all(cat.photos.map((b) => loadImage(b).catch(() => null)))
   const logo = shelter.logo ? await loadImage(shelter.logo).catch(() => null) : null

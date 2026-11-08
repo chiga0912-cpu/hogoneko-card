@@ -9,7 +9,10 @@ export type Shelter = {
   fixedText: string // 毎回同じ文章（例：予約不要、当日は連れて帰れない）
   hashtags: string[] // いつものハッシュタグ（「#」付き）。投稿文には5つまで
   venues: string[] // いつもの譲渡会場所
+  // 次の譲渡会（11/8 作者の決定。小さい版：シェルター情報に4つの欄を文字で入れる。名前と日付があるときだけ最後の1枚に出す）
+  event?: ShelterEvent
 }
+export type ShelterEvent = { name: string; date: string; time: string; venue: string }
 
 export const AGE_STAGES = ['子猫', '若い猫', 'おとなの猫', 'シニア猫'] as const
 export type AgeStage = (typeof AGE_STAGES)[number]

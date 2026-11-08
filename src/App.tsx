@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { APP_VERSION, CHECK_MODE } from './lib/checkMode'
-import { newCat, type AdoptionEvent, type Cat, type Shelter } from './types'
+import { newCat, type Cat, type Shelter, type ShelterEvent } from './types'
 import * as db from './db'
 import { detectBrowser, isStandalone } from './lib/browser'
 import { makeFixedPost } from './lib/post'
@@ -99,7 +99,7 @@ export default function App() {
   const [clipLost, setClipLost] = useState(false) // 途中の動画を残せていなかった
   const [stalePhotos, setStalePhotos] = useState<Blob[] | null>(null) // 前の写真の組に戻っているかもしれないとき、その組（#44）
   const [reelWords, setReelWords] = useState<string | null>(null) // ひとことカードに載せる文（確認画面で決めたもの）
-  const [reelEvent, setReelEvent] = useState<AdoptionEvent | null>(null) // 最後の1枚に入れる譲渡会（確認画面で選んだもの）
+  const [reelEvent, setReelEvent] = useState<ShelterEvent | null>(null) // 最後の1枚に入れる譲渡会（確認画面で選んだもの）
 
   const go = (next: Screen) => {
     setScreen(next)
@@ -362,7 +362,7 @@ export default function App() {
   }
 
   // ［動画を作る］：名簿を新しくしてから、保存の画面で動画を作る（SPEC 2.5「保存したら、名簿の内容も新しくする」）
-  const saveToRoster = async (event: AdoptionEvent | null, words: string | null) => {
+  const saveToRoster = async (event: ShelterEvent | null, words: string | null) => {
     setReelEvent(event)
     setReelWords(words)
     const saved = { ...cat, updatedAt: Date.now() }

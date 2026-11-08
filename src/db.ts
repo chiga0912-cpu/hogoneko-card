@@ -257,6 +257,9 @@ function normalizeShelter(raw: unknown): Shelter | undefined {
     fixedText: str(raw.fixedText),
     hashtags: strs(raw.hashtags),
     venues: strs(raw.venues),
+    event: isObj(raw.event)
+      ? { name: str(raw.event.name), date: str(raw.event.date), time: str(raw.event.time), venue: str(raw.event.venue) }
+      : undefined,
   }
 }
 

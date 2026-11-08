@@ -56,6 +56,9 @@ export default function ShelterForm({ initial, first, needName = false, onSave, 
         .split('\n')
         .map((v) => v.trim())
         .filter(Boolean),
+      event: s.event
+        ? { name: s.event.name.trim(), date: s.event.date.trim(), time: s.event.time.trim(), venue: s.event.venue.trim() }
+        : undefined,
       })
     } catch {
       setSaveFailed(true)
@@ -195,6 +198,31 @@ export default function ShelterForm({ initial, first, needName = false, onSave, 
           onChange={(e) => setVenuesText(e.target.value)}
         />
       </label>
+
+      <div className="field" data-event-fields>
+        <span>次の譲渡会</span>
+        <p className="muted">名前と日付を入れると、動画の最後の1枚に出ます。空なら出しません。</p>
+        {(
+          [
+            ['name', '譲渡会の名前', '例：ねこの会 譲渡会'],
+            ['date', '日付', '例：11月23日（日）'],
+            ['time', '時間', '例：13時〜16時'],
+            ['venue', '場所', '例：ひだまり公民館'],
+          ] as const
+        ).map(([k, label, ph]) => (
+          <label key={k} className="field event-field">
+            <span>{label}</span>
+            <input
+              value={s.event?.[k] ?? ''}
+              placeholder={ph}
+              onChange={(e) => {
+                const v = e.target.value
+                setS((prev) => ({ ...prev, event: { ...(prev.event ?? { name: '', date: '', time: '', venue: '' }), [k]: v } }))
+              }}
+            />
+          </label>
+        ))}
+      </div>
 
       {isStandalone() && <p className="icon-warning">{ICON_WARNING}</p>}
 

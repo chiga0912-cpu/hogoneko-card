@@ -1,6 +1,6 @@
 import { callClaude, limitText } from '../lib/claude'
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { MAX_HASHTAGS, type AdoptionEvent, type Cat, type Shelter } from '../types'
+import { MAX_HASHTAGS, type Cat, type Shelter } from '../types'
 import { countHashtags } from '../lib/hashtags'
 import {
   CARD_H,
@@ -9,14 +9,14 @@ import {
   drawCoverCard,
   drawEndCard,
   drawWordsCard,
+  eventToShow,
   loadImage,
   splitSentences,
   type CardLayout,
+  type EndEvent,
   type Framing,
   type TextPosition,
 } from '../lib/card'
-import * as db from '../db'
-import { nextEvent } from '../lib/events'
 import WriteStory, { type Live } from './WriteStory'
 import StoryCheck, { openFlags, type CheckState } from './StoryCheck'
 import { factChunks, flagOldName, removeSentence, splitMemo, storySentences, writtenNameOf, type StoryDraft, type Verdict } from '../lib/story'
@@ -141,7 +141,7 @@ type Props = {
   post: string
   onPostChange: (s: string) => void
   onBack: () => void
-  onSave: (event: AdoptionEvent | null, words: string | null) => Promise<void>
+  onSave: (event: EndEvent | null, words: string | null) => Promise<void>
   restoreNotice?: string | null
   story?: StoryDraft | null // Claudeが書いた本文と根拠の確認の結果（#17。入力の途中に残る）
   onStoryChange?: (s: StoryDraft | null | ((cur: StoryDraft | null) => StoryDraft | null)) => void
@@ -215,8 +215,8 @@ export default function Preview({ shelter, cat, onCatChange, post, onPostChange,
 
   const [full, setFull] = useState<'cover' | 'cat' | 'words' | 'end' | null>(null)
   const [layout, setLayout] = useState<CardLayout | null>(null)
-  const [event, setEvent] = useState<AdoptionEvent | null>(null)
-  const [eventsRead, setEventsRead] = useState(false) // 譲渡会を読み終えるまで［動画を作る］を押せなくする（読み終える前だと譲渡会なしで作られるため）
+  // 譲渡会は、シェルター情報に文字で入れた4つの欄から（11/8 作者の決定。小さい版。名前と日付があるときだけ）
+  const event = useMemo(() => eventToShow(shelter.event), [shelter.event])
   const [coverFits, setCoverFits] = useState(true)
   const [coverDesign, setCoverDesign] = useState<'A' | 'B'>('A') // 表紙の形（縦の写真＝A なら写真を指で動かせる。11/8）
   const [endFits, setEndFits] = useState(true)
@@ -224,18 +224,6 @@ export default function Preview({ shelter, cat, onCatChange, post, onPostChange,
   const [wordsDesign, setWordsDesign] = useState<'A' | 'B'>('A')
   const [endDesign, setEndDesign] = useState<'A' | 'B'>('A')
   const [showEvent, setShowEvent] = useState(true) // 最後の1枚に譲渡会を入れるか（確認画面で外せる）
-  useEffect(() => {
-    db.loadEvents().then(
-      (list) => {
-        setEvent(nextEvent(list))
-        setEventsRead(true)
-      },
-      () => {
-        setEvent(null) // 読めなくても、連絡先だけで作れる
-        setEventsRead(true)
-      },
-    )
-  }, [])
   const photo1 = cat.photos[0] ?? null
   // 写真がなく動画だけのときは、選んだ5秒のコマを使う（SPEC 3.2 の表。表紙・猫カードは最初、ひとことはまん中、最後の1枚は最後）
   const [stills, setStills] = useState<Partial<Record<CardKey, HTMLCanvasElement | null>>>({})
@@ -381,7 +369,7 @@ export default function Preview({ shelter, cat, onCatChange, post, onPostChange,
   }
   const saveLatest = useRef(async () => {})
   saveLatest.current = async () => {
-    if (saving || tooMany || !eventsRead || storyBlocked) return
+    if (saving || tooMany || storyBlocked) return
     setSaving(true)
     setSaveFailed(false)
     try {
@@ -540,10 +528,10 @@ export default function Preview({ shelter, cat, onCatChange, post, onPostChange,
       {event && (
         <label className="check-row">
           <input type="checkbox" checked={showEvent} onChange={(e) => setShowEvent(e.target.checked)} />
-          最後の1枚に、次の譲渡会（{event.date.slice(5).replace('-', '/')}）を入れる
+          最後の1枚に、譲渡会（{event.name}・{event.date}）を入れる
         </label>
       )}
-      {!event && <p className="muted">次の譲渡会が登録されていないので、最後の1枚には団体名と連絡先だけを入れます。</p>}
+      {!event && <p className="muted">譲渡会が入っていないので、最後の1枚には団体名と連絡先だけを入れます。譲渡会は［シェルター情報を直す］で入れられます。</p>}
 
       {moving && (
         <FramingEditor
@@ -667,7 +655,7 @@ export default function Preview({ shelter, cat, onCatChange, post, onPostChange,
         )}
         <button
           className={draftOnly ? 'btn btn-big' : 'btn btn-primary btn-big'} // 本文を書く前は、［物語の本文を書いてもらう］のほうを目立たせる
-          disabled={saving || tooMany || !eventsRead || storyBlocked}
+          disabled={saving || tooMany || storyBlocked}
           onClick={() => {
             // iPhone の日本語入力で、変換を確定する前に押したとき、投稿文の欄の最後の文字が入らないまま作らないように、
             // 欄に見えている文字を入力に入れ、画面が描き直されてから（ハッシュタグの数などを確かめ直して）作る（11/7 作者が iPhone で見つけた件と同じ）
