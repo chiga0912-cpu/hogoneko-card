@@ -164,7 +164,14 @@ export function phraseUnits(text: string): string[] {
   return out
 }
 const STOP_TAIL = 0.5 // 「、」「。」のあとで折るのは、そのあとの部分が行の幅のこの割合より短いとき ⚙
-export function wrapText(ctx: CanvasRenderingContext2D, text: string, width: number): string[] {
+// maxRows：その文に使える行の数。文節で折ると入らず、前の折り方なら入るときは、前の折り方にする（前に入っていた長さの文が、入らなくならないように）
+export function wrapText(ctx: CanvasRenderingContext2D, text: string, width: number, maxRows = Infinity): string[] {
+  const p = wrapPhrases(ctx, text, width)
+  if (p.length <= maxRows) return p
+  const o = wrap(ctx, text, width)
+  return o.length < p.length ? o : p
+}
+function wrapPhrases(ctx: CanvasRenderingContext2D, text: string, width: number): string[] {
   const W = (t: string) => ctx.measureText(t).width
   const lines: string[] = []
   let cur: string[] = []
@@ -268,7 +275,7 @@ function plan(ctx: CanvasRenderingContext2D, name: string, profile: string, line
   const prof = profile.trim() ? wrapText(ctx, profile.trim(), width.name) : []
   const lineSize = Math.round(LINE_PX * k)
   ctx.font = `700 ${lineSize}px ${FONT}`
-  const body = lines.slice(0, n).map((l) => wrapText(ctx, l, width.body))
+  const body = lines.slice(0, n).map((l) => wrapText(ctx, l, width.body, MAX_WORD_ROWS))
   return { nameLines, prof, profSize, body, nameSize, lineSize, h: blockH({ nameLines, prof, profSize, body, nameSize, lineSize }) }
 }
 const rowsOf = (body: string[][]) => body.reduce((a, b) => a + b.length, 0)
@@ -1167,11 +1174,14 @@ export function drawWordsCard(
   const quoted = `「${opts.text.trim()}」`
   let size = WORDS_SIZES[0]
   let lines: string[] = []
-  for (const px of WORDS_SIZES) {
-    size = px
-    ctx.font = `700 ${px}px ${FONT}`
-    lines = quoted.split('\n').flatMap((para) => (para ? wrapText(ctx, para, WORDS_W) : ['']))
-    if (lines.length <= WORDS_MAX_ROWS) break
+  // まず文節で折って、4行に入る大きさを探す。どの大きさでも入らないときだけ、前の折り方で探す（前に入っていた長さの言葉が、入らなくならないように）
+  search: for (const fold of [Infinity, 0]) {
+    for (const px of WORDS_SIZES) {
+      size = px
+      ctx.font = `700 ${px}px ${FONT}`
+      lines = quoted.split('\n').flatMap((para) => (para ? wrapText(ctx, para, WORDS_W, fold) : ['']))
+      if (lines.length <= WORDS_MAX_ROWS) break search
+    }
   }
   const rows: TextRow[] = [
     { lines: ['ひとこと'], px: 40, weight: 800, lh: 1.3, gap: 0, alpha: 0.9, icon: okImg(DECOR.flower) ? { img: DECOR.flower, size: 40 * FLOWER_K } : undefined },
