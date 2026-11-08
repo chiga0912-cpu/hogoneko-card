@@ -262,7 +262,7 @@ function pickWords(lines: string[], avoid: string | null | undefined, tryWith: (
   return { chosen, words, indexes, skippedLong, skippedSame, longLines }
 }
 
-function drawContain(ctx: CanvasRenderingContext2D, img: Img, x: number, y: number, w: number, h: number) {
+function drawContain(ctx: CanvasRenderingContext2D, img: Img, x: number, y: number, w: number, h: number, band?: string) {
   // 切らずに、枠の中に全体を入れる（横・正方形の写真。上下はテーマ色の帯）
   const s = Math.min(w / img.width, h / img.height)
   const dw = img.width * s
@@ -270,6 +270,7 @@ function drawContain(ctx: CanvasRenderingContext2D, img: Img, x: number, y: numb
   const dx = x + (w - dw) / 2
   const dy = y + (h - dh) / 2
   ctx.drawImage(img, dx, dy, dw, dh)
+  if (band) drawBandLines(ctx, dy, dy + dh, band)
   lastContain = { x: dx, y: dy, w: dw, h: dh }
 }
 let lastContain: { x: number; y: number; w: number; h: number } | null = null // 直前に帯のあいだに入れた写真の場所（角の絵の位置に使う）
@@ -356,9 +357,32 @@ function drawPawInBand(ctx: CanvasRenderingContext2D, band: string): boolean {
   return false
 }
 
-// 帯の線の場所（肉球を線の上に載せるため。線を描くのは drawBandLines）
-export const LINE_W = 16 // 線の太さ ⚙
+// ── 上と下の帯に1本ずつ線（11/8 作者の決定）──
+// 写真の境目から少し離して、カードの幅いっぱいに（左右で切らない）。波線（境目の絵）は使わない
+// 線の色は帯の色から作る：暗い帯（文字が白）なら白を、明るい帯（文字が濃い色）なら黒を少しずつ混ぜて、帯の上で見える濃さに
+// 上の帯の最後の文字と写真のあいだは36px（B_PAD）。線はそのうち写真側の LINE_GAP＋LINE_W を使う
+export const LINE_W = 16 // 線の太さ（前の試しの8pxの2倍）⚙
 export const LINE_GAP = 10 // 写真の境目からのすき間 ⚙
+const LINE_MIN_CONTRAST = 1.6 // 帯との見やすさの下限（線は文字ではないので、4.5ではなく「はっきり見える」くらい）⚙
+export function bandLineColor(band: string): string {
+  const n = parseInt(band.replace('#', ''), 16)
+  const c = [(n >> 16) & 255, (n >> 8) & 255, n & 255]
+  const toWhite = themeInk(band).on === '#ffffff'
+  const L = (v: number[]) => lum(v[0], v[1], v[2])
+  let m = c
+  for (let t = 0.2; t <= 1.0001; t += 0.05) {
+    m = c.map((v) => Math.round(toWhite ? v + (255 - v) * t : v * (1 - t)))
+    if (ratio(L(m), L(c)) >= LINE_MIN_CONTRAST) break
+  }
+  return '#' + m.map((v) => v.toString(16).padStart(2, '0')).join('')
+}
+function drawBandLines(ctx: CanvasRenderingContext2D, top: number, bottom: number, band: string) {
+  ctx.save()
+  ctx.fillStyle = bandLineColor(band)
+  ctx.fillRect(0, top - LINE_GAP - LINE_W, CARD_W, LINE_W)
+  ctx.fillRect(0, bottom + LINE_GAP, CARD_W, LINE_W)
+  ctx.restore()
+}
 
 // 表紙：名前の最後の行の横にクローバー
 function drawClover(ctx: CanvasRenderingContext2D, p: Planned, nameTop: number, bounds: { left: number; right: number }): boolean {
@@ -641,7 +665,7 @@ function drawB(ctx: CanvasRenderingContext2D, opts: Opts, lines: string[]): Card
 
   paintBand(ctx, band, opts.pattern)
   lastContain = null
-  if (opts.photo) drawContain(ctx, opts.photo, 0, topH, CARD_W, CARD_H - topH - botH)
+  if (opts.photo) drawContain(ctx, opts.photo, 0, topH, CARD_W, CARD_H - topH - botH, band)
   if (opts.pattern) readableOnBand(ctx, SAFE.left, SAFE.top, WIDE_W, p.h, color)
 
   // ロゴは表紙と最後の1枚だけ（猫カードには入れない。11/6 作者の決定）
@@ -729,7 +753,7 @@ export function drawCoverCard(
     const botH = SAFE.bottom
     paintBand(ctx, band, opts.pattern)
     lastContain = null
-    if (opts.photo) drawContain(ctx, opts.photo, 0, topH, CARD_W, CARD_H - topH - botH)
+    if (opts.photo) drawContain(ctx, opts.photo, 0, topH, CARD_W, CARD_H - topH - botH, band)
     if (opts.pattern) readableOnBand(ctx, SAFE.left, textTop, WIDE_W, markTop + mark.h - textTop, color)
     const gw = drawGreeting(ctx, gSize, textTop, color, false)
     const p: Planned = { nameLines: lines, prof: [], profSize: 0, body: [], nameSize: size, lineSize: 0, h: 0 }
@@ -935,9 +959,9 @@ export function drawFramed(ctx: CanvasRenderingContext2D, img: Img, x: number, y
 export const MAX_SCALE = 3 // 写真を大きくできるのは3倍まで ⚙
 
 // 縦の写真は画面いっぱいに（指で動かせる）、横・正方形の写真は帯のあいだに切らずに入れる。写真がないときは無地の濃い色
-function paintPhoto(ctx: CanvasRenderingContext2D, design: CardDesign, photo: Img | null, framing: Framing, topH: number): Framing | null {
+function paintPhoto(ctx: CanvasRenderingContext2D, design: CardDesign, photo: Img | null, framing: Framing, topH: number, band?: string): Framing | null {
   if (design === 'B') {
-    if (photo) drawContain(ctx, photo, 0, topH, CARD_W, CARD_H - topH - SAFE.bottom)
+    if (photo) drawContain(ctx, photo, 0, topH, CARD_W, CARD_H - topH - SAFE.bottom, band)
     return null
   }
   ctx.fillStyle = '#6b5f55'
@@ -1028,7 +1052,7 @@ function paintRows(
     const { band, color, contrast } = bandColors(opts.theme)
     paintBand(ctx, band, opts.pattern)
     lastContain = null
-    paintPhoto(ctx, design, opts.photo ?? null, NO_FRAMING, pl.topH)
+    paintPhoto(ctx, design, opts.photo ?? null, NO_FRAMING, pl.topH, band)
     if (opts.pattern) readableOnBand(ctx, SAFE.left, pl.top, WIDE_W, h, color)
     const t = drawRows(ctx, rows, pl.top, design, color)
     drawPawInBand(ctx, band) // 上の帯の左端に肉球（文字を描いたあとで、重ならない所に）
