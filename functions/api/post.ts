@@ -81,7 +81,8 @@ export const onRequestPost = async ({ request, env }: Ctx): Promise<Response> =>
   // 本文を書いたあとに根拠の確認が続くので、その分も残っているときだけ書く（書けたのに確かめられない、をなくす）
   const limited = await takeCall(request, env, 2)
   if (limited) return limited
-  const client = new Anthropic({ apiKey: env.ANTHROPIC_API_KEY, maxRetries: 1, timeout: 60_000 })
+  // 待ち時間は1回25秒・もう1回まで（11/8 作者の決定）。iPhone のブラウザが返事を待つのをあきらめる（60秒ほど）より前に、かならず答えを返す
+  const client = new Anthropic({ apiKey: env.ANTHROPIC_API_KEY, maxRetries: 1, timeout: 25_000 })
   const model = env.POST_MODEL || 'claude-sonnet-5-5'
   const effort = (env.POST_EFFORT as 'low' | 'medium' | 'high' | undefined) || 'medium'
   const useFallback = env.POST_FALLBACK !== '0'

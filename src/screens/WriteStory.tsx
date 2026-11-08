@@ -23,6 +23,9 @@ type Props = {
 
 // ［物語の本文を書いてもらう］（#16。SPEC 4.1・4.2・4.4）。AIに送るのはメモの文字と、確認した名前・いいところだけ
 // Claudeが書くのは本文だけ。年齢・性別・健康・毎回の文・連絡先・ハッシュタグは、決まった形でプログラムが足す
+// もう一度試しても同じ結果になる失敗（回数の上限・送った内容の形・長すぎ・空）。これ以外の失敗は、自動でもう1回だけ試す
+const NO_RETRY = ['limit-all', 'limit-device', 'bad-request', 'too-long', 'empty']
+
 export default function WriteStory({ cat, shelter, post, onPost, live, primary = false, beforeWrite }: Props) {
   const [busy, setBusy] = useState(false)
   const [failed, setFailed] = useState(false)
@@ -48,7 +51,12 @@ export default function WriteStory({ cat, shelter, post, onPost, live, primary =
     const { text, masked: n } = maskContacts(cleanLine(memo).text)
     setMasked(n)
     try {
-      const ans = await callClaude<{ result?: StoryResult; error?: string }>('/api/post', { memo: text, facts })
+      // 失敗したら、自動でもう1回だけ試す（11/8 作者の決定。Claudeが混んでいたときなど、2回目で書けることが多いため）。
+      // 回数の上限・入力の形の問題は、もう一度試しても同じなので試さない
+      const ask = () => callClaude<{ result?: StoryResult; error?: string }>('/api/post', { memo: text, facts })
+      let ans = await ask()
+      const again = (a: typeof ans) => !a.ok ? !NO_RETRY.includes(a.error) : !a.body.result && !NO_RETRY.includes(a.body.error ?? '')
+      if (again(ans)) ans = await ask()
       if (!ans.ok) setLimit(limitText(ans.error))
       if (!ans.ok || !ans.body.result) throw new Error(ans.ok ? (ans.body.error ?? 'empty') : ans.error)
       const body = ans.body as { result: StoryResult }
@@ -86,7 +94,11 @@ export default function WriteStory({ cat, shelter, post, onPost, live, primary =
         {busy ? '本文を書いています…' : '物語の本文を書いてもらう'}
       </button>
       {!storyReady(memo, facts) && <p className="muted center">メッセージか「いいところ」を入れると押せます</p>}
-      {failed && <p className="alert">{limit ?? '本文を書けませんでした。'}下の投稿文は決まった形のままです。そのまま使うか、手で書き足してください。</p>}
+      {failed && (
+        <p className="alert">
+          {limit ?? '本文を書けませんでした。'}下の投稿文は決まった形のままです。そのまま使うか、手で書き足してください。もう一度押すと書けることがあります。
+        </p>
+      )}
       {masked > 0 && !busy && <p className="muted">電話番号・メールアドレスらしきもの{masked}こは、伏せて送りました。</p>}
     </div>
   )

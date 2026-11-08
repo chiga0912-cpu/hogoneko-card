@@ -128,8 +128,15 @@ const p = await ctx.newPage()
 }
 let sent = null
 let answer = 'ok'
+let postCalls = 0
 await p.route('**/api/post', async (route) => {
   sent = JSON.parse(route.request().postData() ?? '{}')
+  postCalls++
+  // failOnce：1回目だけ失敗する（Claudeが混んでいたときのような）。画面が自動でもう1回試すか確かめる
+  if (answer === 'failOnce') {
+    answer = 'ok'
+    return route.fulfill({ status: 502, contentType: 'application/json', body: JSON.stringify({ error: 'api' }) })
+  }
   if (answer === 'fail') return route.fulfill({ status: 502, contentType: 'application/json', body: JSON.stringify({ error: 'api' }) })
   const body = '（仮の本文）ごはんをよく食べるようになったミント。\nトイレも上手にできます。'
   await new Promise((r) => setTimeout(r, 300))
@@ -208,12 +215,21 @@ await p.evaluate(() => (window.__confirmAnswer = 'yes'))
 
 // Claudeが使えないとき：決まった形のまま、知らせる
 answer = 'fail'
+postCalls = 0
 await post.fill(before)
 await p.getByRole('button', { name: '物語の本文を書いてもらう' }).click()
 await p.getByText('本文を書けませんでした。').waitFor({ timeout: 3000 }).catch(() => {})
 ok(await p.getByText('本文を書けませんでした。下の投稿文は決まった形のままです。').isVisible(), 'Claudeが使えないときは知らせる')
+ok(postCalls === 2, `失敗したら、画面のほうで自動でもう1回だけ試す（送った回数 ${postCalls}。11/8 作者の決定）`)
+ok(await p.getByText('もう一度押すと書けることがあります。').isVisible(), '失敗したときの案内に「もう一度押すと書けることがあります」（11/8 作者の決定）')
 ok((await post.inputValue()) === before, 'そのときも投稿文は決まった形のまま')
 await p.screenshot({ path: join(outDir, '16b_投稿文_書けなかった.png'), fullPage: true })
+// 1回目だけ失敗したとき：画面が自動でもう1回試して、本文が書ける（失敗の案内は出ない。11/8 作者の決定）
+answer = 'failOnce'
+postCalls = 0
+await p.getByRole('button', { name: '物語の本文を書いてもらう' }).click()
+await p.waitForFunction(() => [...document.querySelectorAll('textarea')].some((t) => t.value.includes('（仮の本文）')), null, { timeout: 5000 }).catch(() => {})
+ok(postCalls === 2 && (await post.inputValue()).includes('（仮の本文）') && !(await p.getByText('本文を書けませんでした。').isVisible()), `1回目だけ失敗しても、自動でもう1回試して本文が書ける（送った回数 ${postCalls}）`)
 
 
 // ── 根拠の確認（#17）：文ごとの印・メモが光る・［消す］［本当です（残す）］・印が残っている間は［動画を作る］を押せない・入力の途中に残る ──
