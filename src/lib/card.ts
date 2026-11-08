@@ -270,45 +270,107 @@ function drawContain(ctx: CanvasRenderingContext2D, img: Img, x: number, y: numb
   const dx = x + (w - dw) / 2
   const dy = y + (h - dh) / 2
   ctx.drawImage(img, dx, dy, dw, dh)
-  drawEdges(ctx, dx, dy, dw, dh) // 帯と写真の境目の手描きの線（絵があるときだけ）
   lastContain = { x: dx, y: dy, w: dw, h: dh }
 }
 let lastContain: { x: number; y: number; w: number; h: number } | null = null // 直前に帯のあいだに入れた写真の場所（角の絵の位置に使う）
 
-// ── オリジナルの絵を入れる場所（11/8。作る人が描いた絵に差し替えられる）──
-// 絵は public/ に置く（band.ts の loadBandPattern が、帯の柄と一緒に読んで setDecor で入れる）。置いていないときは何も描かない（今までと同じ）
-//   edge.png：帯と写真の境目の線。横長・背景は透明。写真の上の境目にそのまま、下の境目には上下を返して、写真の幅いっぱいに描く
-//   corner.png：表紙と最後の1枚の小さな絵。背景は透明。CORNER_SIZE の正方形の中に収める
-//     縦の写真（案A）：右上（上220・右64の隠れる所の内側）。横・正方形の写真（案B）：写真の右上の角に、境目から24pxだけ帯にかかるように（上の帯の文字と重ならないように）
-// 絵は作る人の作品で、MITの対象外（README）
-export type Decor = { edge: Img | null; corner: Img | null }
-let DECOR: Decor = { edge: null, corner: null }
+// ── 作者の絵（11/8 作者の決定。どれも作者が期間中に作った絵で、背景を消したもの）──
+// 絵は public/art/ に置く（band.ts の loadBandPattern が読んで setDecor で入れる）。置いていないときは何も描かない
+//   clover：表紙の名前の横に小さく、少し斜めに（縦・横どちらの写真でも）
+//   house：最後の1枚に。文字の上に
+//   flower：ひとことカードの「ひとこと」の横に小さく
+//   paw：横・正方形の写真のカードで、上の帯の左端（帯の線の上）。色はそのまま。文字と重なるときは小さくし、それでも重なれば描かない
+// 絵は作者の作品で、MITの対象外（README）
+export type Decor = { clover: Img | null; house: Img | null; flower: Img | null; paw: Img | null }
+let DECOR: Decor = { clover: null, house: null, flower: null, paw: null }
 export function setDecor(d: Decor) {
   DECOR = d
 }
-export const EDGE_H = 36 // 境目の線の太さ（カードの上で。絵の縦横の比は保たず、この高さに合わせる）
-export const CORNER_SIZE = 150 // 角の絵の大きさ（カードの上で。正方形の中に、縦横の比を保って収める）
-function drawEdges(ctx: CanvasRenderingContext2D, x: number, y: number, w: number, h: number) {
-  const e = DECOR.edge
-  if (!e || !e.width || !e.height) return
-  ctx.drawImage(e, x, y - EDGE_H / 2, w, EDGE_H)
+const okImg = (i: Img | null): i is Img => !!i && i.width > 0 && i.height > 0
+export const CLOVER_K = 0.85 // 名前の文字の高さに対するクローバーの大きさ ⚙
+export const CLOVER_TILT = 15 // クローバーの傾き（度。右回り）⚙
+export const FLOWER_K = 1.8 // 「ひとこと」の文字の高さに対する花の大きさ ⚙
+export const HOUSE_H = 190 // 最後の1枚の家の高さ（px。横幅は絵の形のまま。長いときは文字と一緒に小さくなる）⚙
+export const PAW_SIZES = [110, 96, 84] // 帯の中の肉球の大きさ（大きい順に試す）⚙
+
+// 行の横に絵を置く。lineX/align：その行を描いた位置とそろえ方。右に置けなければ左に、どちらも無理なら置かない
+function drawBeside(
+  ctx: CanvasRenderingContext2D,
+  img: Img,
+  line: { x: number; align: 'left' | 'center'; w: number; top: number; h: number },
+  size: number,
+  tilt: number,
+  bounds: { left: number; right: number },
+): boolean {
+  const s = size / Math.max(img.width, img.height)
+  const w = img.width * s
+  const h = img.height * s
+  const gap = size * 0.18
+  const lineLeft = line.align === 'center' ? line.x - line.w / 2 : line.x
+  const lineRight = lineLeft + line.w
+  let cx = lineRight + gap + w / 2
+  if (cx + w / 2 > bounds.right) cx = lineLeft - gap - w / 2
+  if (cx - w / 2 < bounds.left) return false
+  const cy = line.top + line.h / 2
   ctx.save()
-  ctx.translate(0, y + h)
-  ctx.scale(1, -1)
-  ctx.drawImage(e, x, -EDGE_H / 2, w, EDGE_H)
+  ctx.shadowColor = 'transparent'
+  ctx.translate(cx, cy)
+  ctx.rotate((tilt * Math.PI) / 180)
+  ctx.drawImage(img, -w / 2, -h / 2, w, h)
   ctx.restore()
+  return true
 }
-function drawCorner(ctx: CanvasRenderingContext2D, onPhoto: boolean) {
-  const c = DECOR.corner
-  if (!c || !c.width || !c.height) return
-  const s = Math.min(CORNER_SIZE / c.width, CORNER_SIZE / c.height)
-  const w = c.width * s
-  const h = c.height * s
-  const p = onPhoto ? lastContain : null
-  const x = p ? Math.min(CARD_W - SAFE.right, p.x + p.w - 24) - w : CARD_W - SAFE.right - w
-  // 帯の形では、写真の上の境目から24pxだけ帯にかかる（帯の最後の文字の下のすき間は36pxなので、文字とは重ならない。見直しの軽い5）
-  const y = p ? Math.max(SAFE.top, p.y - Math.min(24, h / 2)) : SAFE.top
-  ctx.drawImage(c, x, y, w, h)
+
+// 横・正方形の写真のカード：上の帯の左端、帯の線の上に肉球。Instagramで隠れない所（上220より下・左64の内側）
+// 重なるかは、置く所がまだ帯の色だけかで確かめる（帯は無地なので、文字・ロゴがあれば色が違う）
+function drawPawInBand(ctx: CanvasRenderingContext2D, band: string): boolean {
+  const c = DECOR.paw
+  if (!okImg(c)) return false
+  const p = lastContain
+  const n = parseInt(band.replace('#', ''), 16)
+  const [br, bg, bb] = [(n >> 16) & 255, (n >> 8) & 255, n & 255]
+  for (const size of PAW_SIZES) {
+    const sc = Math.min(size / c.width, size / c.height)
+    const w = c.width * sc
+    const h = c.height * sc
+    const x = SAFE.left
+    const y = p ? p.y - LINE_GAP - LINE_W - 8 - h : SAFE.top
+    if (y < SAFE.top || y + h > CORNER_TOP) continue
+    let d: Uint8ClampedArray
+    try {
+      d = ctx.getImageData(Math.floor(x), Math.floor(y), Math.ceil(w), Math.ceil(h)).data
+    } catch {
+      return false
+    }
+    let clear = true
+    for (let i = 0; i < d.length; i += 4) {
+      if (Math.abs(d[i] - br) > 12 || Math.abs(d[i + 1] - bg) > 12 || Math.abs(d[i + 2] - bb) > 12) {
+        clear = false
+        break
+      }
+    }
+    if (!clear) continue
+    ctx.drawImage(c, x, y, w, h)
+    return true
+  }
+  return false
+}
+
+// 帯の線の場所（肉球を線の上に載せるため。線を描くのは drawBandLines）
+export const LINE_W = 16 // 線の太さ ⚙
+export const LINE_GAP = 10 // 写真の境目からのすき間 ⚙
+
+// 表紙：名前の最後の行の横にクローバー
+function drawClover(ctx: CanvasRenderingContext2D, p: Planned, nameTop: number, bounds: { left: number; right: number }): boolean {
+  const c = DECOR.clover
+  if (!okImg(c) || !p.nameLines.length) return false
+  ctx.save()
+  ctx.font = `800 ${p.nameSize}px ${FONT}`
+  const last = p.nameLines[p.nameLines.length - 1]
+  const w = ctx.measureText(last).width
+  ctx.restore()
+  const top = nameTop + (p.nameLines.length - 1) * p.nameSize * NAME_LH
+  return drawBeside(ctx, c, { x: CARD_W / 2, align: 'center', w, top, h: p.nameSize * NAME_LH }, p.nameSize * CLOVER_K, CLOVER_TILT, bounds)
 }
 
 // 文字を書く。align：left なら x から、center なら x を真ん中に
@@ -593,11 +655,13 @@ function drawB(ctx: CanvasRenderingContext2D, opts: Opts, lines: string[]): Card
   const { topH, botH } = bands(p)
 
   paintBand(ctx, band, opts.pattern)
+  lastContain = null
   if (opts.photo) drawContain(ctx, opts.photo, 0, topH, CARD_W, CARD_H - topH - botH)
   if (opts.pattern) readableOnBand(ctx, SAFE.left, SAFE.top, WIDE_W, p.h, color)
 
   // ロゴは表紙と最後の1枚だけ（猫カードには入れない。11/6 作者の決定）
   const t = drawText(ctx, p, SAFE.left + WIDE_W / 2, SAFE.top + logoH, color, 'center', false, 'all')
+  drawPawInBand(ctx, band) // 上の帯の左端に肉球（文字を描いたあとで、重ならない所に）
 
   return {
     design: 'B',
@@ -629,7 +693,7 @@ export function loadImage(blob: Blob): Promise<HTMLImageElement> {
 // ── 表紙（SPEC 3.2 の1番目）：写真1枚目・「ずっとのおうちを探しています」・「○○です」・その下にロゴか団体名（11/6 クローバーをやめた） ──
 // 言葉は決まった文で、入力にない事実を足さない（11/5夜 作者の決定）。名前は猫カードと同じく下のほう（11/5 作者の決定）
 export const COVER_GREETING = 'ずっとのおうちを探しています'
-export type CoverLayout = { design: CardDesign; fits: boolean; contrast: number; nameSize: number; mark: 'logo' | 'org' | 'none'; markBottom: number; framing: Framing | null }
+export type CoverLayout = { design: CardDesign; fits: boolean; contrast: number; nameSize: number; mark: 'logo' | 'org' | 'none'; markBottom: number; framing: Framing | null; clover: boolean }
 const GREET_PX = 60
 const GREET_GAP = 18
 
@@ -681,12 +745,13 @@ export function drawCoverCard(
     paintBand(ctx, band, opts.pattern)
     lastContain = null
     if (opts.photo) drawContain(ctx, opts.photo, 0, topH, CARD_W, CARD_H - topH - botH)
-    drawCorner(ctx, !!opts.photo) // 角の小さな絵（写真の右上の角に。絵があるときだけ）
     if (opts.pattern) readableOnBand(ctx, SAFE.left, textTop, WIDE_W, markTop + mark.h - textTop, color)
     const gw = drawGreeting(ctx, gSize, textTop, color, false)
     const p: Planned = { nameLines: lines, prof: [], profSize: 0, body: [], nameSize: size, lineSize: 0, h: 0 }
     const n = drawText(ctx, p, CARD_W / 2, nameTop, color, 'center', false, 'name')
+    const clover = drawClover(ctx, p, nameTop, { left: SAFE.left, right: CARD_W - SAFE.right })
     const mw = drawMark(ctx, mark, markTop, color, false)
+    drawPawInBand(ctx, band)
     return {
       design,
       fits: gw <= WIDE_W + 0.5 && n.widest <= WIDE_W + 0.5 && mw <= WIDE_W + 0.5 && markTop + mark.h <= topH && topH <= CORNER_TOP,
@@ -694,6 +759,7 @@ export function drawCoverCard(
       nameSize: size,
       mark: mark.kind,
       markBottom: Math.round(markTop + mark.h),
+      clover,
       framing: null, // 横・正方形の写真は、帯のあいだに切らずに入れるので動かさない
     }
   }
@@ -703,7 +769,6 @@ export function drawCoverCard(
   ctx.fillRect(0, 0, CARD_W, CARD_H)
   // 縦の写真は、指で動かした位置で（11/8。猫カードと同じ形。動かしていなければ真ん中）
   const used = opts.photo ? drawFramed(ctx, opts.photo, 0, 0, CARD_W, CARD_H, 0.5, opts.framing ?? NO_FRAMING) : null
-  drawCorner(ctx, false) // 角の小さな絵（右上に。絵があるときだけ）
   const gSize = planGreeting(ctx, 1, WIDE_W)
   const { size, lines } = planName(ctx, title, 1.1, WIDE_W)
   const nameH = lines.length * size * NAME_LH
@@ -719,6 +784,7 @@ export function drawCoverCard(
   const gw = drawGreeting(ctx, gSize, top, WHITE, true)
   const p: Planned = { nameLines: lines, prof: [], profSize: 0, body: [], nameSize: size, lineSize: 0, h: nameH }
   const n = drawText(ctx, p, CARD_W / 2, top + gSize * 1.2 + GREET_GAP, WHITE, 'center', true, 'name')
+  const clover = drawClover(ctx, p, top + gSize * 1.2 + GREET_GAP, { left: SAFE.left, right: CARD_W - SAFE.right })
   const mw = drawMark(ctx, mark, markTop, WHITE, true)
   const w = widthFor(n.bottom)
   return {
@@ -728,6 +794,7 @@ export function drawCoverCard(
     nameSize: size,
     mark: mark.kind,
     markBottom: Math.round(bottom),
+    clover,
     framing: used,
   }
 }
@@ -894,8 +961,9 @@ function paintPhoto(ctx: CanvasRenderingContext2D, design: CardDesign, photo: Im
 }
 
 // 文字の行（帯の上なら真ん中にそろえ、写真の上なら左にそろえて影を付ける）
-type TextRow = { lines: string[]; px: number; weight: number; lh: number; gap: number; alpha?: number; logo?: { img: Img; w: number; h: number; theme: string } }
-const rowsH = (rows: TextRow[]) => rows.reduce((y, r) => y + r.gap + (r.logo ? r.logo.h : r.lines.length * r.px * r.lh), 0)
+// pic：文字の代わりに絵を置く行（最後の1枚の家）。icon：行の横に置く小さな絵（ひとことカードの花）
+type TextRow = { lines: string[]; px: number; weight: number; lh: number; gap: number; alpha?: number; logo?: { img: Img; w: number; h: number; theme: string }; pic?: { img: Img; w: number; h: number }; icon?: { img: Img; size: number } }
+const rowsH = (rows: TextRow[]) => rows.reduce((y, r) => y + r.gap + (r.logo ? r.logo.h : r.pic ? r.pic.h : r.lines.length * r.px * r.lh), 0)
 function drawRows(ctx: CanvasRenderingContext2D, rows: TextRow[], top: number, design: CardDesign, color: string): { widest: number; bottom: number } {
   const center = design === 'B'
   const x = center ? CARD_W / 2 : SAFE.left
@@ -922,11 +990,26 @@ function drawRows(ctx: CanvasRenderingContext2D, rows: TextRow[], top: number, d
       y += r.logo.h
       continue
     }
+    if (r.pic) {
+      ctx.save()
+      ctx.shadowColor = 'transparent'
+      ctx.drawImage(r.pic.img, center ? CARD_W / 2 - r.pic.w / 2 : SAFE.left, y, r.pic.w, r.pic.h)
+      ctx.restore()
+      widest = Math.max(widest, r.pic.w)
+      y += r.pic.h
+      continue
+    }
     ctx.font = `${r.weight} ${Math.round(r.px)}px ${FONT}`
     ctx.globalAlpha = r.alpha ?? 1
     for (const l of r.lines) {
       ctx.fillText(l, x, y + r.px * 0.08)
-      widest = Math.max(widest, ctx.measureText(l).width)
+      const lw = ctx.measureText(l).width
+      widest = Math.max(widest, lw)
+      if (r.icon) {
+        const right = center ? CARD_W - SAFE.right : SAFE.left + NARROW_W
+        if (drawBeside(ctx, r.icon.img, { x, align: center ? 'center' : 'left', w: lw, top: y, h: r.px * r.lh }, r.icon.size, 0, { left: SAFE.left, right }))
+          widest = Math.max(widest, lw + r.icon.size * 1.2)
+      }
       y += r.px * r.lh
     }
     ctx.globalAlpha = 1
@@ -951,7 +1034,7 @@ function paintRows(
   ctx: CanvasRenderingContext2D,
   design: CardDesign,
   rows: TextRow[],
-  opts: { theme: string; photo?: Img | null; framing?: Framing; pattern?: Img | null; corner?: boolean },
+  opts: { theme: string; photo?: Img | null; framing?: Framing; pattern?: Img | null },
 ): { framing: Framing | null; contrast: number; top: number; bottom: number; widest: number; ok: boolean } {
   ctx.clearRect(0, 0, CARD_W, CARD_H)
   const h = rowsH(rows)
@@ -961,13 +1044,12 @@ function paintRows(
     paintBand(ctx, band, opts.pattern)
     lastContain = null
     paintPhoto(ctx, design, opts.photo ?? null, NO_FRAMING, pl.topH)
-    if (opts.corner) drawCorner(ctx, !!opts.photo)
     if (opts.pattern) readableOnBand(ctx, SAFE.left, pl.top, WIDE_W, h, color)
     const t = drawRows(ctx, rows, pl.top, design, color)
+    drawPawInBand(ctx, band) // 上の帯の左端に肉球（文字を描いたあとで、重ならない所に）
     return { framing: null, contrast, top: pl.top, bottom: t.bottom, widest: t.widest, ok: pl.ok && t.widest <= WIDE_W + 0.5 }
   }
   const used = paintPhoto(ctx, design, opts.photo ?? null, opts.framing ?? NO_FRAMING, 0)
-  if (opts.corner) drawCorner(ctx, false)
   const shade = shadeBehind(ctx, pl.top, pl.top + h)
   const t = drawRows(ctx, rows, pl.top, design, WHITE)
   return { framing: used, contrast: shade.contrast, top: pl.top, bottom: t.bottom, widest: t.widest, ok: pl.ok && t.widest <= NARROW_W + 0.5 && shade.contrast >= 4.5 }
@@ -998,7 +1080,7 @@ export function drawWordsCard(
     if (lines.length <= WORDS_MAX_ROWS) break
   }
   const rows: TextRow[] = [
-    { lines: ['ひとこと'], px: 40, weight: 800, lh: 1.3, gap: 0, alpha: 0.9 },
+    { lines: ['ひとこと'], px: 40, weight: 800, lh: 1.3, gap: 0, alpha: 0.9, icon: okImg(DECOR.flower) ? { img: DECOR.flower, size: 40 * FLOWER_K } : undefined },
     // 入りきらないときは、カードには使わない（画面で知らせる。行の途中で切らない）。ここでは入る分だけ描く
     { lines: lines.slice(0, WORDS_MAX_ROWS), px: size, weight: 700, lh: WORDS_LH, gap: 14 },
   ]
@@ -1034,18 +1116,23 @@ export function drawEndCard(
   const logo = opts.logo && opts.logo.width > 0 && opts.logo.height > 0 ? opts.logo : null
   const build = (k: number): TextRow[] => {
     const rows: TextRow[] = []
+    const house = DECOR.house
+    if (okImg(house)) {
+      const h = HOUSE_H * k
+      rows.push({ lines: [], px: 0, weight: 0, lh: 1, gap: 0, pic: { img: house, w: (house.width / house.height) * h, h } })
+    }
     const text = (t: string, px: number, weight: number, gap: number, alpha?: number, name = false): TextRow => {
       ctx.font = `${weight} ${Math.round(px)}px ${FONT}`
       return { lines: name ? wrapName(ctx, t, width) : wrap(ctx, t, width), px, weight, lh: 1.3, gap, alpha }
     }
     if (opts.event) {
-      rows.push(text('次の譲渡会', 40 * k, 800, 0, 0.9))
+      rows.push(text('次の譲渡会', 40 * k, 800, rows.length ? 24 * k : 0, 0.9))
       rows.push(text(eventDateText(opts.event), 58 * k, 800, 10 * k))
       const time = eventTimeText(opts.event)
       if (time) rows.push(text(time, 50 * k, 800, 0))
       if (opts.event.venue) rows.push(text(opts.event.venue, 46 * k, 700, 6 * k))
     }
-    const g = opts.event ? 40 * k : 0
+    const g = opts.event ? 40 * k : rows.length ? 24 * k : 0
     if (logo) {
       const d = (opts.event ? 150 : 200) * k // 丸いアイコンの直径
       rows.push({ lines: [], px: 0, weight: 0, lh: 1, gap: g, logo: { img: logo, w: d, h: d, theme: opts.theme } })
@@ -1061,7 +1148,7 @@ export function drawEndCard(
     rows = build(s)
     if (placeRows(design, rowsH(rows)).ok) break
   }
-  const r = paintRows(ctx, design, rows, { ...opts, corner: true }) // 最後の1枚には角の小さな絵（絵があるときだけ）
+  const r = paintRows(ctx, design, rows, opts)
   return {
     design,
     fits: r.ok,

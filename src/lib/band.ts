@@ -14,13 +14,14 @@ const fetchImg = (path: string): Promise<HTMLImageElement | null> =>
     .then((b) => (b ? loadImage(b) : null))
     .catch(() => null)
 
-// 帯の柄と一緒に、オリジナルの絵（帯と写真の境目の線 public/edge.png・角の小さな絵 public/corner.png。11/8）も読んで、カードに入れる
-// どれも、置いていなければ今までどおり（無地・線なし・絵なし）
+// 作者の絵（11/8 作者の決定）も読んで、カードに入れる。置いていなければ描かない
+// 最後の1枚の家は、粘土の家（house-clay）と平らな家（house-flat）のどちらかを作者が選ぶ（決まったら、もう一方は消す）
+export const HOUSE_ART = '/art/house-clay.png'
 let cached: Promise<HTMLImageElement | null> | null = null
 export function loadBandPattern(): Promise<HTMLImageElement | null> {
   // 帯の柄はやめた（11/8 作者の決定。public/band.png も消した）。いつも null（テーマ色の無地）。柄を描く作りは card.ts に残っている
-  cached ??= Promise.all([fetchImg('/edge.png'), fetchImg('/corner.png')]).then(([edge, corner]) => {
-    setDecor({ edge, corner })
+  cached ??= Promise.all([fetchImg('/art/clover.png'), fetchImg(HOUSE_ART), fetchImg('/art/flower.png'), fetchImg('/art/paw.png')]).then(([clover, house, flower, paw]) => {
+    setDecor({ clover, house, flower, paw })
     return null
   })
   return cached

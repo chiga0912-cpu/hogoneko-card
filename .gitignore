@@ -39,6 +39,7 @@ screenshots/
 *.HEIC
 *.png
 !public/*.png
+!public/art/*.png
 
 # 動画も上げない
 *.mp4
