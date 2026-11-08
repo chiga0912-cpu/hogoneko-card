@@ -29,6 +29,7 @@ npm run dev
   - 「nekoto」の名前、キャラクター、ロゴ、このツールのロゴ：どのような場合も、複製、再配布、そのほかの利用はできません。シェルターが作るカードや動画にも入りません。
 - シェルターがこのツールに登録したロゴや写真は、そのシェルターのものです。リポジトリには含まれず、そのスマホの中だけに保存されます。
 - 猫の写真はこのリポジトリに含まれていません。
+- カードの文字を文の区切りで改行するために、BudouX（Google。Apache License 2.0）を使っています。
 
 ## License
 - The source code in this repository is licensed under the MIT License (see LICENSE).
@@ -37,3 +38,4 @@ npm run dev
   - The "nekoto" name, character and logo, and the logo of this tool: they may not be copied, redistributed, or otherwise used in any case. They are not included in the cards or videos that shelters make.
 - Logos and photos that a shelter registers in this tool belong to that shelter. They are not included in this repository and are stored only on that device.
 - No cat photos are included in this repository.
+- This tool uses BudouX (Google, Apache License 2.0) to break lines of card text at natural phrase boundaries.

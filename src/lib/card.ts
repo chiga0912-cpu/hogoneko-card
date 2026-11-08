@@ -60,6 +60,7 @@ export type CardLayout = {
 
 import { themeInk } from './themeInk.ts' // 拡張子つき：logo.ts と同じ理由
 import { drawLogoCircle } from './logo.ts' // 拡張子つき：自動の確認（scripts/wrap-check.mjs）が Node でこのファイルを直接読むため
+import { Parser, jaModel } from 'budoux'
 
 type Img = CanvasImageSource & { width: number; height: number }
 
@@ -145,6 +146,66 @@ function wrap(ctx: CanvasRenderingContext2D, text: string, width: number, loose 
   return lines
 }
 
+// ── 文の区切りで折り返す（11/8 作者の決定。名前以外の文：いいところ・年齢と性別・ひとこと・譲渡会・連絡先）──
+// 日本語を意味のまとまり（文節）に分ける道具 BudouX（Google。Apache-2.0）で分け、そのまとまりの途中では折らない。
+// 行に入りきらないときは、その行の中に「、」「。」などがあり、そのあとの部分が行の半分より短ければ、「、」「。」のあとで折る
+// （「眠ります。とても／甘えん坊です」ではなく「眠ります。／とても甘えん坊です」）。言葉は変えない。入力の改行は、呼ぶ側で先に分けている
+// 名前（猫・団体）は今までどおり wordUnits で折る（「・」の決まりや、最後の1文字を落とさない決まりがあるため）
+const budoux = new Parser(jaModel) // 文節に分ける部分だけを使う（HTMLを扱う部分は読まない。画面のプログラムを小さく保つため）
+const STOP_END = /[、。，．！？!?][」』）]?$/ // 「、」「。」など（そのあとの閉じかっこまで）。「（架空）」の「）」では折らない
+export function phraseUnits(text: string): string[] {
+  const out: string[] = []
+  for (const c of budoux.parse(text)) {
+    const prev = out[out.length - 1]
+    // 句読点・閉じかっこ・小さい文字などで始まるまとまりは、前にくっつける（行の始めに来ないように）
+    if (prev !== undefined && NO_START.includes([...c][0])) out[out.length - 1] = prev + c
+    else out.push(c)
+  }
+  return out
+}
+const STOP_TAIL = 0.5 // 「、」「。」のあとで折るのは、そのあとの部分が行の幅のこの割合より短いとき ⚙
+export function wrapText(ctx: CanvasRenderingContext2D, text: string, width: number): string[] {
+  const W = (t: string) => ctx.measureText(t).width
+  const lines: string[] = []
+  let cur: string[] = []
+  const pushLong = (u: string) => {
+    // 1つのまとまりが行に入りきらないときだけ、文字で折る（行の始めに句読点を置かない）
+    let line = cur.join('')
+    cur = []
+    for (const ch of [...u]) {
+      if (W(line + ch) <= width || line === '') line += ch
+      else if (NO_START.includes(ch) && [...line].length > 1) {
+        const cs = [...line]
+        lines.push(cs.slice(0, -1).join(''))
+        line = cs[cs.length - 1] + ch
+      } else {
+        lines.push(line)
+        line = ch
+      }
+    }
+    cur = [line]
+  }
+  for (const u of phraseUnits(text)) {
+    if (W(cur.join('') + u) <= width) {
+      cur.push(u)
+      continue
+    }
+    // 入りきらない：行の中の「、」「。」のあとで折れるなら、そこで折る
+    let k = -1
+    for (let i = cur.length - 2; i >= 0; i--) if (STOP_END.test(cur[i])) { k = i; break }
+    const tail = k >= 0 ? cur.slice(k + 1) : []
+    if (k >= 0 && W(tail.join('')) <= width * STOP_TAIL && W(tail.join('') + u) <= width) {
+      lines.push(cur.slice(0, k + 1).join(''))
+      cur = [...tail, u]
+    } else if (W(u.trimStart()) <= width) {
+      if (cur.length) lines.push(cur.join(''))
+      cur = [u.trimStart()]
+    } else pushLong(u)
+  }
+  if (cur.length && cur.join('')) lines.push(cur.join(''))
+  return lines
+}
+
 const lin = (c: number) => {
   const s = c / 255
   return s <= 0.03928 ? s / 12.92 : ((s + 0.055) / 1.055) ** 2.4
@@ -166,7 +227,25 @@ const PROF_GAP = 6
 const LINE_LH = 1.42
 const GAP = 22
 
+// 折った行の切れ目が、どれも言葉のまとまりの切れ目か（「ジョセフィー／ヌ」のような、言葉の途中の折り目がないか）
+function cleanBreaks(name: string, lines: string[]): boolean {
+  const ends = new Set<number>()
+  let n = 0
+  for (const u of wordUnits(name)) ends.add((n += [...u].length))
+  // 表紙の「○○です」は、名前と「です」のあいだでも折ってよい（「ジョセフィーヌ／です」）
+  if (name.endsWith('です')) ends.add([...name].length - 2)
+  let m = 0
+  return lines.slice(0, -1).every((l) => ends.has((m += [...l].length)))
+}
 function planName(ctx: CanvasRenderingContext2D, name: string, k: number, width: number) {
+  // まず、言葉の途中で折らずに2行までに入る、いちばん大きな大きさを探す（11/8 作者の決定：言葉の途中で改行しない）
+  for (const s of NAME_SCALES) {
+    const size = Math.round(NAME_PX * k * s)
+    ctx.font = `800 ${size}px ${FONT}`
+    const lines = wrap(ctx, name, width)
+    if (lines.length <= 2 && cleanBreaks(name, lines)) return { size, lines }
+  }
+  // どの大きさでも言葉の途中で折れるときは、今までどおり（2行に入る大きさ。とても長い名前は3行）
   for (const s of NAME_SCALES) {
     const size = Math.round(NAME_PX * k * s)
     ctx.font = `800 ${size}px ${FONT}`
@@ -186,10 +265,10 @@ function plan(ctx: CanvasRenderingContext2D, name: string, profile: string, line
   const { size: nameSize, lines: nameLines } = planName(ctx, name, nk, width.name)
   const profSize = Math.round(PROF_PX * k)
   ctx.font = `600 ${profSize}px ${FONT}`
-  const prof = profile.trim() ? wrap(ctx, profile.trim(), width.name) : []
+  const prof = profile.trim() ? wrapText(ctx, profile.trim(), width.name) : []
   const lineSize = Math.round(LINE_PX * k)
   ctx.font = `700 ${lineSize}px ${FONT}`
-  const body = lines.slice(0, n).map((l) => wrap(ctx, l, width.body))
+  const body = lines.slice(0, n).map((l) => wrapText(ctx, l, width.body))
   return { nameLines, prof, profSize, body, nameSize, lineSize, h: blockH({ nameLines, prof, profSize, body, nameSize, lineSize }) }
 }
 const rowsOf = (body: string[][]) => body.reduce((a, b) => a + b.length, 0)
@@ -280,7 +359,7 @@ let lastContain: { x: number; y: number; w: number; h: number } | null = null //
 //   clover：表紙の名前の横に小さく、少し斜めに（縦・横どちらの写真でも）
 //   house：最後の1枚に。文字の上に
 //   flower：ひとことカードの「ひとこと」の横に小さく
-//   paw：横・正方形の写真のカードで、上の帯の左端（帯の線の上）。色はそのまま。文字と重なるときは小さくし、それでも重なれば描かない
+//   paw：横・正方形の写真の猫カードだけ（1枚に絵は1つ。11/8 作者の決定）。上の帯の左端（帯の線の上）。色はそのまま。文字と重なるときは小さくし、それでも重なれば描かない
 // 絵は作者の作品で、MITの対象外（README）
 export type Decor = { clover: Img | null; house: Img | null; flower: Img | null; paw: Img | null }
 let DECOR: Decor = { clover: null, house: null, flower: null, paw: null }
@@ -766,7 +845,6 @@ export function drawCoverCard(
     const n = drawText(ctx, p, CARD_W / 2, nameTop, color, 'center', false, 'name')
     const clover = drawClover(ctx, p, nameTop, { left: SAFE.left, right: CARD_W - SAFE.right })
     const mw = drawMark(ctx, mark, markTop, color, false)
-    drawPawInBand(ctx, band)
     return {
       design,
       fits: gw <= WIDE_W + 0.5 && n.widest <= WIDE_W + 0.5 && mw <= WIDE_W + 0.5 && markTop + mark.h <= topH && topH <= CORNER_TOP,
@@ -904,7 +982,7 @@ export function drawClipName(
   if (!name.trim()) return null
   const { size, lines } = planName(ctx, name, 0.8, WIDE_W)
   ctx.font = `600 ${CLIP_PROF_PX}px ${FONT}`
-  const prof = profile.trim() ? wrap(ctx, profile.trim(), WIDE_W) : []
+  const prof = profile.trim() ? wrapText(ctx, profile.trim(), WIDE_W) : []
   // 高さは、年齢と性別の行まで入れて測る（上の帯に入るかを、この高さで決める）
   const h = nameH({ nameLines: lines, nameSize: size, prof, profSize: CLIP_PROF_PX })
   let top = CORNER_TOP - 10 - h
@@ -1061,7 +1139,6 @@ function paintRows(
     paintPhoto(ctx, design, opts.photo ?? null, NO_FRAMING, pl.topH, band)
     if (opts.pattern) readableOnBand(ctx, SAFE.left, pl.top, WIDE_W, h, color)
     const t = drawRows(ctx, rows, pl.top, design, color)
-    drawPawInBand(ctx, band) // 上の帯の左端に肉球（文字を描いたあとで、重ならない所に）
     return { framing: null, contrast, top: pl.top, bottom: t.bottom, widest: t.widest, ok: pl.ok && t.widest <= WIDE_W + 0.5 }
   }
   const used = paintPhoto(ctx, design, opts.photo ?? null, opts.framing ?? NO_FRAMING, 0)
@@ -1070,7 +1147,9 @@ function paintRows(
   return { framing: used, contrast: shade.contrast, top: pl.top, bottom: t.bottom, widest: t.widest, ok: pl.ok && t.widest <= NARROW_W + 0.5 && shade.contrast >= 4.5 }
 }
 
-const WORDS_SIZES = [46, 44, 42] // ひとことの文字の大きさ（通常46px、長いときは42pxまで。作る人の決定）
+// ひとことの文字の大きさ（11/8 作者の決定：前の46pxの約1.3倍の60pxに。「ひとこと」の見出しと花の大きさは変えない）。
+// 長いときは4行に入るまで小さくする。小さくする下限は前と同じ42px（前に入っていた長さの言葉は、今も入るように）⚙
+const WORDS_SIZES = [60, 57, 54, 51, 48, 46, 44, 42]
 const WORDS_LH = 1.6
 export const WORDS_MAX_ROWS = 4 // ひとことは4行まで（11/6夜 作者の決定）
 // 縦・横・正方形のどれでも同じ幅で折る（写真によって入る・入らないが変わらないように）。右下のボタンの線（右180）より左
@@ -1091,7 +1170,7 @@ export function drawWordsCard(
   for (const px of WORDS_SIZES) {
     size = px
     ctx.font = `700 ${px}px ${FONT}`
-    lines = quoted.split('\n').flatMap((para) => (para ? wrap(ctx, para, WORDS_W) : ['']))
+    lines = quoted.split('\n').flatMap((para) => (para ? wrapText(ctx, para, WORDS_W) : ['']))
     if (lines.length <= WORDS_MAX_ROWS) break
   }
   const rows: TextRow[] = [
@@ -1139,7 +1218,7 @@ export function drawEndCard(
     }
     const text = (t: string, px: number, weight: number, gap: number, alpha?: number, name = false): TextRow => {
       ctx.font = `${weight} ${Math.round(px)}px ${FONT}`
-      return { lines: name ? wrapName(ctx, t, width) : wrap(ctx, t, width), px, weight, lh: 1.3, gap, alpha }
+      return { lines: name ? wrapName(ctx, t, width) : wrapText(ctx, t, width), px, weight, lh: 1.3, gap, alpha }
     }
     if (opts.event) {
       rows.push(text('次の譲渡会', 40 * k, 800, rows.length ? 24 * k : 0, 0.9))

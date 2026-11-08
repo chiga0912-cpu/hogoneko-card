@@ -909,7 +909,10 @@ console.log('表示:', await page.locator('.status-line').innerText())
   await p6.getByRole('button', { name: '動画を作る' }).click()
   await p6.locator('.reel-video').waitFor({ timeout: 60000 })
   const d1 = await p6.locator('.reel-video').evaluate(async (v) => (v.duration || (await new Promise((r) => v.addEventListener('loadedmetadata', () => r(v.duration), { once: true })))))
-  check(Math.abs(d1 - 14) < 0.2, `動画に、ひとことカードが入る（表紙3＋猫カード3＋ひとこと2行で4秒＋最後の1枚4＝14秒。${d1}秒）`)
+  // ひとことの秒数は2秒＋行数（11/8 から文字が60pxなので、この文は3行）
+  const wl = Number(await p6.locator('.card-words').getAttribute('data-lines'))
+  const want1 = 3 + 3 + Math.min(6, Math.max(3, 2 + wl)) + 4
+  check(wl >= 2 && Math.abs(d1 - want1) < 0.2, `動画に、ひとことカードが入る（表紙3＋猫カード3＋ひとこと${wl}行で${2 + wl}秒＋最後の1枚4＝${want1}秒。${d1}秒）`)
   // 長いひとこと
   await p6.getByRole('button', { name: '名簿を見る' }).click()
   await p6.getByText('テスト').first().click()
@@ -990,7 +993,7 @@ console.log('表示:', await page.locator('.status-line').innerText())
   await p7.locator('input[type=file][accept="image/*"]').setInputFiles(dummy('#b3a0c9', '写真C'))
   await p7.locator('.photo img').nth(2).waitFor()
   check((await look()) === '2/0', '写真3枚：ひとことは3枚目、最後の1枚は1枚目')
-  // ひとことの長さ：4行まで（11/6夜 作者の決定）。60字ほどは46px、75字ほどは小さくして入る、それより長いと知らせる
+  // ひとことの長さ：4行まで（11/6夜 作者の決定）。文字は60px（11/8）。60字ほどは前の46px以上で入る、75字ほどは小さくして入る、それより長いと知らせる
   await p7.getByRole('button', { name: '戻る' }).click()
   const len = async (n) => {
     const t = ('（架空）' + 'まいにちげんかんまでおむかえにきてくれます。'.repeat(10)).slice(0, n - 1) + '。'
@@ -1002,7 +1005,7 @@ console.log('表示:', await page.locator('.status-line').innerText())
     return r
   }
   const r60 = await len(60)
-  check(r60.startsWith('46px'), `ひとこと60字は、46pxで入る（${r60}）`)
+  check(parseInt(r60) >= 46 && /・4行$/.test(r60), `ひとこと60字は、前の46px以上の大きさで4行に入る（${r60}）`)
   const r75 = await len(75)
   check(/^4[24]px・4行/.test(r75), `ひとこと75字は、小さくして4行で入る（${r75}）`)
   const r100 = await len(100)
@@ -1816,6 +1819,8 @@ for (const withPattern of [false, true]) {
       const e = card()
       m.drawEndCard(e.getContext('2d'), { logo: null, shelterName: '（架空）ねこの会', contact: '', event: null, theme: '#e8826b', photo: wide })
       out.house = count(e, 0, 220, 1080, 300, teal) > 300
+      // 肉球は猫カードだけ（1枚に絵は1つ。11/8 作者の決定）：表紙・ひとこと・最後の1枚の上の帯の左端に黒い所がない
+      out.pawElsewhere = [cB, w, e].map((c) => count(c, 64, 220, 140, 600, black))
       // 文字が多い最後の1枚（縦の写真・譲渡会・ロゴ・連絡先3行）：家を先に小さく・なくして、文字は小さくしない（見直しの中2）
       const logo = mk(300, 300)
       const ev = { date: '2026-11-23', startTime: '13:00', endTime: '16:00', venue: '（架空）ひだまり公民館 2階' }
@@ -1835,6 +1840,7 @@ for (const withPattern of [false, true]) {
     check(r.lines.left === 32 && r.lines.right === 32, `横・正方形の写真：上と下の帯に16pxの線を1本ずつ、カードの幅いっぱい（左端 ${r.lines.left}px・右端 ${r.lines.right}px）`)
     check(r.noLineA === 0, `縦の写真のカードには線を描かない（${r.noLineA}）`)
     check(r.flower, 'ひとことカードに花')
+    check(r.pawElsewhere.every((n) => n < 50), `肉球は猫カードだけ。表紙・ひとこと・最後の1枚には入れない（黒い点 ${r.pawElsewhere.join('・')}）`)
     check(r.flowerHidden === 0, `花は上の隠れる所（上220）に入らない（${r.flowerHidden}）`)
     check(r.busyEnd.fits && r.busyEnd.scale === 1, `文字が多い最後の1枚でも、家のせいで文字を小さくしない（入る ${r.busyEnd.fits}・大きさ ${r.busyEnd.scale}）`)
     check(r.house, '最後の1枚に家')
