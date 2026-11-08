@@ -1244,15 +1244,11 @@ console.log('表示:', await page.locator('.status-line').innerText())
   await p10.waitForTimeout(600)
   const cAfter = await px(coverThumb, 500, 600)
   check(isRed(cBefore) && !isRed(cAfter), `動かした位置が、表紙に入る（${cBefore.join(',')} → ${cAfter.join(',')}）`)
-  // オリジナルの絵（11/8）：public/corner.png があれば、縦の写真の表紙の右上（上220・右64の内側）に描く。なければ描かない
+  // 作者の絵（11/8）：縦の写真の表紙の右上には、もう何も描かない（角の絵はやめた）
   {
-    const hasCorner = await p10.evaluate(async () => {
-      const r = await fetch('/corner.png', { cache: 'no-cache' })
-      return r.ok && (r.headers.get('content-type') ?? '').startsWith('image/')
-    })
-    const c = await px(coverThumb, 941, 315) // 仮の絵（肉球）の大きな丸の真ん中
+    const c = await px(coverThumb, 941, 315)
     const light = c[0] > 230 && c[1] > 225 && c[2] > 210
-    check(hasCorner ? light : !light, `角の小さな絵：${hasCorner ? 'corner.png があるので、表紙の右上に描く' : 'corner.png がないので、描かない'}（${c.join(',')}）`)
+    check(!light, `角の絵はやめた：表紙の右上に描かない（${c.join(',')}）`)
   }
   // ひとことカードでも動かせる。［もとに戻す］で戻る
   await p10.getByRole('button', { name: '写真を動かす' }).nth(2).click()
@@ -1407,7 +1403,7 @@ console.log('表示:', await page.locator('.status-line').innerText())
       out.tall = m.drawClipName(x, 'ミント', null)
       out.tallP = m.drawClipName(x, 'ミント', null, undefined, '推定2歳・男の子')
       out.tallE = m.drawClipName(x, 'ミント', null, undefined, '')
-      // 明るい黄色のテーマ色：帯は白い文字が読める濃さまで暗くし、年齢と性別も白い文字で描かれる（11/6夜 作者の決定）
+      // 明るい黄色のテーマ色：帯は選んだ色のまま、年齢と性別まで濃い色の文字で描かれる（11/8 作者の決定）
       const yb = m.bandColors('#f5d547')
       const y = document.createElement('canvas')
       y.width = 1080
@@ -1417,10 +1413,10 @@ console.log('表示:', await page.locator('.status-line').innerText())
       yx.fillRect(0, 0, 1080, 1920)
       const yr = m.drawClipName(yx, 'ミント', { top: 660, bottom: 1260 }, { text: yb.color, pattern: false }, '推定2歳・男の子')
       const d = yx.getImageData(0, Math.round(yr.bottom - 50), 1080, 50).data
-      let white = 0
-      // 年齢と性別の行は、少し透ける白で描く。帯の青みが少ない色（からし色。11/7）では青が235に届かないので、220より明るい所を白とみなす
-      for (let i = 0; i < d.length; i += 4) if (d[i] > 220 && d[i + 1] > 220 && d[i + 2] > 220) white++
-      out.yellowProf = white
+      let ink = 0
+      // 年齢と性別の行は、少し透ける濃い色で描く。暗い所（どの色も120より暗い）を文字とみなす
+      for (let i = 0; i < d.length; i += 4) if (d[i] < 120 && d[i + 1] < 120 && d[i + 2] < 120) ink++
+      out.yellowProf = ink
       out.yellowBand = yb
       return out
     } catch {
@@ -1438,7 +1434,7 @@ console.log('表示:', await page.locator('.status-line').innerText())
     }
     check(r.tallP.bottom <= 1380 && r.tallP.top >= 220 && r.tallP.bottom - r.tallP.top > r.tall.bottom - r.tall.top + 40, `縦の動画：名前の下に年齢と性別が入る（${Math.round(r.tallP.top)}〜${Math.round(r.tallP.bottom)}）`)
     check(r.tallE.bottom - r.tallE.top === r.tall.bottom - r.tall.top, '年齢も性別も不明なら、名前の下の行は出さない')
-    check(r.yellowProf > 200 && r.yellowBand.color === '#ffffff' && r.yellowBand.contrast >= 4.5, `明るい黄色でも、帯を濃くして、年齢と性別まで白い文字で描く（帯 ${r.yellowBand.band}・見やすさ ${Math.round(r.yellowBand.contrast * 10) / 10}）`)
+    check(r.yellowProf > 200 && r.yellowBand.band === '#f5d547' && r.yellowBand.color !== '#ffffff' && r.yellowBand.contrast >= 4.5, `明るい黄色の帯は選んだ色のまま、年齢と性別まで濃い色の文字で描く（帯 ${r.yellowBand.band}・文字 ${r.yellowBand.color}・見やすさ ${Math.round(r.yellowBand.contrast * 10) / 10}）`)
     check(r.tall && r.tall.bottom <= 1380 && r.tall.top >= 220, '縦の動画の名前は、今までどおり下のほう（右下のボタンより上）')
   }
   await ctx.close()
@@ -1546,7 +1542,7 @@ console.log('表示:', await page.locator('.status-line').innerText())
           out.orphan.push({ px, n, ok: lines.join('') === name && (lines.length < 2 || [...lines[lines.length - 1]].length >= 2) })
         }
       }
-      out.bands = ['#e8826b', '#5a9e6f', '#f5d547', '#ffffff', '#ffe4ec', '#fff44f', '#d4a72c'].map((t) => m.bandColors(t))
+      out.bands = ['#e8826b', '#5a9e6f', '#f5d547', '#ffffff', '#ffe4ec', '#fff44f', '#d4a72c', '#1e3a5f'].map((t) => m.bandColors(t))
       // ロゴ（11/7 作者の決定）：Instagramのアイコンと同じく、丸い枠で真ん中をそのまま切り取るだけ（白い余白は詰めない）。
       // 台を足さない。透明なロゴはテーマ色の丸の上
       const MAGENTA = 'rgb(255,0,255)'
@@ -1620,13 +1616,11 @@ console.log('表示:', await page.locator('.status-line').innerText())
     check(lp['白い背景'].edge === '255,255,255' && lp['白い背景'].center === '255,0,255', `白い背景のロゴは、白い余白を詰めずに、そのまま丸く切り取る（丸のふち ${lp['白い背景'].edge}）`)
     check(lp['写真'].edge === '255,0,255' && lp['写真'].top === '255,0,255', '余白のない画像（写真など）は、丸いっぱいに真ん中を切り取る')
     check(lp['縦長'].edge === '255,0,255' && lp['縦長'].top === '255,0,255', '縦長の画像も、丸いっぱいに真ん中を切り取る（すき間を作らない）')
-    check(r.bands.every((b) => b.color === '#ffffff' && b.contrast >= 4.5), `帯の文字はいつも白。明るいテーマ色でも、帯を濃くして見やすさ4.5以上（${r.bands.map((b) => b.band + ' ' + Math.round(b.contrast * 10) / 10).join('・')}）`)
     {
-      const hx = (h) => [1, 3, 5].map((i) => parseInt(h.slice(i, i + 2), 16))
-      const hu = ([r1, g1, b1]) => { const mx = Math.max(r1, g1, b1), mn = Math.min(r1, g1, b1), d = mx - mn; if (!d) return 0; const h = mx === r1 ? ((g1 - b1) / d + (g1 < b1 ? 6 : 0)) : mx === g1 ? (b1 - r1) / d + 2 : (r1 - g1) / d + 4; return Math.round(h * 60) }
-      const yl = r.bands.slice(5).concat([r.bands[2]])
-      check(yl.every((b) => hu(hx(b.band)) >= 36 && hu(hx(b.band)) <= 44), `黄色の仲間の帯は、からし色の方向へ濃くする（${yl.map((b) => b.band + ' ' + hu(hx(b.band)) + '°').join('・')}。11/7 作者の決定）`)
-      check(r.bands[0].band === '#ac604f' && r.bands[1].band === '#4a825b' && r.bands[4].band === '#7f7276', `黄色でない色の帯は、前と同じ（${r.bands[0].band}・${r.bands[1].band}・${r.bands[4].band}）`)
+      const themes = ['#e8826b', '#5a9e6f', '#f5d547', '#ffffff', '#ffe4ec', '#fff44f', '#d4a72c', '#1e3a5f']
+      check(r.bands.every((b, i) => b.band === themes[i]), `帯は選んだテーマ色のまま（11/8 作者の決定。${r.bands.map((b) => b.band).join('・')}）`)
+      check(r.bands.every((b) => ['#ffffff', '#3b2f2a', '#000000'].includes(b.color) && b.contrast >= 4.5), `帯の文字は白か濃い色で、見やすさ4.5以上（${r.bands.map((b) => b.color + ' ' + Math.round(b.contrast * 10) / 10).join('・')}）`)
+      check(r.bands[7].color === '#ffffff' && r.bands[3].color !== '#ffffff', `暗い帯（紺）は白い文字、明るい帯（白）は濃い文字（${r.bands[7].color}・${r.bands[3].color}）`)
     }
   }
   await ctx.close()
@@ -1680,11 +1674,9 @@ console.log('表示:', await page.locator('.status-line').innerText())
   await ctx.close()
 }
 
-// 画面の文字・ボタンのテーマ色（11/7 作者の指示）：テーマ色を文字やボタンに使うときだけ、読める濃さ（見やすさ4.5以上）にする。
-// 入力されたテーマ色そのものと、カードの帯は変えない
-// 黄色の仲間は、濃くするときに少しオレンジ寄りにして、からし色の方向へ（緑っぽいオリーブ色にしない。11/7 作者の決定）
-const hueOf = ([r, g, b]) => { const mx = Math.max(r, g, b), mn = Math.min(r, g, b), d = mx - mn; if (!d) return 0; const h = mx === r ? ((g - b) / d + (g < b ? 6 : 0)) : mx === g ? (b - r) / d + 2 : (r - g) / d + 4; return Math.round(h * 60) }
-for (const theme of ['#e8826b', '#f5d547', '#fff44f']) {
+// 画面のテーマ色（11/8 作者の決定）：ボタンは選んだテーマ色のまま。上の文字は白か濃い色の読みやすいほう（見やすさ4.5以上）。
+// 地の色の上のテーマ色の文字（団体名）は、読めなければ画面の文字の色
+for (const theme of ['#e8826b', '#f5d547', '#fff44f', '#1e3a5f']) {
   const ctx = await browser.newContext({ ...phone })
   const p = await ctx.newPage()
   await p.goto(url + '/?sizes=1')
@@ -1702,10 +1694,12 @@ for (const theme of ['#e8826b', '#f5d547', '#fff44f']) {
     const bg = rgb(getComputedStyle(document.body).backgroundColor)
     const sub = document.querySelector('.hero-sub')
     const btn = document.querySelector('.btn-primary')
-    return { sub: ratio(rgb(getComputedStyle(sub).color), bg), btn: btn ? ratio(rgb(getComputedStyle(btn).backgroundColor), [255, 255, 255]) : null, theme: getComputedStyle(document.querySelector('.app')).getPropertyValue('--theme').trim(), subRgb: rgb(getComputedStyle(sub).color), btnRgb: btn ? rgb(getComputedStyle(btn).backgroundColor) : null }
+    return { sub: ratio(rgb(getComputedStyle(sub).color), bg), btn: btn ? ratio(rgb(getComputedStyle(btn).backgroundColor), rgb(getComputedStyle(btn).color)) : null, theme: getComputedStyle(document.querySelector('.app')).getPropertyValue('--theme').trim(), subRgb: rgb(getComputedStyle(sub).color), btnRgb: btn ? rgb(getComputedStyle(btn).backgroundColor) : null }
   })
-  if (theme === '#e8826b') check(r.btnRgb?.join() === '172,96,79' && r.subRgb.join() === '158,88,73', `オレンジのテーマ色は、黄色の直しの前と同じ色（ボタン ${r.btnRgb} ・団体名 ${r.subRgb}）`)
-  else check([r.subRgb, r.btnRgb].every((c) => c && hueOf(c) >= 36 && hueOf(c) <= 44), `黄色の仲間 ${theme}：団体名とボタンは、からし色の方向（色相 ${hueOf(r.subRgb)}°・${r.btnRgb && hueOf(r.btnRgb)}°。オリーブ色は50°くらい）`)
+  const want = [1, 3, 5].map((i) => parseInt(theme.slice(i, i + 2), 16)).join()
+  check(r.btnRgb?.join() === want, `テーマ色 ${theme}：ボタンは選んだ色のまま（${r.btnRgb}）`)
+  if (theme === '#1e3a5f') check(r.subRgb.join() === want, `テーマ色 ${theme}：地の色の上で読める色なら、団体名もテーマ色のまま（${r.subRgb}）`)
+  else check(r.subRgb.join() === '59,47,42', `テーマ色 ${theme}：地の色の上で読めない色なら、団体名は画面の文字の色（${r.subRgb}）`)
   check(r.sub >= 4.5 && (r.btn === null || r.btn >= 4.5), `テーマ色 ${theme}：ホームの団体名とボタンの文字は見やすさ4.5以上（団体名 ${r.sub}・ボタン ${r.btn}）`)
   check(r.theme.toLowerCase() === theme, `テーマ色 ${theme}：入力されたテーマ色はそのまま（${r.theme}）`)
   await p.screenshot({ path: join(outDir, `1e_ホーム_テーマ色${theme.slice(1)}.png`) })
@@ -1746,9 +1740,91 @@ for (const withPattern of [false, true]) {
     }
   })
   if (r) {
-    if (withPattern) check(r.pattern && r.a !== r.b && r.fits, `帯の画像があると、白黒の画像にテーマ色を重ねて敷く（縞の2か所の色 ${r.a} と ${r.b}）`)
+    if (withPattern) check(!r.pattern && r.a === r.b && r.fits, `帯の柄はやめた：帯の画像を置いても、敷かない（11/8 作者の決定。${r.a} と ${r.b}）`)
     else check(!r.pattern && r.a === r.b && r.fits, `帯の画像がないときは、テーマ色の無地（${r.a}）`)
   }
+  await ctx.close()
+}
+
+// 作者の絵と帯の線（11/8 作者の決定。SPEC 3.1）：public/art/ の絵を読んで、決まった所に描く。帯には線を1本ずつ
+{
+  const ctx = await browser.newContext({ ...phone })
+  const p = await ctx.newPage()
+  await p.goto(url)
+  const r = await p.evaluate(async () => {
+    try {
+      const m = await import('/src/lib/card.ts')
+      // 絵は public/art/ から読んで入れる（band.ts と同じ絵。開発用のサーバーでは、直したあとの card.ts が別の入れ物で読まれることがあるので、ここで直接入れる）
+      const img = async (n) => {
+        const res = await fetch('/art/' + n + '.png', { cache: 'no-cache' })
+        if (!res.ok || !(res.headers.get('content-type') ?? '').startsWith('image/')) return null
+        return await createImageBitmap(await res.blob())
+      }
+      const band = await import('/src/lib/band.ts')
+      const houseName = band.HOUSE_ART.split('/').pop().replace('.png', '')
+      m.setDecor({ clover: await img('clover'), house: await img(houseName), flower: await img('flower'), paw: await img('paw') })
+      const mk = (w, h) => {
+        const c = document.createElement('canvas')
+        c.width = w
+        c.height = h
+        const x = c.getContext('2d')
+        x.fillStyle = '#7f9c92'
+        x.fillRect(0, 0, w, h)
+        return c
+      }
+      const card = () => mk(1080, 1920)
+      const wide = mk(1200, 800)
+      const tall = mk(600, 800)
+      const count = (c, x0, y0, w, h, f) => {
+        const d = c.getContext('2d').getImageData(x0, y0, w, h).data
+        let n = 0
+        for (let i = 0; i < d.length; i += 4) if (f(d[i], d[i + 1], d[i + 2])) n++
+        return n
+      }
+      const green = (r, g, b) => g > 90 && g > r + 40 && g > b + 20
+      const orange = (r, g, b) => r > 200 && g > 90 && g < 170 && b < 60
+      const black = (r, g, b) => r < 40 && g < 40 && b < 40
+      const teal = (r, g, b) => r < 90 && g > 100 && b > 90 && g - r > 40
+      const out = {}
+      const cB = card()
+      const lB = m.drawCoverCard(cB.getContext('2d'), { photo: wide, logo: null, name: 'ソラ', theme: '#e8826b', shelterName: '（架空）ねこの会' })
+      const cA = card()
+      const lA = m.drawCoverCard(cA.getContext('2d'), { photo: tall, logo: null, name: 'ソラ', theme: '#e8826b', shelterName: '（架空）ねこの会' })
+      out.clover = { B: lB.clover && count(cB, 0, 220, 1080, 600, green) > 300, A: lA.clover && count(cA, 0, 800, 1080, 700, green) > 300 }
+      const cat = card()
+      m.drawCatCard(cat.getContext('2d'), { photo: wide, logo: null, name: 'ソラ', lines: ['よく食べる'], theme: '#e8826b', position: 'normal' })
+      out.paw = count(cat, 64, 220, 140, 500, black) > 300
+      out.pawHidden = count(cat, 0, 0, 1080, 220, black) + count(cat, 0, 0, 64, 1920, black)
+      // 帯の線：左右の端（文字を置かない所）の列に、線の色が上下で16pxずつ
+      const lc = m.bandLineColor('#e8826b')
+      const [lr, lg, lb] = [1, 3, 5].map((i) => parseInt(lc.slice(i, i + 2), 16))
+      const isLine = (r, g, b) => Math.abs(r - lr) < 3 && Math.abs(g - lg) < 3 && Math.abs(b - lb) < 3
+      out.lines = { left: count(cat, 2, 0, 1, 1920, isLine), right: count(cat, 1077, 0, 1, 1920, isLine) }
+      const catA = card()
+      m.drawCatCard(catA.getContext('2d'), { photo: tall, logo: null, name: 'ソラ', lines: ['よく食べる'], theme: '#e8826b', position: 'normal' })
+      out.noLineA = count(catA, 2, 0, 1, 1920, isLine)
+      out.noPawA = count(catA, 64, 220, 140, 500, black)
+      const w = card()
+      m.drawWordsCard(w.getContext('2d'), { text: '毎日癒されています', theme: '#e8826b', photo: wide })
+      out.flower = count(w, 0, 220, 1080, 400, orange) > 100
+      const e = card()
+      m.drawEndCard(e.getContext('2d'), { logo: null, shelterName: '（架空）ねこの会', contact: '', event: null, theme: '#e8826b', photo: wide })
+      out.house = count(e, 0, 220, 1080, 300, teal) > 300
+      return out
+    } catch (err) {
+      return { error: String(err) }
+    }
+  })
+  if (r && !r.error) {
+    check(r.clover.B && r.clover.A, `表紙の名前の横にクローバー（横の写真 ${r.clover.B}・縦の写真 ${r.clover.A}）`)
+    check(r.paw, '横・正方形の写真の猫カード：上の帯の左端に肉球')
+    check(r.pawHidden === 0, `肉球はInstagramで隠れる所（上220・左64）に入らない（黒い点 ${r.pawHidden}）`)
+    check(r.noPawA < 50, `縦の写真のカードには肉球を描かない（${r.noPawA}）`)
+    check(r.lines.left === 32 && r.lines.right === 32, `横・正方形の写真：上と下の帯に16pxの線を1本ずつ、カードの幅いっぱい（左端 ${r.lines.left}px・右端 ${r.lines.right}px）`)
+    check(r.noLineA === 0, `縦の写真のカードには線を描かない（${r.noLineA}）`)
+    check(r.flower, 'ひとことカードに花')
+    check(r.house, '最後の1枚に家')
+  } else if (r?.error) check(false, `作者の絵の確認が動かなかった（${r.error}）`)
   await ctx.close()
 }
 

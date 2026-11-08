@@ -379,8 +379,9 @@ export function bandLineColor(band: string): string {
 function drawBandLines(ctx: CanvasRenderingContext2D, top: number, bottom: number, band: string) {
   ctx.save()
   ctx.fillStyle = bandLineColor(band)
-  ctx.fillRect(0, top - LINE_GAP - LINE_W, CARD_W, LINE_W)
-  ctx.fillRect(0, bottom + LINE_GAP, CARD_W, LINE_W)
+  // 位置は整数にそろえる（ふちがぼやけないように）
+  ctx.fillRect(0, Math.round(top - LINE_GAP - LINE_W), CARD_W, LINE_W)
+  ctx.fillRect(0, Math.round(bottom + LINE_GAP), CARD_W, LINE_W)
   ctx.restore()
 }
 
