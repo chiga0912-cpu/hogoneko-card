@@ -1289,8 +1289,8 @@ export function drawEndCard(
     if (opts.event) {
       // 「譲渡会」と譲渡会の名前は大きく、日付・時間・場所は小さめ（11/8 作者の決定）。縦の写真では、ほかの文字と同じく後ろを暗くして読めるように
       const e = opts.event
-      rows.push(text('譲渡会', 64 * k, 800, rows.length ? 20 * k : 0))
-      rows.push(text(e.name, 60 * k, 800, 4 * k))
+      rows.push(text('譲渡会', 76 * k, 800, rows.length ? 20 * k : 0))
+      rows.push(text(e.name, 64 * k, 800, 4 * k))
       rows.push(text(e.date, 44 * k, 700, 14 * k))
       if (e.time) rows.push(text(e.time, 44 * k, 700, 0))
       if (e.venue) rows.push(text(e.venue, 44 * k, 700, 0))

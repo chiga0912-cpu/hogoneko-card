@@ -395,15 +395,17 @@ const seenWithoutScroll = async (p, loc) => {
   await p.getByLabel('団体名').fill('テスト保護猫の会')
   await p.getByLabel('連絡先').fill('（架空）Instagramのメッセージで\nお問い合わせください')
   await p.getByRole('button', { name: '登録して始める' }).click()
-  const addEvents = (events) =>
-    p.evaluate(
-      (events) =>
+  // 譲渡会（11/8 小さい版）：シェルター情報の4つの欄。ここでは保存場所に直接入れて、開き直す
+  const setShelterEvent = async (event) => {
+    await p.evaluate(
+      (event) =>
         new Promise((resolve, reject) => {
           const req = indexedDB.open('hogoneko-card')
           req.onsuccess = () => {
-            const tx = req.result.transaction('events', 'readwrite')
-            tx.objectStore('events').clear()
-            for (const e of events) tx.objectStore('events').put(e)
+            const tx = req.result.transaction('shelter', 'readwrite')
+            const st = tx.objectStore('shelter')
+            const g = st.get('main')
+            g.onsuccess = () => st.put({ ...g.result, event }, 'main')
             tx.oncomplete = () => {
               req.result.close()
               resolve(true)
@@ -412,8 +414,11 @@ const seenWithoutScroll = async (p, loc) => {
           }
           req.onerror = () => reject(req.error)
         }),
-      events,
+      event,
     )
+    await p.reload()
+    await p.getByRole('button', { name: '新しい子を紹介' }).waitFor()
+  }
   const ymd = (days) => {
     const d = new Date(Date.now() + days * 86400000)
     return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
@@ -434,31 +439,29 @@ const seenWithoutScroll = async (p, loc) => {
   await openPreview(dummy('#c9b8a6', '縦', 600, 800))
   check((await cover.getAttribute('data-fits')) === '1' && Number(await cover.getAttribute('data-contrast')) >= 4.5, `表紙（縦の写真）：長い名前でも、隠れる所にかからず読める（見やすさ ${await cover.getAttribute('data-contrast')}）`)
   check((await end.getAttribute('data-event')) === '0' && (await end.getAttribute('data-fits')) === '1', '譲渡会がないとき、最後の1枚は団体名と連絡先だけで、はみ出さない')
-  check(await p.getByText('次の譲渡会が登録されていないので').isVisible(), '譲渡会がないとき、そのことを確認画面に出す')
+  check(await p.getByText('譲渡会が入っていないので').isVisible(), '譲渡会がないとき、そのことを確認画面に出す')
   await p.screenshot({ path: join(outDir, '5j_表紙と最後の1枚_譲渡会なし.png'), fullPage: true })
   await p.locator('.card-strip').evaluate((el) => el.scrollTo({ left: el.scrollWidth }))
   await p.waitForTimeout(300)
   await p.screenshot({ path: join(outDir, '5k_最後の1枚までめくった.png') })
-  // 過ぎた譲渡会だけがあるとき
-  // 確認画面を開くたびに譲渡会を読み直すので、入力へ戻ってから［次へ］で開き直す
-  await p.getByRole('button', { name: '戻る' }).click()
-  await addEvents([{ id: 'e-old', date: ymd(-1), startTime: '13:00', endTime: '16:00', venue: '（架空）過ぎた会場', catIds: [] }])
-  await p.getByRole('button', { name: '次へ' }).click()
-  await p.locator('.card-end[data-drawn="1"]').waitFor()
-  await p.waitForTimeout(300)
-  check((await end.getAttribute('data-event')) === '0', '過ぎた譲渡会は、最後の1枚に入らない')
-  // これからの譲渡会があるとき（近いほうを入れる）
-  await p.getByRole('button', { name: '戻る' }).click()
-  await addEvents([
-    { id: 'e-old', date: ymd(-1), startTime: '13:00', endTime: '16:00', venue: '（架空）過ぎた会場', catIds: [] },
-    { id: 'e-far', date: ymd(30), startTime: '13:00', endTime: '16:00', venue: '（架空）遠い会場', catIds: [] },
-    { id: 'e-near', date: ymd(0), startTime: '13:00', endTime: '16:00', venue: '（架空）みどり公民館 2階 和室', catIds: [] },
-  ])
-  await p.getByRole('button', { name: '次へ' }).click()
+  const startOver = async () => {
+    const fresh = p.getByRole('button', { name: '消して新しく始める' })
+    if (await fresh.isVisible().catch(() => false)) await fresh.click()
+  }
+  // 名前だけで日付がないときは、出さない
+  await setShelterEvent({ name: '（架空）秋の譲渡会', date: '', time: '13時〜16時', venue: '（架空）みどり公民館' })
+  await startOver()
+  await openPreview(dummy('#c9b8a6', '縦', 600, 800))
+  check((await end.getAttribute('data-event')) === '0', '譲渡会の名前だけで日付がないときは、最後の1枚に出さない')
+  // 名前と日付があるとき
+  await p.goto(url)
+  await setShelterEvent({ name: '（架空）ねこの会 秋の譲渡会', date: '11月23日（日）', time: '13時〜16時', venue: '（架空）みどり公民館 2階 和室' })
+  await startOver()
+  await openPreview(dummy('#c9b8a6', '縦', 600, 800))
   await p.locator('.card-end[data-drawn="1"][data-event="1"]').waitFor({ timeout: 3000 }).catch(() => {})
-  check((await end.getAttribute('data-event')) === '1' && (await end.getAttribute('data-fits')) === '1', '今日からの譲渡会があれば、最後の1枚に入り、はみ出さない')
-  const box = p.getByLabel(/最後の1枚に、次の譲渡会/)
-  check((await box.isVisible()) && (await p.getByText(`次の譲渡会（${ymd(0).slice(5).replace('-', '/')}）`).isVisible()), 'いちばん近い譲渡会（今日）を選び、確認画面で外せる')
+  check((await end.getAttribute('data-event')) === '1' && (await end.getAttribute('data-fits')) === '1', '譲渡会の名前と日付があれば、最後の1枚に入り、はみ出さない')
+  const box = p.getByLabel(/最後の1枚に、譲渡会/)
+  check((await box.isVisible()) && (await p.getByText('（架空）ねこの会 秋の譲渡会・11月23日（日）').isVisible()), '確認画面に譲渡会の名前と日付が出て、外せる')
   await p.screenshot({ path: join(outDir, '5l_最後の1枚_譲渡会あり.png'), fullPage: true })
   await end.click()
   await p.locator('.card-full .card-full-canvas[data-drawn="1"]').waitFor()
@@ -467,6 +470,8 @@ const seenWithoutScroll = async (p, loc) => {
   await box.uncheck()
   await p.locator('.card-end[data-event="0"]').waitFor({ timeout: 3000 }).catch(() => {})
   check((await end.getAttribute('data-event')) === '0', '譲渡会を外すと、最後の1枚から消える')
+  await box.check()
+  await p.locator('.card-end[data-event="1"]').waitFor({ timeout: 3000 }).catch(() => {})
   // 横の写真の表紙
   await p.getByRole('button', { name: '戻る' }).click()
   await p.getByRole('button', { name: '写真1を外す' }).click()
@@ -1521,7 +1526,7 @@ console.log('表示:', await page.locator('.status-line').innerText())
       m.drawCatCard(catB.getContext('2d'), { photo: wide, logo: round, name: 'テスト', lines: ['よく食べる'], theme: '#e8826b', position: 'normal' })
       out.noLogo = [magenta(cat).n, magenta(catB).n]
       // ひとこと・最後の1枚（11/6夜 作者の決定）：便箋・切手・クローバーなし。縦の写真は写真の上に白い文字、横・正方形は上の帯に白い文字
-      const ev = { date: '2026-11-15', startTime: '13:00', endTime: '16:00', venue: '（架空）会場' }
+      const ev = { name: '（架空）秋の譲渡会', date: '11月15日（日）', time: '13時〜16時', venue: '（架空）会場' }
       const green = (c) => {
         const d = c.getContext('2d').getImageData(0, 0, 1080, 1920).data
         let n = 0
@@ -1838,9 +1843,13 @@ for (const withPattern of [false, true]) {
       })
       // 肉球は猫カードだけ（1枚に絵は1つ。11/8 作者の決定）：表紙・ひとこと・最後の1枚の上の帯の左端に黒い所がない
       out.pawElsewhere = [cB, w, e].map((c) => count(c, 64, 220, 140, 600, black))
+      // 譲渡会を出す最後の1枚は、絵は四つ葉のクローバーだけ（家は出さない。11/8 作者の決定）
+      const e3 = card()
+      m.drawEndCard(e3.getContext('2d'), { logo: null, shelterName: '（架空）ねこの会', contact: '', event: { name: '（架空）秋の譲渡会', date: '11月23日（日）', time: '13時〜16時', venue: '（架空）公民館' }, theme: '#e8826b', photo: wide })
+      out.eventArt = { clover: count(e3, 0, 220, 1080, 400, green), house: count(e3, 0, 220, 1080, 600, teal) }
       // 文字が多い最後の1枚（縦の写真・譲渡会・ロゴ・連絡先3行）：家を先に小さく・なくして、文字は小さくしない（見直しの中2）
       const logo = mk(300, 300)
-      const ev = { date: '2026-11-23', startTime: '13:00', endTime: '16:00', venue: '（架空）ひだまり公民館 2階' }
+      const ev = { name: '（架空）ねこの会 秋の譲渡会', date: '11月23日（日）', time: '13時〜16時', venue: '（架空）ひだまり公民館 2階' }
       const e2 = card()
       const l2 = m.drawEndCard(e2.getContext('2d'), { logo, shelterName: '（架空）ねこの会', contact: 'InstagramのDMで\nお問い合わせください\n見学は土日', event: ev, theme: '#e8826b', photo: tall })
       out.busyEnd = { fits: l2.fits, scale: l2.scale }
@@ -1863,6 +1872,7 @@ for (const withPattern of [false, true]) {
     check(r.busyEnd.fits && r.busyEnd.scale === 1, `文字が多い最後の1枚でも、家のせいで文字を小さくしない（入る ${r.busyEnd.fits}・大きさ ${r.busyEnd.scale}）`)
     check(r.house, '最後の1枚に家')
     check(r.houseWithLogo.every(Boolean), `ロゴと連絡先があっても、家を団体名の左下に、文字やロゴに重ねずに置ける（横の写真 ${r.houseWithLogo[0]}・縦の写真 ${r.houseWithLogo[1]}）`)
+    check(r.eventArt.clover > 300 && r.eventArt.house < 50, `譲渡会を出す最後の1枚は、絵は四つ葉のクローバーだけ（クローバーの緑 ${r.eventArt.clover}・家の屋根 ${r.eventArt.house}）`)
   } else if (r?.error) check(false, `作者の絵の確認が動かなかった（${r.error}）`)
   await ctx.close()
 }
