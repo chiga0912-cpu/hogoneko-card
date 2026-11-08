@@ -416,12 +416,10 @@ const seenWithoutScroll = async (p, loc) => {
         }),
       event,
     )
+    // 読み込み直すと、入力の途中だった確認画面に戻る（App.tsx）。最後の1枚を描き終わるのを待つ
     await p.reload()
-    await p.getByRole('button', { name: '新しい子を紹介' }).waitFor()
-  }
-  const ymd = (days) => {
-    const d = new Date(Date.now() + days * 86400000)
-    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+    await p.locator('.card-end[data-drawn="1"]').waitFor()
+    await p.waitForTimeout(300)
   }
   const openPreview = async (photo) => {
     await p.getByRole('button', { name: '新しい子を紹介' }).click()
@@ -444,20 +442,11 @@ const seenWithoutScroll = async (p, loc) => {
   await p.locator('.card-strip').evaluate((el) => el.scrollTo({ left: el.scrollWidth }))
   await p.waitForTimeout(300)
   await p.screenshot({ path: join(outDir, '5k_最後の1枚までめくった.png') })
-  const startOver = async () => {
-    const fresh = p.getByRole('button', { name: '消して新しく始める' })
-    if (await fresh.isVisible().catch(() => false)) await fresh.click()
-  }
-  // 名前だけで日付がないときは、出さない
+  // 名前だけで日付がないときは、出さない（同じ子の確認画面のまま、シェルター情報だけ変えて読み込み直す）
   await setShelterEvent({ name: '（架空）秋の譲渡会', date: '', time: '13時〜16時', venue: '（架空）みどり公民館' })
-  await startOver()
-  await openPreview(dummy('#c9b8a6', '縦', 600, 800))
   check((await end.getAttribute('data-event')) === '0', '譲渡会の名前だけで日付がないときは、最後の1枚に出さない')
   // 名前と日付があるとき
-  await p.goto(url)
   await setShelterEvent({ name: '（架空）ねこの会 秋の譲渡会', date: '11月23日（日）', time: '13時〜16時', venue: '（架空）みどり公民館 2階 和室' })
-  await startOver()
-  await openPreview(dummy('#c9b8a6', '縦', 600, 800))
   await p.locator('.card-end[data-drawn="1"][data-event="1"]').waitFor({ timeout: 3000 }).catch(() => {})
   check((await end.getAttribute('data-event')) === '1' && (await end.getAttribute('data-fits')) === '1', '譲渡会の名前と日付があれば、最後の1枚に入り、はみ出さない')
   const box = p.getByLabel(/最後の1枚に、譲渡会/)
@@ -1869,7 +1858,7 @@ for (const withPattern of [false, true]) {
     // 肉球があると黒い点は300より多い（猫カードの確かめと同じ目安）。最後の1枚の左には小さな家があり、ドアや影の暗い所が少し数えられる
     check(r.pawElsewhere.every((n) => n < 300), `肉球は猫カードだけ。表紙・ひとこと・最後の1枚には入れない（黒い点 ${r.pawElsewhere.join('・')}）`)
     check(r.flowerHidden === 0, `花は上の隠れる所（上220）に入らない（${r.flowerHidden}）`)
-    check(r.busyEnd.fits && r.busyEnd.scale === 1, `文字が多い最後の1枚でも、家のせいで文字を小さくしない（入る ${r.busyEnd.fits}・大きさ ${r.busyEnd.scale}）`)
+    check(r.busyEnd.fits && r.busyEnd.scale >= 0.9, `譲渡会・ロゴ・連絡先3行がそろった縦の写真の最後の1枚も、はみ出さずに入る（大きさ ${r.busyEnd.scale}。11/8 譲渡会の文字が大きくなったので、少し小さくなることがある）`)
     check(r.house, '最後の1枚に家')
     check(r.houseWithLogo.every(Boolean), `ロゴと連絡先があっても、家を団体名の左下に、文字やロゴに重ねずに置ける（横の写真 ${r.houseWithLogo[0]}・縦の写真 ${r.houseWithLogo[1]}）`)
     check(r.eventArt.clover > 300 && r.eventArt.house < 50, `譲渡会を出す最後の1枚は、絵は四つ葉のクローバーだけ（クローバーの緑 ${r.eventArt.clover}・家の屋根 ${r.eventArt.house}）`)

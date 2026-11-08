@@ -1287,9 +1287,11 @@ export function drawEndCard(
       const e = opts.event
       rows.push({ ...text('譲渡会', 76 * k, 800, 0), icon: clover ? { img: clover, size: 76 * k * CLOVER_K, tilt: CLOVER_TILT } : undefined })
       rows.push(text(e.name, 64 * k, 800, 4 * k))
-      rows.push(text(e.date, 44 * k, 700, 14 * k))
-      if (e.time) rows.push(text(e.time, 44 * k, 700, 0))
-      if (e.venue) rows.push(text(e.venue, 44 * k, 700, 0))
+      // 日付・時間・場所は、小さくしても連絡先と同じ下限（36px）より小さくしない（見直しの軽い3）
+      const small = Math.max(CONTACT_MIN_PX, 44 * k)
+      rows.push(text(e.date, small, 700, 14 * k))
+      if (e.time) rows.push(text(e.time, small, 700, 0))
+      if (e.venue) rows.push(text(e.venue, small, 700, 0))
     }
     const g = opts.event ? 40 * k : rows.length ? 24 * k : 0
     if (logo) {
