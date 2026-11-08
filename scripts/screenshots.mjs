@@ -1829,6 +1829,13 @@ for (const withPattern of [false, true]) {
       const e = card()
       m.drawEndCard(e.getContext('2d'), { logo: null, shelterName: '（架空）ねこの会', contact: '', event: null, theme: '#e8826b', photo: wide })
       out.house = count(e, 0, 220, 1080, 300, teal) > 300
+      // 家は団体名の左下あたり（11/8 作者の決定）。ロゴありでも、縦・横の写真の両方で、文字やロゴに重ならずに置ける
+      const lg2 = mk(300, 300)
+      out.houseWithLogo = [wide, tall].map((ph) => {
+        const c = card()
+        const l = m.drawEndCard(c.getContext('2d'), { logo: lg2, shelterName: '（架空）ねこの会', contact: 'InstagramのDMでお問い合わせください', event: null, theme: '#e8826b', photo: ph })
+        return l.house && l.fits
+      })
       // 肉球は猫カードだけ（1枚に絵は1つ。11/8 作者の決定）：表紙・ひとこと・最後の1枚の上の帯の左端に黒い所がない
       out.pawElsewhere = [cB, w, e].map((c) => count(c, 64, 220, 140, 600, black))
       // 文字が多い最後の1枚（縦の写真・譲渡会・ロゴ・連絡先3行）：家を先に小さく・なくして、文字は小さくしない（見直しの中2）
@@ -1850,10 +1857,12 @@ for (const withPattern of [false, true]) {
     check(r.lines.left === 32 && r.lines.right === 32, `横・正方形の写真：上と下の帯に16pxの線を1本ずつ、カードの幅いっぱい（左端 ${r.lines.left}px・右端 ${r.lines.right}px）`)
     check(r.noLineA === 0, `縦の写真のカードには線を描かない（${r.noLineA}）`)
     check(r.flower, 'ひとことカードに花')
-    check(r.pawElsewhere.every((n) => n < 50), `肉球は猫カードだけ。表紙・ひとこと・最後の1枚には入れない（黒い点 ${r.pawElsewhere.join('・')}）`)
+    // 肉球があると黒い点は300より多い（猫カードの確かめと同じ目安）。最後の1枚の左には小さな家があり、ドアや影の暗い所が少し数えられる
+    check(r.pawElsewhere.every((n) => n < 300), `肉球は猫カードだけ。表紙・ひとこと・最後の1枚には入れない（黒い点 ${r.pawElsewhere.join('・')}）`)
     check(r.flowerHidden === 0, `花は上の隠れる所（上220）に入らない（${r.flowerHidden}）`)
     check(r.busyEnd.fits && r.busyEnd.scale === 1, `文字が多い最後の1枚でも、家のせいで文字を小さくしない（入る ${r.busyEnd.fits}・大きさ ${r.busyEnd.scale}）`)
     check(r.house, '最後の1枚に家')
+    check(r.houseWithLogo.every(Boolean), `ロゴと連絡先があっても、家を団体名の左下に、文字やロゴに重ねずに置ける（横の写真 ${r.houseWithLogo[0]}・縦の写真 ${r.houseWithLogo[1]}）`)
   } else if (r?.error) check(false, `作者の絵の確認が動かなかった（${r.error}）`)
   await ctx.close()
 }

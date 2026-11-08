@@ -377,7 +377,8 @@ const okImg = (i: Img | null): i is Img => !!i && i.width > 0 && i.height > 0
 export const CLOVER_K = 0.85 // 名前の文字の高さに対するクローバーの大きさ ⚙
 export const CLOVER_TILT = 15 // クローバーの傾き（度。右回り）⚙
 export const FLOWER_K = 1.8 // 「ひとこと」の文字の高さに対する花の大きさ ⚙
-export const HOUSE_H = 190 // 最後の1枚の家の高さ（px。横幅は絵の形のまま。長いときは文字と一緒に小さくなる）⚙
+export const HOUSE_SMALL = 110 // 最後の1枚の家の大きさ（長い辺。表紙のクローバーと同じくらい。11/8 作者の決定）⚙
+export const HOUSE_TILT = -10 // 家の傾き（度。マイナスは左回り）⚙
 export const PAW_SIZES = [110, 96, 84] // 帯の中の肉球の大きさ（大きい順に試す）⚙
 
 // 行の横に絵を置く。lineX/align：その行を描いた位置とそろえ方。右に置けなければ左に、どちらも無理なら置かない
@@ -960,6 +961,7 @@ export type EndLayout = {
   textTop: number
   textBottom: number
   contactPx: number // 連絡先の文字の大きさ（1080の中で。CONTACT_MIN_PX より小さくしない）
+  house: boolean // 粘土の家を描いたか（団体名の左下。11/8）
 }
 
 const WEEK = ['日', '月', '火', '水', '木', '金', '土']
@@ -970,6 +972,32 @@ export function eventDateText(e: EndEvent): string {
 }
 export const eventTimeText = (e: EndEvent) => (e.startTime ? `${e.startTime}〜${e.endTime}` : '')
 
+
+// 団体名の最後の行の左に家を置く。少し下にずらした「左下」を先に試し、文字やロゴと重なるなら、下の端を行の下にそろえる・行の真ん中の順に。どれもだめなら置かない
+function drawHouseNearOrg(ctx: CanvasRenderingContext2D, img: Img, hb: { w: number; h: number; bw: number; bh: number; gap: number }, rects: Rect[], design: CardDesign): boolean {
+  const orgs = rects.filter((r) => r.tag === 'org')
+  const L = orgs[orgs.length - 1]
+  if (!L) return false
+  // 団体名が2行以上のときも、いちばん左の行より左に（行の上下に重ならないように）
+  const cx = Math.min(...orgs.map((o) => o.x0)) - hb.gap - hb.bw / 2
+  const right = design === 'B' ? CARD_W - SAFE.right : CARD_W - SAFE.cornerRight
+  const M = 6 // 文字とのすき間
+  const hits = (x0: number, y0: number, x1: number, y1: number) => rects.some((r) => x0 < r.x1 + M && x1 > r.x0 - M && y0 < r.y1 + M && y1 > r.y0 - M)
+  // 少し下にはみ出す形 → 下の端を団体名の行の下にそろえる形 → 行の真ん中、の順に試す
+  for (const cy of [L.y1 - hb.bh / 2 + hb.bh * 0.25, L.y1 - hb.bh / 2, (L.y0 + L.y1) / 2]) {
+    const [x0, y0, x1, y1] = [cx - hb.bw / 2, cy - hb.bh / 2, cx + hb.bw / 2, cy + hb.bh / 2]
+    if (x0 < SAFE.left || x1 > right || y0 < SAFE.top || y1 > CARD_H - SAFE.bottom) continue
+    if (hits(x0, y0, x1, y1)) continue
+    ctx.save()
+    ctx.shadowColor = 'transparent'
+    ctx.translate(cx, cy)
+    ctx.rotate((HOUSE_TILT * Math.PI) / 180)
+    ctx.drawImage(img, -hb.w / 2, -hb.h / 2, hb.w, hb.h)
+    ctx.restore()
+    return true
+  }
+  return false
+}
 
 // ── 撮った動画に重ねる名前（SPEC 3.2 の2番目）──
 // 表紙と同じ置き方（下。右下のボタンの高さより上、真ん中にそろえる）で、少し小さく（11/5 作る人の決定）
@@ -1062,9 +1090,11 @@ function paintPhoto(ctx: CanvasRenderingContext2D, design: CardDesign, photo: Im
 
 // 文字の行（帯の上なら真ん中にそろえ、写真の上なら左にそろえて影を付ける）
 // pic：文字の代わりに絵を置く行（最後の1枚の家）。icon：行の横に置く小さな絵（ひとことカードの花）
-type TextRow = { lines: string[]; px: number; weight: number; lh: number; gap: number; alpha?: number; logo?: { img: Img; w: number; h: number; theme: string }; pic?: { img: Img; w: number; h: number }; icon?: { img: Img; size: number } }
+// indent：左にそろえる形（縦の写真）で、その行だけ右へずらす幅（最後の1枚の家の場所。11/8）。tag：あとで場所を探すための印
+type TextRow = { lines: string[]; px: number; weight: number; lh: number; gap: number; alpha?: number; logo?: { img: Img; w: number; h: number; theme: string }; pic?: { img: Img; w: number; h: number }; icon?: { img: Img; size: number }; indent?: number; tag?: 'org' }
+type Rect = { x0: number; x1: number; y0: number; y1: number; tag?: 'org' }
 const rowsH = (rows: TextRow[]) => rows.reduce((y, r) => y + r.gap + (r.logo ? r.logo.h : r.pic ? r.pic.h : r.lines.length * r.px * r.lh), 0)
-function drawRows(ctx: CanvasRenderingContext2D, rows: TextRow[], top: number, design: CardDesign, color: string): { widest: number; bottom: number } {
+function drawRows(ctx: CanvasRenderingContext2D, rows: TextRow[], top: number, design: CardDesign, color: string): { widest: number; bottom: number; rects: Rect[] } {
   const center = design === 'B'
   const x = center ? CARD_W / 2 : SAFE.left
   ctx.save()
@@ -1078,9 +1108,12 @@ function drawRows(ctx: CanvasRenderingContext2D, rows: TextRow[], top: number, d
   }
   let y = top
   let widest = 0
+  const rects: Rect[] = [] // 描いた文字の行・ロゴの場所（ほかの絵が重ならないように）
   for (const r of rows) {
     y += r.gap
     if (r.logo) {
+      const lx = center ? CARD_W / 2 - r.logo.w / 2 : SAFE.left
+      rects.push({ x0: lx, x1: lx + r.logo.w, y0: y, y1: y + r.logo.h })
       // ロゴは丸いアイコン（台を足さない。透明なロゴはテーマ色の丸の上。src/lib/logo.ts）。影は付けない
       ctx.save()
       ctx.shadowColor = 'transparent'
@@ -1102,9 +1135,11 @@ function drawRows(ctx: CanvasRenderingContext2D, rows: TextRow[], top: number, d
     ctx.font = `${r.weight} ${Math.round(r.px)}px ${FONT}`
     ctx.globalAlpha = r.alpha ?? 1
     for (const l of r.lines) {
-      ctx.fillText(l, x, y + r.px * 0.08)
+      const lx = center ? x : x + (r.indent ?? 0)
+      ctx.fillText(l, lx, y + r.px * 0.08)
       const lw = ctx.measureText(l).width
-      widest = Math.max(widest, lw)
+      widest = Math.max(widest, lw + (center ? 0 : (r.indent ?? 0)))
+      rects.push({ x0: center ? lx - lw / 2 : lx, x1: center ? lx + lw / 2 : lx + lw, y0: y, y1: y + r.px * r.lh, tag: r.tag })
       if (r.icon) {
         const right = center ? CARD_W - SAFE.right : SAFE.left + NARROW_W
         if (drawBeside(ctx, r.icon.img, { x, align: center ? 'center' : 'left', w: lw, top: y, h: r.px * r.lh }, r.icon.size, 0, { left: SAFE.left, right }))
@@ -1115,7 +1150,7 @@ function drawRows(ctx: CanvasRenderingContext2D, rows: TextRow[], top: number, d
     ctx.globalAlpha = 1
   }
   ctx.restore()
-  return { widest, bottom: y }
+  return { widest, bottom: y, rects }
 }
 
 // 文字のかたまりの置き場所。帯：上の帯（写真を B_MIN_PHOTO_TWO 以上残し、右下のボタンの高さより上）。
@@ -1135,7 +1170,7 @@ function paintRows(
   design: CardDesign,
   rows: TextRow[],
   opts: { theme: string; photo?: Img | null; framing?: Framing; pattern?: Img | null },
-): { framing: Framing | null; contrast: number; top: number; bottom: number; widest: number; ok: boolean } {
+): { framing: Framing | null; contrast: number; top: number; bottom: number; widest: number; ok: boolean; rects: Rect[] } {
   ctx.clearRect(0, 0, CARD_W, CARD_H)
   const h = rowsH(rows)
   const pl = placeRows(design, h)
@@ -1146,12 +1181,12 @@ function paintRows(
     paintPhoto(ctx, design, opts.photo ?? null, NO_FRAMING, pl.topH, band)
     if (opts.pattern) readableOnBand(ctx, SAFE.left, pl.top, WIDE_W, h, color)
     const t = drawRows(ctx, rows, pl.top, design, color)
-    return { framing: null, contrast, top: pl.top, bottom: t.bottom, widest: t.widest, ok: pl.ok && t.widest <= WIDE_W + 0.5 }
+    return { framing: null, contrast, top: pl.top, bottom: t.bottom, widest: t.widest, ok: pl.ok && t.widest <= WIDE_W + 0.5, rects: t.rects }
   }
   const used = paintPhoto(ctx, design, opts.photo ?? null, opts.framing ?? NO_FRAMING, 0)
   const shade = shadeBehind(ctx, pl.top, pl.top + h)
   const t = drawRows(ctx, rows, pl.top, design, WHITE)
-  return { framing: used, contrast: shade.contrast, top: pl.top, bottom: t.bottom, widest: t.widest, ok: pl.ok && t.widest <= NARROW_W + 0.5 && shade.contrast >= 4.5 }
+  return { framing: used, contrast: shade.contrast, top: pl.top, bottom: t.bottom, widest: t.widest, ok: pl.ok && t.widest <= NARROW_W + 0.5 && shade.contrast >= 4.5, rects: t.rects }
 }
 
 // ひとことの文字の大きさ（11/8 作者の決定：前の46pxの約1.3倍の60pxに。「ひとこと」の見出しと花の大きさは変えない）。
@@ -1218,17 +1253,31 @@ export function drawEndCard(
     .map((l) => l.trim())
     .filter(Boolean)
   const logo = opts.logo && opts.logo.width > 0 && opts.logo.height > 0 ? opts.logo : null
-  // hk：家の大きさ（1＝HOUSE_H）。入らないときは、文字より先に家を小さくし、それでも入らなければ家を置かない（見直しの中2）
-  const build = (k: number, hk = 1): TextRow[] => {
+  // 粘土の家（11/8 作者の決定）：団体名の左下あたりに小さく、少し左に傾けて。団体名・ロゴ・連絡先には重ねない。譲渡会を出すときは家を出さない
+  // 家の場所を空けるため、団体名だけ、縦の写真では家の幅だけ右へずらし、横・正方形の写真では左右を家の幅だけ狭くして折る
+  const house = !opts.event && okImg(DECOR.house) ? DECOR.house : null
+  const houseBox = (k: number) => {
+    if (!house) return null
+    const s = (HOUSE_SMALL * k) / Math.max(house.width, house.height)
+    const w = house.width * s
+    const h = house.height * s
+    const rad = (Math.abs(HOUSE_TILT) * Math.PI) / 180
+    return { w, h, bw: w * Math.cos(rad) + h * Math.sin(rad), bh: w * Math.sin(rad) + h * Math.cos(rad), gap: 14 * k }
+  }
+  const build = (k: number): TextRow[] => {
     const rows: TextRow[] = []
-    const house = DECOR.house
-    if (okImg(house) && hk > 0) {
-      const h = HOUSE_H * k * hk
-      rows.push({ lines: [], px: 0, weight: 0, lh: 1, gap: 0, pic: { img: house, w: (house.width / house.height) * h, h } })
-    }
-    const text = (t: string, px: number, weight: number, gap: number, alpha?: number, name = false): TextRow => {
+    const hb = houseBox(k)
+    const room = hb ? hb.bw + hb.gap : 0
+    const text = (t: string, px: number, weight: number, gap: number, alpha?: number): TextRow => {
       ctx.font = `${weight} ${Math.round(px)}px ${FONT}`
-      return { lines: name ? wrapName(ctx, t, width) : wrapText(ctx, t, width), px, weight, lh: 1.3, gap, alpha }
+      return { lines: wrapText(ctx, t, width), px, weight, lh: 1.3, gap, alpha }
+    }
+    const orgRow = (t: string, px: number, gap: number): TextRow => {
+      ctx.font = `800 ${Math.round(px)}px ${FONT}`
+      const w = design === 'B' ? width - room * 2 : width - room
+      // 家が団体名の行より高いときは、その分だけ団体名の上をあける（上のロゴと重ならないように）
+      const extra = hb ? Math.max(0, hb.bh - px * 1.3 + 8 * k) : 0
+      return { lines: wrapName(ctx, t, w), px, weight: 800, lh: 1.3, gap: gap + extra, tag: 'org', indent: design === 'B' ? 0 : room }
     }
     if (opts.event) {
       rows.push(text('次の譲渡会', 40 * k, 800, rows.length ? 24 * k : 0, 0.9))
@@ -1242,19 +1291,20 @@ export function drawEndCard(
       const d = (opts.event ? 150 : 200) * k // 丸いアイコンの直径
       rows.push({ lines: [], px: 0, weight: 0, lh: 1, gap: g, logo: { img: logo, w: d, h: d, theme: opts.theme } })
     }
-    if (opts.shelterName.trim()) rows.push(text(opts.shelterName.trim(), (logo ? 54 : 76) * k, 800, logo ? 16 * k : g, undefined, true))
+    if (opts.shelterName.trim()) rows.push(orgRow(opts.shelterName.trim(), (logo ? 54 : 76) * k, logo ? 16 * k : g))
     contact.forEach((c, i) => rows.push(text(c, Math.max(CONTACT_MIN_PX, 40 * k), 600, (i ? 2 : 12) * k)))
     return rows
   }
   let k = 1
   let rows = build(1)
-  const tries: [number, number][] = [[1, 1], [1, 0.75], [1, 0.5], [1, 0], [0.92, 0], [0.84, 0], [0.76, 0], [0.68, 0]]
-  for (const [s, hk] of tries) {
+  for (const s of [1, 0.92, 0.84, 0.76, 0.68]) {
     k = s
-    rows = build(s, hk)
+    rows = build(s)
     if (placeRows(design, rowsH(rows)).ok) break
   }
   const r = paintRows(ctx, design, rows, opts)
+  const hb = houseBox(k)
+  const housePlaced = house && hb ? drawHouseNearOrg(ctx, house, hb, r.rects, design) : false
   return {
     design,
     fits: r.ok,
@@ -1265,5 +1315,6 @@ export function drawEndCard(
     textTop: Math.round(r.top),
     textBottom: Math.round(r.bottom),
     contactPx: contact.length ? Math.round(Math.max(CONTACT_MIN_PX, 40 * k)) : 0,
+    house: housePlaced,
   }
 }
