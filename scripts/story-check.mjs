@@ -8,6 +8,13 @@ import { splitMemo, factChunks, stripHashtags, leakedWords, EXAMPLES, stripClosi
 
 const outDir = process.argv[2] ?? 'screenshots'
 const url = process.argv[3] ?? 'http://localhost:5173'
+
+// ［メッセージから読み取る］は 11/8 から画面に出さない。残してあるプログラムを確かめるときだけ ?read=1 を付けて開く
+const readUrl = (() => {
+  const u = new URL(url)
+  u.searchParams.set('read', '1')
+  return u.toString()
+})()
 mkdirSync(outDir, { recursive: true })
 let failures = 0
 const ok = (c, s) => {
@@ -537,7 +544,7 @@ for (const how of ['確定した文字', '変換を確定する前の文字']) {
     const sent = JSON.parse(r.request().postData() ?? '{}')
     return r.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ results: sent.sentences.map((_, i) => ({ i, ok: true, cites: [{ doc: 0, start: 0, end: 1, text: 'x' }], reason: '' })) }) })
   })
-  await s6.goto(url)
+  await s6.goto(readUrl)
   await s6.getByRole('button', { name: '追加せずに、このまま使う' }).click()
   await s6.getByLabel('団体名').fill('テスト保護猫の会')
   await s6.getByRole('button', { name: '登録して始める' }).click()
@@ -610,7 +617,7 @@ for (const how of ['確定した文字', '変換を確定する前の文字']) {
       },
       [selector, add, endOnBlur],
     )
-  await s7.goto(url)
+  await s7.goto(readUrl)
   await s7.getByRole('button', { name: '追加せずに、このまま使う' }).click()
   await s7.getByLabel('団体名').fill('テスト保護猫の会')
   await s7.getByRole('button', { name: '登録して始める' }).click()
@@ -829,7 +836,7 @@ for (const how of ['確定した文字', '変換を確定する前の文字']) {
   }
   await r.route('**/api/read', (route) => lim(route, 'limit-device'))
   await r.route('**/api/post', (route) => lim(route, 'limit-all'))
-  await r.goto(url)
+  await r.goto(readUrl)
   await r.getByRole('button', { name: '追加せずに、このまま使う' }).click()
   await r.getByLabel('団体名').fill('テスト保護猫の会')
   await r.getByRole('button', { name: '登録して始める' }).click()

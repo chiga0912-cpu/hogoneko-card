@@ -45,6 +45,9 @@ const sizeText = (z: ShrinkInfo) =>
     : `${z.fromW}×${z.fromH}・${mb(z.fromBytes)} → ${z.toW}×${z.toH}・${mb(z.toBytes)}・${(z.ms / 1000).toFixed(1)}秒${z.result === 'kept-small' ? '（元のまま）' : ''}`
 
 // 入力（1画面）。並びは SPEC 2.2 のとおり
+// ［メッセージから読み取る］を出すか（11/8 から出さない。自動の確認でだけ、アドレスに ?read=1 を付けて出す）
+const SHOW_READ = typeof location !== 'undefined' && new URLSearchParams(location.search).get('read') === '1'
+
 export default function CatForm({ cat, fromRoster, onChange, onBack, onNext, autosaveFailed, clipLost, photosStale }: Props) {
   const [showErrors, setShowErrors] = useState(false)
   const [photoNote, setPhotoNote] = useState('')
@@ -207,11 +210,13 @@ export default function CatForm({ cat, fromRoster, onChange, onBack, onNext, aut
           value={cat.memo}
           onChange={(e) => set('memo', e.target.value)}
         />
-        <small className="muted">ここから紹介文を作り、名前や年齢などの欄も埋めます。何通かあれば、続けて貼ってください。</small>
+        <small className="muted">
+          {SHOW_READ ? 'ここから紹介文を作り、名前や年齢などの欄も埋めます。何通かあれば、続けて貼ってください。' : 'ここから紹介文を作ります。何通かあれば、続けて貼ってください。'}
+        </small>
       </label>
       {cleaned.isHistory && (
         <div className="notice line-notice" data-removed={cleaned.removed}>
-          LINEのトーク履歴の形でした。読み取るときは、時刻・名前・スタンプなど{cleaned.removed}行を外した文章を使います（欄の文章はそのままです）。
+          LINEのトーク履歴の形でした。{SHOW_READ ? '読み取るときは' : '紹介文を書くときは'}、時刻・名前・スタンプなど{cleaned.removed}行を外した文章を使います（欄の文章はそのままです）。
           <details>
             <summary>使う文章を見る</summary>
             <pre className="line-preview">{cleaned.text}</pre>
@@ -219,8 +224,10 @@ export default function CatForm({ cat, fromRoster, onChange, onBack, onNext, aut
         </div>
       )}
 
-      {/* 3. 読み取り（Claudeがメモから項目を入れる。入れた項目には「メモから」の印） */}
-      <ReadMemo cat={cat} onChange={onChange} beforeRead={commitTyped} />
+      {/* 3. 読み取り（Claudeがメモから項目を入れる。入れた項目には「メモから」の印）
+          11/8 作者の決定：名前・年齢・性別・健康は人が欄とボタンで入れる（実際のLINEやメモには、名前や年齢を頭に書かないため）。
+          ［メッセージから読み取る］と、それにつながる案内・聞き返しは画面に出さない。プログラムは残し、自動の確認だけ ?read=1 で動かす */}
+      {SHOW_READ && <ReadMemo cat={cat} onChange={onChange} beforeRead={commitTyped} />}
 
       {/* 4. 項目 */}
       <label className="field">

@@ -10,6 +10,13 @@ import { cardSwaps, cardWordLines, addSwap, removeSwap } from '../src/lib/words.
 
 const outDir = process.argv[2] ?? 'screenshots'
 const url = process.argv[3] ?? 'http://localhost:5173'
+
+// ［メッセージから読み取る］は 11/8 から画面に出さない。残してあるプログラムを確かめるときだけ ?read=1 を付けて開く
+const readUrl = (() => {
+  const u = new URL(url)
+  u.searchParams.set('read', '1')
+  return u.toString()
+})()
 mkdirSync(outDir, { recursive: true })
 let failures = 0
 const ok = (c, s) => {
@@ -62,7 +69,7 @@ const setup = async (askAnswer) => {
     if (a === 'fail') return route.fulfill({ status: 502, contentType: 'application/json', body: JSON.stringify({ error: 'api' }) })
     return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(a) })
   })
-  await p.goto(url)
+  await p.goto(readUrl)
   await p.getByRole('button', { name: '追加せずに、このまま使う' }).click()
   await p.getByLabel('団体名').fill('テスト保護猫の会')
   await p.getByRole('button', { name: '登録して始める' }).click()
@@ -373,7 +380,7 @@ for (const [label, ans] of [
 {
   const ctx = await browser.newContext({ ...devices['iPhone 15'] })
   const p = await ctx.newPage()
-  await p.goto(url)
+  await p.goto(readUrl)
   await p.getByRole('button', { name: '追加せずに、このまま使う' }).click()
   await p.getByLabel('団体名').fill('テスト保護猫')
   await p.evaluate(() => {

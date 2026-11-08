@@ -567,6 +567,16 @@ await page.getByRole('button', { name: '次へ' }).click()
 await shot('3a_入力_未入力')
 check(await page.getByText('まだ入っていません：写真か動画、名前').isVisible(), '写真か動画と、名前がないと先へ進めない')
 await shot('3b_入力_最初の状態', true)
+// ［メッセージから読み取る］は出さない（11/8 作者の決定：名前・年齢・性別・健康は人が欄とボタンで入れる）。メモは本文の材料として残る
+{
+  await page.getByLabel('預かりさんからのLINE・メモ').fill('（架空）毎朝お迎えに来てくれます。')
+  const readBtn = await page.getByRole('button', { name: 'メッセージから読み取る' }).count()
+  const askPanel = await page.getByText('預かりさんへ送るLINEの文').count()
+  check(readBtn === 0 && askPanel === 0, `入力画面に［メッセージから読み取る］も聞き返しも出ない（ボタン ${readBtn}・聞き返し ${askPanel}）`)
+  check(await page.getByText('ここから紹介文を作ります。何通かあれば、続けて貼ってください。').isVisible(), 'LINE・メモの欄の案内は「ここから紹介文を作ります」（欄を埋めるとは書かない）')
+  check(await page.getByRole('textbox', { name: /^名前/ }).isVisible(), '名前の欄は今までどおり出る')
+  await page.getByLabel('預かりさんからのLINE・メモ').fill('')
+}
 // 欄の下の案内が、下に続くもの（次の欄の見出し・ボタン）に隠れていない（11/7 作者が見本で気にした所。下に固定のボタンは除く）
 {
   const hidden = await page.evaluate(() =>
